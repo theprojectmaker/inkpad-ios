@@ -90,12 +90,12 @@ export type Theme = {
 };
 
 const LIGHT: Theme = {
-  dark: false, bg: '#F6F5F2', side: '#EEEDE8', card: '#FFFFFF', elev: '#FFFFFF', text: '#17181C', sub: '#5E616B', faint: '#7A7D87',
-  line: '#E1E0DA', accent: '#2563EB', accentText: '#FFFFFF', danger: '#DC2626', desk: '#E7E6E1', bar: '#FBFBF9', chip: '#ECEBE6',
+  dark: false, bg: '#FFFFFF', side: '#F4F4F6', card: '#FFFFFF', elev: '#FFFFFF', text: '#1C1C1E', sub: '#636366', faint: '#8E8E93',
+  line: '#E5E5EA', accent: '#007AFF', accentText: '#FFFFFF', danger: '#FF3B30', desk: '#EBEBEF', bar: '#F9F9FB', chip: '#EFEFF4',
 };
 const DARK: Theme = {
-  dark: true, bg: '#121316', side: '#18191D', card: '#1F2025', elev: '#26272D', text: '#F1F2F4', sub: '#A6A9B2', faint: '#8A8E98',
-  line: '#2E3036', accent: '#4C7DF5', accentText: '#FFFFFF', danger: '#F87171', desk: '#0C0D0F', bar: '#1A1B1F', chip: '#2A2B31',
+  dark: true, bg: '#000000', side: '#161618', card: '#1C1C1E', elev: '#2C2C2E', text: '#F2F2F7', sub: '#AEAEB2', faint: '#8E8E93',
+  line: '#2C2C2E', accent: '#0A84FF', accentText: '#FFFFFF', danger: '#FF453A', desk: '#0A0A0B', bar: '#121214', chip: '#2C2C2E',
 };
 
 export function useTheme(): Theme {

@@ -66,7 +66,9 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   private var scrollBack: DispatchWorkItem?
   var shapeSnap = true
   private var snapping = false
-  private var lastStrokeCount = 0
+  private var strokeOpen = false     // a Pencil stroke started and isn't settled yet
+  private var strokeEnded = false
+  private var strokeAdded = false
   private var lastMovePoint: CGPoint = .zero
   private var lastMoveTime: CFTimeInterval = 0
   private var heldTime: CFTimeInterval = 0
@@ -362,7 +364,6 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     loaded = true
     if let data = FileManager.default.contents(atPath: path), let d = try? PKDrawing(data: data) {
       canvas.drawing = d
-      lastStrokeCount = d.strokes.count
     } else if !legacy.isEmpty {
       canvas.drawing = QuillCanvasView.drawing(from: legacy)
       dirty = true
@@ -403,27 +404,31 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     switch g.state {
     case .began:
       lastMovePoint = p; lastMoveTime = now; heldTime = 0
+      strokeOpen = true; strokeEnded = false; strokeAdded = false
     case .changed:
       if hypot(p.x - lastMovePoint.x, p.y - lastMovePoint.y) > 4 { lastMovePoint = p; lastMoveTime = now }
     case .ended:
       heldTime = now - lastMoveTime
+      strokeEnded = true
+      trySnap()
     default:
-      heldTime = 0
+      strokeOpen = false
     }
   }
 
   /// Shape lock: a stroke that ended in a hold becomes a clean line or shape.
-  private func snapLastStroke() {
-    let strokes = canvas.drawing.strokes
-    defer { lastStrokeCount = canvas.drawing.strokes.count }
-    guard shapeSnap, strokes.count == lastStrokeCount + 1, let last = strokes.last,
-          canvas.tool is PKInkingTool, (canvas.tool as? PKInkingTool)?.inkType != .marker else { return }
-    let held = heldTime
-    heldTime = 0
-    guard let shape = ShapeSnap.snap(last, held: held) else { return }
-    snapping = true
+  /// Runs once the stroke has both ended and been added to the drawing (PencilKit
+  /// reports those in either order). Only touches the drawing when there was a
+  /// hold, so normal writing does no extra work between strokes.
+  private func trySnap() {
+    guard strokeOpen, strokeEnded, strokeAdded else { return }
+    strokeOpen = false
+    guard shapeSnap, heldTime >= ShapeSnap.holdTime,
+          let ink = canvas.tool as? PKInkingTool, ink.inkType != .marker else { return }
     var d = canvas.drawing
+    guard let last = d.strokes.last, let shape = ShapeSnap.snap(last, held: heldTime) else { return }
     d.strokes[d.strokes.count - 1] = shape
+    snapping = true
     canvas.drawing = d
     snapping = false
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -431,20 +436,25 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
     guard loaded else { return }
-    if !snapping { snapLastStroke() }
+    if !snapping && strokeOpen { strokeAdded = true; trySnap() }
     dirty = true
     scheduleSave()
     let now = CACurrentMediaTime()
     if now - lastEmit > 0.25 { lastEmit = now; emitState() }
     holdScroll()
-    DispatchQueue.main.async { [weak self] in self?.holdScroll() }
   }
 
+  /// Saving copies the whole drawing on the main thread, so it waits for a real
+  /// pause (never between two quick strokes) and never runs while the Pencil is down.
   private func scheduleSave() {
     saveWork?.cancel()
-    let w = DispatchWorkItem { [weak self] in self?.saveNow(sync: false) }
+    let w = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      if !self.canvas.panGestureRecognizer.isEnabled { self.scheduleSave(); return }   // Pencil still down
+      self.saveNow(sync: false)
+    }
     saveWork = w
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: w)
   }
 
   func saveNow(sync: Bool) {
@@ -476,7 +486,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     onDrawingChange([
       "canUndo": canvas.undoManager?.canUndo ?? false,
       "canRedo": canvas.undoManager?.canRedo ?? false,
-      "strokes": strokes ?? canvas.drawing.strokes.count,
+      "strokes": strokes ?? -1,   // reading canvas.drawing copies every stroke; only saves report it
     ])
   }
 

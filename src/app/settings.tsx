@@ -53,28 +53,33 @@ export default function SettingsScreen() {
         <Text style={{ flex: 1, color: t.text, fontSize: 22, fontWeight: '800', marginLeft: 6 }}>Settings</Text>
       </View>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60, gap: 24, maxWidth: 700, width: '100%', alignSelf: 'center' }}>
+        <Section title="Tools">
+          <Row icon="graduationcap" label="Classroom" note="Assignments and hand in." onPress={() => router.push('/classroom')} />
+          <Row icon="function" label="Calculator" onPress={() => router.push('/calculator')} />
+          <Row icon="clock" label="Clock" onPress={() => router.push('/clock')} last={!s.gamesUnlocked} />
+          {s.gamesUnlocked ? <Row icon="gamecontroller" label="Games" onPress={() => router.push('/games')} last /> : null}
+        </Section>
+
         <Section title="Look">
           <Row icon="circle.lefthalf.filled" label="Appearance" last
             right={<Choice value={s.theme} options={[{ id: 'system', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />} />
         </Section>
 
         <Section title="Writing">
-          <Row icon="hand.draw" label="Draw with finger" note="Off: only Apple Pencil writes, fingers scroll and zoom."
+          <Row icon="hand.draw" label="Draw with finger" onPress={() => set({ fingerDraws: !s.fingerDraws })} note="Off: only Apple Pencil writes, fingers scroll and zoom."
             right={<Switch value={!!s.fingerDraws} onValueChange={(v) => set({ fingerDraws: v })} />} />
-          <Row icon="triangle" label="Shape lock" note="Draw a line, circle, box or triangle and hold the Pencil still: it snaps clean."
+          <Row icon="triangle" label="Shape lock" onPress={() => set({ holdToShape: s.holdToShape === false })} note="Draw a line, circle, box or triangle and hold the Pencil still: it snaps clean."
             right={<Switch value={s.holdToShape !== false} onValueChange={(v) => set({ holdToShape: v })} />} last />
         </Section>
 
         <Section title="Google">
-          <Row icon="graduationcap" label="Classroom" note="Connect, see assignments, hand in." onPress={() => router.push('/classroom')} />
-          <Row icon="arrow.triangle.2.circlepath" label="Keep notes synced to Google Drive" note="Saved to Drive › Quill when you leave a note."
+          <Row icon="arrow.triangle.2.circlepath" label="Keep notes synced to Google Drive" onPress={() => set({ driveSync: !s.driveSync })} note="Saved to Drive › Quill when you leave a note."
             right={<Switch value={!!s.driveSync} onValueChange={(v) => set({ driveSync: v })} />} />
           <Row icon="globe" label="My notes online" note="quill-study.pages.dev/notes" onPress={() => openLink(NOTES_SITE)} last />
         </Section>
 
         <Section title="Extras">
-          <Row icon="ticket" label="Redeem a code" onPress={() => router.push('/redeem')} last={!s.gamesUnlocked} />
-          {s.gamesUnlocked ? <Row icon="gamecontroller" label="Games" onPress={() => router.push('/games')} last /> : null}
+          <Row icon="ticket" label="Redeem a code" onPress={() => router.push('/redeem')} last />
         </Section>
 
         <Text style={{ color: t.faint, fontSize: 13, textAlign: 'center' }}>Quill {Constants.expoConfig?.version ?? ''}</Text>

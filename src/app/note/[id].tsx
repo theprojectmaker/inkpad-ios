@@ -14,8 +14,8 @@ import { StudyPanel } from '@/components/study-panel';
 import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
-import { dueLabel, handIn as sendToClassroom, openAssignment, openLink } from '@/lib/classroom';
-import { ensureGoogle, NOTES_SITE, saveToDrive } from '@/lib/drive';
+import { dueLabel, handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
+import { ensureGoogle, saveToDrive } from '@/lib/drive';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
@@ -126,12 +126,14 @@ export default function Editor() {
   }, [id, lib]);
 
   const changed = useRef(false);          // written on since it was opened (or last saved to Drive)
+  // Re-renders only when undo/redo availability flips: re-drawing this screen
+  // after every stroke made the next stroke start late.
   const onChange = useCallback((e: { nativeEvent: CanvasState }) => {
-    setSt(e.nativeEvent);
+    const n = e.nativeEvent;
+    setSt((p) => (p.canUndo === n.canUndo && p.canRedo === n.canRedo ? p : n));
     changed.current = true;
-    setOpts(false);
-    setVer((v) => v + 1);
     thumbStale.current = true;
+    setOpts((o) => (o ? false : o));
   }, []);
 
   /** The note as a PDF (named after the note), ready to share or upload. */
@@ -302,7 +304,7 @@ export default function Editor() {
       <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 8 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
           <IconButton name="chevron.left" label="Back to notes" onPress={back} />
-          <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => setSidebar((v) => !v)} />
+          <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} />
           <Pressable onPress={() => setRenaming(true)} style={{ flexShrink: 1, minWidth: 0, paddingHorizontal: 6, height: 44, justifyContent: 'center' }} accessibilityLabel="Rename note">
             <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{meta?.title ?? 'Note'}</Text>
             {!narrow ? (
@@ -320,13 +322,7 @@ export default function Editor() {
             <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
             <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
           </View>
-          <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 4 }} />
-          <IconButton name="function" label={calc ? 'Hide calculator' : 'Calculator'} active={calc} onPress={() => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); }} />
-          <Pressable onPress={() => { setStudy((v) => !v); setCalc(false); }} accessibilityLabel="Study with AI"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 36, paddingHorizontal: narrow ? 10 : 13, borderRadius: 18, marginHorizontal: 2, backgroundColor: study ? t.accent : t.accent + '1A' }}>
-            <Icon name="sparkles" size={15} color={study ? '#fff' : t.accent} />
-            {!narrow ? <Text style={{ color: study ? '#fff' : t.accent, fontSize: 14, fontWeight: '700' }}>Study</Text> : null}
-          </Pressable>
+          {calc || study ? <IconButton name="xmark" label={calc ? 'Close calculator' : 'Close Study'} onPress={() => { setCalc(false); setStudy(false); }} /> : null}
           <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
         </View>
       </View>
@@ -381,8 +377,7 @@ export default function Editor() {
         </>
       ) : null}
       <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
-        { label: 'Insert a page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
-        { label: 'Add a page at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPage() },
+        { label: 'Add a page', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
         ...(canScan() ? [{ label: 'Scan paper into this note', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
         { label: 'Add photos as pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
         ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
@@ -393,13 +388,11 @@ export default function Editor() {
           { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
           { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
-        { label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
-        { label: 'Keep notes synced to Drive', icon: 'arrow.triangle.2.circlepath', checked: !!s.driveSync, onPress: () => set({ driveSync: !s.driveSync }) },
-        { label: 'My notes online', icon: 'globe', onPress: () => openLink(NOTES_SITE) },
         { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
-        { label: ruler ? 'Hide the ruler' : 'Show the ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
-        { label: 'Shape lock (hold to snap)', icon: 'triangle', checked: s.holdToShape !== false, onPress: () => set({ holdToShape: s.holdToShape === false }) },
-        { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },
+        { label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
+        { label: 'Calculator', icon: 'function', checked: calc, onPress: () => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); } },
+        { label: 'Study with AI', icon: 'sparkles', checked: study, onPress: () => { setStudy((v) => !v); setCalc(false); } },
+        { label: 'Ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
         { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />
       <HandInSheet pdf={handInPdf} onClose={() => setHandInPdf(null)}
