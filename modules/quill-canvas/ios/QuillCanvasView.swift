@@ -236,10 +236,18 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   private func applyZoom() {
     let z = canvas.zoomScale
-    pageHost.transform = CGAffineTransform(scaleX: z, y: z)
-    pageHost.layer.position = .zero
-    textHost.transform = CGAffineTransform(scaleX: z, y: z)
-    textHost.layer.position = .zero
+    // Only touch the layers when the zoom really changed: setting a view's transform
+    // (even to the same value) makes the canvas lay itself out again, which landed
+    // between strokes and made the next one start late.
+    let tf = CGAffineTransform(scaleX: z, y: z)
+    if pageHost.transform != tf || pageHost.layer.position != .zero {
+      pageHost.transform = tf
+      pageHost.layer.position = .zero
+    }
+    if textHost.transform != tf || textHost.layer.position != .zero {
+      textHost.transform = tf
+      textHost.layer.position = .zero
+    }
     let size = CGSize(width: contentW * z, height: contentH * z)
     if canvas.contentSize != size { canvas.contentSize = size }
     let padX = max(0, (bounds.width - size.width) / 2)
@@ -441,7 +449,6 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     scheduleSave()
     let now = CACurrentMediaTime()
     if now - lastEmit > 0.25 { lastEmit = now; emitState() }
-    holdScroll()
   }
 
   /// Saving copies the whole drawing on the main thread, so it waits for a real
