@@ -18,7 +18,7 @@ export const TOOLS: { id: InkTool; icon: string; label: string }[] = [
 
 const PEN_STYLES: { id: PenStyle; label: string }[] = [
   { id: 'pen', label: 'Ballpoint' },
-  { id: 'felt', label: 'Felt' },
+  { id: 'felt', label: 'Gel' },
   { id: 'fountain', label: 'Fountain' },
   { id: 'pencil', label: 'Pencil' },
 ];
@@ -27,8 +27,8 @@ export const PEN_COLORS = ['#111111', '#1E5EFF', '#E5322D', '#0AA35B', '#F28C18'
 export const HL_COLORS = ['#FFE14D', '#7CF27C', '#6FD3FF', '#FF8FD0', '#FFB45C', '#C9B6FF'];
 
 const WIDTHS = {
-  pen: [1.2, 1.8, 2.8],
-  felt: [1.6, 2.6, 4],
+  pen: [1.1, 1.6, 2.4],
+  felt: [1.4, 2.2, 3.4],
   fountain: [2, 4, 7],
   pencil: [1.5, 3, 6],
   marker: [8, 15, 26],
@@ -41,10 +41,12 @@ export function currentTool(s: { inkKind?: InkTool; penStyle?: PenStyle; inkSize
   const kind = s.inkKind ?? 'pen';
   const i = Math.max(0, Math.min(2, s.inkSize ?? 1));
   if (kind === 'pen') {
-    // Ballpoint = Apple's pressure pen, kept thin (smooth, follows how hard you press);
-    // Felt = Apple's even 'monoline' felt-tip ink.
+    // Ballpoint = an even, thin line (Apple's 'monoline' ink): no swelling where you press
+    // hard or slow down, so no blotches. Gel = Apple's pressure pen, for a line that
+    // thickens with pressure.
     const st = s.penStyle ?? 'pen';
-    return { kind: st === 'felt' ? 'monoline' : st, color: s.penColor, width: WIDTHS[st][i] };
+    const kind = st === 'pen' ? 'monoline' : st === 'felt' ? 'pen' : st;
+    return { kind, color: s.penColor, width: WIDTHS[st][i] };
   }
   if (kind === 'marker') return { kind: 'marker', color: s.hlColor, width: WIDTHS.marker[i] };
   if (kind === 'eraser') return { kind: 'eraser', color: '#000000', width: WIDTHS.eraser[i] };
