@@ -33,6 +33,7 @@ type Props = ViewProps & {
   tool: CanvasTool;
   fingerDraws?: boolean;
   ruler?: boolean;
+  shapeSnap?: boolean;       // hold the Pencil at the end of a stroke: it snaps to a line or shape
   drawingPath: string;
   textsPath: string;
   onPageChange?: (e: { nativeEvent: { page: number; count: number } }) => void;

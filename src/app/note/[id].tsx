@@ -110,8 +110,9 @@ export default function Editor() {
 
   const pages = useMemo(() => (doc ? canvasPages(id, doc) : []), [doc, id]);
 
-  // A fresh thumbnail for the library a moment after writing stops.
-  const thumbTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A fresh thumbnail for the library, made when you leave the note (making it
+  // while writing drew every page on the main thread and froze the ink).
+  const thumbStale = useRef(false);
   const makeThumb = useCallback(async () => {
     const name = `thumb_${Date.now().toString(36)}.jpg`;
     try {
@@ -130,9 +131,8 @@ export default function Editor() {
     changed.current = true;
     setOpts(false);
     setVer((v) => v + 1);
-    if (thumbTimer.current) clearTimeout(thumbTimer.current);
-    thumbTimer.current = setTimeout(makeThumb, 2500);
-  }, [makeThumb]);
+    thumbStale.current = true;
+  }, []);
 
   /** The note as a PDF (named after the note), ready to share or upload. */
   const makePdf = async () => {
@@ -168,7 +168,7 @@ export default function Editor() {
     if (leaving.current) return;
     leaving.current = true;
     try { await canvas.current?.save(); } catch {}
-    if (thumbTimer.current) { clearTimeout(thumbTimer.current); await makeThumb(); }
+    if (thumbStale.current || !meta?.thumb) { thumbStale.current = false; await makeThumb(); }
     // Keep Drive up to date: the PDF is made here (it needs the page), the upload finishes in the background.
     let pending: { path: string; title: string } | null = null;
     if (changed.current && (s.driveSync || meta?.drive)) { try { pending = await makePdf(); } catch {} }
@@ -354,7 +354,7 @@ export default function Editor() {
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
-            <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} ruler={ruler}
+            <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} shapeSnap={s.holdToShape !== false} ruler={ruler}
               drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
               onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
@@ -398,6 +398,7 @@ export default function Editor() {
         { label: 'My notes online', icon: 'globe', onPress: () => openLink(NOTES_SITE) },
         { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
         { label: ruler ? 'Hide the ruler' : 'Show the ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
+        { label: 'Shape lock (hold to snap)', icon: 'triangle', checked: s.holdToShape !== false, onPress: () => set({ holdToShape: s.holdToShape === false }) },
         { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },
         { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />

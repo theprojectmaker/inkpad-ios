@@ -69,6 +69,10 @@ public final class QuillCanvasModule: Module {
         view.setFingerDraws(on)
       }
 
+      Prop("shapeSnap") { (view: QuillCanvasView, on: Bool) in
+        view.shapeSnap = on
+      }
+
       Prop("ruler") { (view: QuillCanvasView, on: Bool) in
         view.setRuler(on)
       }

@@ -60,7 +60,9 @@ export default function SettingsScreen() {
 
         <Section title="Writing">
           <Row icon="hand.draw" label="Draw with finger" note="Off: only Apple Pencil writes, fingers scroll and zoom."
-            right={<Switch value={!!s.fingerDraws} onValueChange={(v) => set({ fingerDraws: v })} />} last />
+            right={<Switch value={!!s.fingerDraws} onValueChange={(v) => set({ fingerDraws: v })} />} />
+          <Row icon="triangle" label="Shape lock" note="Draw a line, circle, box or triangle and hold the Pencil still: it snaps clean."
+            right={<Switch value={s.holdToShape !== false} onValueChange={(v) => set({ holdToShape: v })} />} last />
         </Section>
 
         <Section title="Google">

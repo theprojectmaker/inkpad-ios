@@ -63,6 +63,13 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   private let saveQueue = DispatchQueue(label: "quill.canvas.save")  // every drawing write, in order
   private var pageViewsById: [String: (key: String, view: PageTileView)] = [:]
   private var lastEmit: CFTimeInterval = 0
+  private var scrollBack: DispatchWorkItem?
+  var shapeSnap = true
+  private var snapping = false
+  private var lastStrokeCount = 0
+  private var lastMovePoint: CGPoint = .zero
+  private var lastMoveTime: CFTimeInterval = 0
+  private var heldTime: CFTimeInterval = 0
   private var contentH: CGFloat = 792
   private let gap: CGFloat = 28
   private var lastWidth: CGFloat = 0
@@ -92,6 +99,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     canvas.scrollsToTop = false                    // tapping the top of the screen must never jump to page 1
     canvas.tool = PKInkingTool(.pen, color: .black, width: 3)
     addSubview(canvas)
+    canvas.drawingGestureRecognizer.addTarget(self, action: #selector(onInk(_:)))
 
     pageHost.isUserInteractionEnabled = false
     pageHost.layer.anchorPoint = .zero
@@ -354,6 +362,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     loaded = true
     if let data = FileManager.default.contents(atPath: path), let d = try? PKDrawing(data: data) {
       canvas.drawing = d
+      lastStrokeCount = d.strokes.count
     } else if !legacy.isEmpty {
       canvas.drawing = QuillCanvasView.drawing(from: legacy)
       dirty = true
@@ -366,8 +375,63 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     }
   }
 
+  // MARK: - While the Pencil is down
+
+  /// The page never moves while writing: a palm or finger resting on the screen
+  /// used to scroll the page under the Pencil. Scrolling comes back right after.
+  func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+    scrollBack?.cancel()
+    scrollBack = nil
+    canvas.panGestureRecognizer.isEnabled = false
+    canvas.pinchGestureRecognizer?.isEnabled = false
+  }
+
+  func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+    scrollBack?.cancel()
+    let w = DispatchWorkItem { [weak self] in
+      self?.canvas.panGestureRecognizer.isEnabled = true
+      self?.canvas.pinchGestureRecognizer?.isEnabled = true
+    }
+    scrollBack = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
+  }
+
+  /// Times how long the Pencil rested still at the end of a stroke (for shape lock).
+  @objc private func onInk(_ g: UIGestureRecognizer) {
+    let p = g.location(in: canvas)
+    let now = CACurrentMediaTime()
+    switch g.state {
+    case .began:
+      lastMovePoint = p; lastMoveTime = now; heldTime = 0
+    case .changed:
+      if hypot(p.x - lastMovePoint.x, p.y - lastMovePoint.y) > 4 { lastMovePoint = p; lastMoveTime = now }
+    case .ended:
+      heldTime = now - lastMoveTime
+    default:
+      heldTime = 0
+    }
+  }
+
+  /// Shape lock: a stroke that ended in a hold becomes a clean line or shape.
+  private func snapLastStroke() {
+    let strokes = canvas.drawing.strokes
+    defer { lastStrokeCount = canvas.drawing.strokes.count }
+    guard shapeSnap, strokes.count == lastStrokeCount + 1, let last = strokes.last,
+          canvas.tool is PKInkingTool, (canvas.tool as? PKInkingTool)?.inkType != .marker else { return }
+    let held = heldTime
+    heldTime = 0
+    guard let shape = ShapeSnap.snap(last, held: held) else { return }
+    snapping = true
+    var d = canvas.drawing
+    d.strokes[d.strokes.count - 1] = shape
+    canvas.drawing = d
+    snapping = false
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+  }
+
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
     guard loaded else { return }
+    if !snapping { snapLastStroke() }
     dirty = true
     scheduleSave()
     let now = CACurrentMediaTime()
