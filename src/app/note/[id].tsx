@@ -2,11 +2,11 @@
 // (Apple's ink, eraser, lasso and ruler; no Apple tool palette).
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
-import { currentTool, InkBar } from '@/components/ink-bar';
+import { BarToggle, currentTool, OptionsPill, PenTray } from '@/components/ink-bar';
 import { IconButton, PromptSheet, useToast } from '@/components/ui';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
@@ -64,7 +64,10 @@ export default function Editor() {
   const [renaming, setRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ruler, setRuler] = useState(false);
-  const { s } = useSettings();
+  const { s, set } = useSettings();
+  const [optsOpen, setOptsOpen] = useState(true);
+  const { width } = useWindowDimensions();
+  useEffect(() => { setOptsOpen(true); }, [s.inkKind]);   // a new tool shows its colours and sizes
   const tool = useMemo(() => currentTool(s.inkKind ?? 'pen', s.inkSize ?? 1, s.penColor, s.hlColor), [s.inkKind, s.inkSize, s.penColor, s.hlColor]);
   const meta = lib.lib.notes.find((n) => n.id === id);
 
@@ -137,21 +140,33 @@ export default function Editor() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bar, paddingTop: ins.top }}>
-      <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, borderBottomWidth: 1, borderBottomColor: t.line }}>
+      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: t.line, zIndex: 2 }}>
         <IconButton name="chevron.left" label="Back to notes" onPress={back} />
-        <Pressable onPress={() => setRenaming(true)} style={{ flex: 1, paddingHorizontal: 8, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
-          <Text numberOfLines={1} style={{ color: t.text, fontSize: 17, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
+        <Pressable onPress={() => setRenaming(true)} style={{ maxWidth: Math.max(80, width / 2 - 200), paddingHorizontal: 6, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
+          <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
         </Pressable>
+        <View style={{ flex: 1 }} />
+        <BarToggle icon="ruler" label={ruler ? 'Hide ruler' : 'Show ruler'} on={ruler} onPress={() => setRuler((v) => !v)} />
+        <BarToggle icon="hand.draw" label={s.fingerDraws ? 'Fingers draw' : 'Fingers scroll'} on={!!s.fingerDraws} onPress={() => set({ fingerDraws: !s.fingerDraws })} />
+        <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 6 }} />
         <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
         <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
-        <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 6 }} />
         <IconButton name="doc.badge.plus" label="Add page" onPress={addPage} />
         <IconButton name="square.and.arrow.up" label="Share as PDF" disabled={busy} onPress={share} />
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' }}>
+          <PenTray onToggleOptions={() => setOptsOpen((v) => !v)} />
+        </View>
       </View>
-      <InkBar ruler={ruler} onRuler={() => setRuler((v) => !v)} />
+      <View style={{ flex: 1 }}>
       {doc ? (
         <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} ruler={ruler} drawingPath={absPath(notePath(id, DRAWING))} legacy={legacy} onDrawingChange={onChange} />
       ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
+        {optsOpen ? (
+          <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 0, right: 0, alignItems: 'center' }}>
+            <OptionsPill />
+          </View>
+        ) : null}
+      </View>
       <PromptSheet visible={renaming} title="Rename note" initial={meta?.title ?? ''} onCancel={() => { setRenaming(false); canvas.current?.focus(); }}
         onSubmit={(v) => { if (v.trim()) lib.updateNote(id, { title: v.trim() }); setRenaming(false); canvas.current?.focus(); }} />
     </View>

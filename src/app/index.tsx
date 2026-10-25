@@ -106,21 +106,47 @@ export default function LibraryScreen() {
     </Pressable>
   );
 
+  // A sheet of paper (used until the note has a real thumbnail).
+  const paperMock = (h: number) => (
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      {Array.from({ length: Math.floor(h / 13) - 3 }, (_, i) => (
+        <View key={i} style={{ position: 'absolute', left: 0, right: 0, top: 30 + i * 13, height: 1, backgroundColor: '#E3E9F3' }} />
+      ))}
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: cardW * 0.14, width: 1, backgroundColor: '#F6C9C9' }} />
+    </View>
+  );
+
   const card = ({ item: n }: { item: NoteMeta }) => {
     const thumb = n.thumb ? fsx.uri(notePath(n.id, n.thumb)) : '';
+    const f = folderOf(n.folderId);
+    const h = cardW * 1.29;
     return (
       <Pressable onPress={() => open(n.id)} onLongPress={() => { setTarget(n); setSheet('note'); }} delayLongPress={350}
-        style={({ pressed }) => ({ width: cardW, opacity: pressed ? 0.7 : 1 })}>
-        <View style={{ width: cardW, height: cardW * 1.29, borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff', borderWidth: 1, borderColor: t.line }}>
-          {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Icon name={n.kind === 'pdf' ? 'doc.richtext' : 'doc'} size={26} color="#C3C6CC" /></View>
-          )}
+        style={({ pressed }) => ({ width: cardW, transform: [{ scale: pressed ? 0.97 : 1 }] })}>
+        <View style={{ width: cardW, height: h, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: t.dark ? 0.4 : 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
+          <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden', borderWidth: t.dark ? 0 : 1, borderColor: '#ECEDEF' }}>
+            {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+              : n.kind === 'pdf' ? (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAFB' }}>
+                  <Icon name="doc.richtext" size={30} color="#B8BCC4" />
+                  <Text style={{ color: '#9A9EA6', fontSize: 12, marginTop: 6, fontWeight: '600' }}>PDF</Text>
+                </View>
+              ) : paperMock(h)}
+          </View>
+          {n.pages > 1 ? (
+            <View style={{ position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(20,22,28,0.72)', borderRadius: 9, paddingHorizontal: 7, height: 18, justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{n.pages} pages</Text>
+            </View>
+          ) : null}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 }}>
           {n.fav ? <Icon name="star.fill" size={12} color="#F5A524" /> : null}
           <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 15, fontWeight: '600' }}>{n.title}</Text>
         </View>
-        <Text style={{ color: t.faint, fontSize: 12, marginTop: 2 }}>{fmtDate(n.updated)}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+          {f ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: f.color }} /> : null}
+          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12 }}>{f ? f.name + ' · ' : ''}{fmtDate(n.updated)}</Text>
+        </View>
       </Pressable>
     );
   };
