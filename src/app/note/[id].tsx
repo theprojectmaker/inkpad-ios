@@ -1,11 +1,12 @@
-// Editor: a slim top bar and the PencilKit canvas. Apple's tool palette
-// floats over the page (pen, marker, pencil, eraser, lasso, ruler, colours).
+// Editor: a slim top bar, Quill's own tool row, and the PencilKit canvas
+// (Apple's ink, eraser, lasso and ruler; no Apple tool palette).
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
+import { currentTool, InkBar } from '@/components/ink-bar';
 import { IconButton, PromptSheet, useToast } from '@/components/ui';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
@@ -14,7 +15,7 @@ import { useLibrary } from '@/lib/library';
 import { type NoteDoc, type Page, paperPage, pageSizeOf } from '@/lib/model';
 import { loadDoc, notePath, saveDoc } from '@/lib/noteio';
 import { paperMarks, paperOf } from '@/lib/paper';
-import { useTheme } from '@/lib/settings';
+import { useSettings, useTheme } from '@/lib/settings';
 
 const DRAWING = 'drawing.pkd';
 /** Absolute file path for the native side (fsx gives file:// uris). */
@@ -62,6 +63,9 @@ export default function Editor() {
   const [st, setSt] = useState<CanvasState>({ canUndo: false, canRedo: false, strokes: 0 });
   const [renaming, setRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [ruler, setRuler] = useState(false);
+  const { s } = useSettings();
+  const tool = useMemo(() => currentTool(s.inkKind ?? 'pen', s.inkSize ?? 1, s.penColor, s.hlColor), [s.inkKind, s.inkSize, s.penColor, s.hlColor]);
   const meta = lib.lib.notes.find((n) => n.id === id);
 
   useEffect(() => {
@@ -144,8 +148,9 @@ export default function Editor() {
         <IconButton name="doc.badge.plus" label="Add page" onPress={addPage} />
         <IconButton name="square.and.arrow.up" label="Share as PDF" disabled={busy} onPress={share} />
       </View>
+      <InkBar ruler={ruler} onRuler={() => setRuler((v) => !v)} />
       {doc ? (
-        <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} drawingPath={absPath(notePath(id, DRAWING))} legacy={legacy} onDrawingChange={onChange} />
+        <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} ruler={ruler} drawingPath={absPath(notePath(id, DRAWING))} legacy={legacy} onDrawingChange={onChange} />
       ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
       <PromptSheet visible={renaming} title="Rename note" initial={meta?.title ?? ''} onCancel={() => { setRenaming(false); canvas.current?.focus(); }}
         onSubmit={(v) => { if (v.trim()) lib.updateNote(id, { title: v.trim() }); setRenaming(false); canvas.current?.focus(); }} />

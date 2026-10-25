@@ -20,8 +20,14 @@ export type CanvasHandle = {
   snapshot(path: string, width: number): Promise<boolean>;
 };
 
+export type ToolKind = 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso';
+export type CanvasTool = { kind: ToolKind; color: string; width: number };
+
 type Props = ViewProps & {
   pages: CanvasPage[];
+  tool: CanvasTool;
+  fingerDraws?: boolean;
+  ruler?: boolean;
   drawingPath: string;
   legacy?: LegacyStroke[];
   onDrawingChange?: (e: { nativeEvent: CanvasState }) => void;

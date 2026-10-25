@@ -5,6 +5,12 @@ import ExpoModulesCore
 import PencilKit
 import UIKit
 
+struct ToolSpec: Record {
+  @Field var kind: String = "pen"   // pen | fountain | pencil | monoline | marker | eraser | lasso
+  @Field var color: String = "#111111"
+  @Field var width: Double = 3
+}
+
 struct LegacyStroke: Record {
   @Field var pts: [Double] = []     // x, y, pressure, ... in canvas coordinates
   @Field var color: String = "#111111"
@@ -28,7 +34,6 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
   var drawingPath: String?
   var legacy: [LegacyStroke] = []
   private var loaded = false
-  private var toolPicker: PKToolPicker?
   private var saveWork: DispatchWorkItem?
   private var dirty = false
 
@@ -43,7 +48,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
     canvas.backgroundColor = .clear
     canvas.isOpaque = false
     canvas.overrideUserInterfaceStyle = .light      // black ink stays black on the paper
-    canvas.drawingPolicy = .default                 // Pencil draws; fingers scroll unless "draw with finger" is on
+    canvas.drawingPolicy = .pencilOnly              // Pencil draws, fingers scroll and zoom
     canvas.alwaysBounceVertical = true
     canvas.contentInsetAdjustmentBehavior = .never
     canvas.showsVerticalScrollIndicator = true
@@ -195,24 +200,37 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window != nil {
-      if toolPicker == nil {
-        let tp = PKToolPicker()
-        tp.addObserver(canvas)
-        toolPicker = tp
-      }
-      focusCanvas()
-    } else {
-      saveNow(sync: true)
-      toolPicker?.setVisible(false, forFirstResponder: canvas)
+    if window == nil { saveNow(sync: true) }
+  }
+
+  func focusCanvas() {}
+
+  /// The app's own toolbar picks the tool (no Apple tool palette).
+  func setTool(_ t: ToolSpec) {
+    let color = UIColor(hex: t.color)
+    let w = CGFloat(t.width)
+    switch t.kind {
+    case "eraser":
+      canvas.tool = PKEraserTool(.bitmap, width: max(4, w))
+    case "lasso":
+      canvas.tool = PKLassoTool()
+    case "pencil":
+      canvas.tool = PKInkingTool(.pencil, color: color, width: w)
+    case "marker":
+      canvas.tool = PKInkingTool(.marker, color: color, width: w)
+    case "fountain":
+      if #available(iOS 17.0, *) { canvas.tool = PKInkingTool(.fountainPen, color: color, width: w) }
+      else { canvas.tool = PKInkingTool(.pen, color: color, width: w) }
+    case "monoline":
+      if #available(iOS 17.0, *) { canvas.tool = PKInkingTool(.monoline, color: color, width: w) }
+      else { canvas.tool = PKInkingTool(.pen, color: color, width: w) }
+    default:
+      canvas.tool = PKInkingTool(.pen, color: color, width: w)
     }
   }
 
-  func focusCanvas() {
-    guard window != nil, let tp = toolPicker else { return }
-    tp.setVisible(true, forFirstResponder: canvas)
-    DispatchQueue.main.async { [weak self] in _ = self?.canvas.becomeFirstResponder() }
-  }
+  func setFingerDraws(_ on: Bool) { canvas.drawingPolicy = on ? .anyInput : .pencilOnly }
+  func setRuler(_ on: Bool) { canvas.isRulerActive = on }
 
   func undo() { canvas.undoManager?.undo(); emitState() }
   func redo() { canvas.undoManager?.redo(); emitState() }

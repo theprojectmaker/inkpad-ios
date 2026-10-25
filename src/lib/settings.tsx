@@ -26,7 +26,11 @@ export type Settings = {
   shapeKind: ShapeKind;
   tapeColor: string;
   favPens: FavPen[];
+  inkKind: InkTool;          // the PencilKit tool picked in the editor
+  inkSize: number;           // 0 | 1 | 2
+  fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
 };
+export type InkTool = 'pen' | 'fountain' | 'pencil' | 'marker' | 'eraser' | 'lasso';
 
 const DEFAULTS: Settings = {
   theme: 'system', view: 'grid', sort: 'updated',
@@ -40,6 +44,7 @@ const DEFAULTS: Settings = {
   shapeKind: 'arrow',
   tapeColor: '#F7B731',
   favPens: [],
+  inkKind: 'pen', inkSize: 1, fingerDraws: false,
 };
 
 const KEY = 'inkpad.settings.v1';   // key kept from the app's first name (Inkpad) so settings survive the rename

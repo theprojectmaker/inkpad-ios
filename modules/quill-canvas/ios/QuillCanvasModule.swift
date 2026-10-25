@@ -19,6 +19,18 @@ public final class QuillCanvasModule: Module {
         view.legacy = legacy
       }
 
+      Prop("tool") { (view: QuillCanvasView, tool: ToolSpec) in
+        view.setTool(tool)
+      }
+
+      Prop("fingerDraws") { (view: QuillCanvasView, on: Bool) in
+        view.setFingerDraws(on)
+      }
+
+      Prop("ruler") { (view: QuillCanvasView, on: Bool) in
+        view.setRuler(on)
+      }
+
       OnViewDidUpdateProps { (view: QuillCanvasView) in
         view.loadIfReady()
       }
