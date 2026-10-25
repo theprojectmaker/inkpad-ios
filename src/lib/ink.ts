@@ -41,13 +41,13 @@ export function inkOptions(kind: InkKind, pressure: boolean, base: number, opts:
     case 'fountain':
       // Width at normal pressure = the chosen size; light 0.4x, firm 1.6x. Short nib-like tapers.
       return pressure
-        ? { size: b * 1.1, thinning: 0.6, smoothing: 0.62, streamline, simulatePressure: false, start: start(b * 3), end: end(b * 5), last }
+        ? { size: b * 1.1, thinning: 0.5, smoothing: 0.62, streamline, simulatePressure: false, start: start(b * 3), end: end(b * 5), last }
         : { size: b * 1.15, thinning: 0.45, smoothing: 0.62, streamline, simulatePressure: true, start: start(b * 5), end: end(b * 7), last };
     case 'ball':
       return { size: b * 1.1, thinning: 0.12, smoothing: 0.6, streamline, simulatePressure: false, start: start(0), end: end(0), last };
     case 'brush':
       // Very pressure-sensitive with long tapers, like a brush pen.
-      return { size: b * 1.7, thinning: sim ? 0.7 : 0.85, smoothing: 0.72, streamline: streamline + 0.05, simulatePressure: sim, start: start(b * 5), end: end(b * 10), last };
+      return { size: b * 1.7, thinning: sim ? 0.7 : 0.75, smoothing: 0.72, streamline: streamline + 0.05, simulatePressure: sim, start: start(b * 5), end: end(b * 10), last };
     case 'marker':
       // Broad, even and bold.
       return { size: b * 1.9, thinning: 0.03, smoothing: 0.55, streamline, simulatePressure: false, start: start(0), end: end(0), last };

@@ -67,7 +67,8 @@ type Drawer = {
   fp: number;
   pts: Pt[]; live: LiveStroke;
   lastRaw?: { x: number; y: number; t: number };
-  filt?: Pt;            // the jitter filter's current position
+  filt?: Pt;
+  gotForce?: boolean;   // a real Pencil force reading has arrived            // the jitter filter's current position
 };
 type Mode = 'idle' | 'pending' | 'draw' | 'nav' | 'ignore';
 
@@ -77,8 +78,8 @@ const TAP_SLOP = 8;
 
 const tierFor = (screenPx: number) => (screenPx > BG_TIERS[0] * 1.2 ? BG_TIERS[1] : BG_TIERS[0]);
 
-export function NoteView({ noteId, tool, active, onActivate, onState, onRequestTool, handleRef, stamp, replay = null, onSeek, onPageBadge }: {
-  noteId: string; tool: Tool; active: boolean; onActivate?: () => void; onState?: (s: NoteViewState) => void;
+export function NoteView({ noteId, tool, active, onActivate, onState, onRequestTool, handleRef, stamp, replay = null, onSeek, onPageBadge, onInkStart }: {
+  noteId: string; tool: Tool; active: boolean; onActivate?: () => void; onState?: (s: NoteViewState) => void; onInkStart?: () => void;
   onRequestTool?: (t: Tool) => void; handleRef?: Ref<NoteViewHandle>;
   /** While recording: returns [recording id, ms] to stamp new ink with. */
   stamp?: () => [string, number] | null;
@@ -512,8 +513,19 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) return;
     const tSec = (Number.isFinite(ts) ? (ts as number) : Date.now()) / 1000;
     // Pressure is smoothed a little so a twitchy force reading never makes a blob.
-    const raw = dr.pencil && SRef.current.pressure ? pressureFromForce(force) : 0.5;
-    dr.fp = dr.pts.length ? dr.fp + (raw - dr.fp) * 0.35 : raw;
+    if (dr.pencil && SRef.current.pressure) {
+      if (force > 0) {
+        const raw = pressureFromForce(force);
+        if (!dr.gotForce) {
+          // Points taken before the first force reading get this pressure too: no fat blob at the start.
+          dr.gotForce = true;
+          dr.fp = raw;
+          for (const q of dr.pts) q.p = raw;
+          if (dr.filt) dr.filt.p = raw;
+          dr.live.frozen = null; dr.live.from = 0;
+        } else dr.fp += (raw - dr.fp) * 0.22;
+      }
+    } else dr.fp = 0.5;
     const z = dr.live.tf.z || 1;
     // Positions go through the jitter filter (see ink.ts); the live line still reaches the raw nib.
     const rp = { x: q.x, y: q.y, p: dr.fp };
@@ -611,7 +623,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       const pts: Pt[] = [];
       const live: LiveStroke = {
         pts, base: hl ? S0.hlWidth : laser ? 3 : S0.penWidth, kind: kindFor(hl, laser), pressure: !laser && pressureFor(t.pencil), smoothing: S0.smoothing,
-        color: hl ? S0.hlColor : laser ? '#FF2D55' : S0.penColor, multiply: !dark, pred: null, laser, v2: true,
+        color: hl ? S0.hlColor : laser ? '#FF2D55' : S0.penColor, multiply: !dark, pred: null, laser, v2: true, clip: { w: pg.w, h: pg.h },
         tf: { tx: v.tx + LRef.current.xs[page] * v.z, ty: v.ty + LRef.current.tops[page] * v.z, z: v.z },
       };
       const dr: Drawer = { touch: t.id, page, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false, fp: 0.5, pts, live };
@@ -620,6 +632,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       addPoint(dr, t.sx, t.sy, (t as any).force ?? 0, (t as any).ts0);
       drawer.current = dr;
       armHold(dr);
+      onInkStart?.();
       if (selRef.current) setSel(null);
       drawLive(live);
     } else if (tl === 'shape') {

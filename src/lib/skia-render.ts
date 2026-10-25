@@ -1,7 +1,7 @@
 // Skia drawing for pages. Each page becomes two cached SkPictures (paper and
 // ink) drawn under one transform, so the whole document is a handful of
 // nodes on one Canvas and ink stays sharp at any zoom.
-import { BlendMode, FilterMode, ImageFormat, MipmapMode, PaintStyle, Skia, type SkCanvas, type SkImage, type SkPaint, type SkParagraph, type SkPath, type SkPicture, StrokeCap, StrokeJoin } from '@shopify/react-native-skia';
+import { BlendMode, ClipOp, FilterMode, ImageFormat, MipmapMode, PaintStyle, Skia, type SkCanvas, type SkImage, type SkPaint, type SkParagraph, type SkPath, type SkPicture, StrokeCap, StrokeJoin } from '@shopify/react-native-skia';
 
 import { fsx } from './fsx';
 import { type Box, fin, textBox } from './geom';
@@ -281,6 +281,7 @@ export function inkPicture(noteId: string, page: Page, ex: Exclude, imgVer: numb
   if (hit && hit.key === key) return hit.pic;
   const rec = Skia.PictureRecorder();
   const c = rec.beginRecording(Skia.XYWHRect(-page.w, -page.h, page.w * 3, page.h * 3));
+  c.clipRect(Skia.XYWHRect(0, 0, page.w, page.h), ClipOp.Intersect, true);
   drawInk(c, noteId, page, ex, page.bg.kind === 'paper' && page.bg.color === 'dark', r);
   const pic = rec.finishRecordingAsPicture();
   inkCache.set(page, { key, pic });

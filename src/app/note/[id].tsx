@@ -2,7 +2,7 @@
 // the page (or two side by side), and everything else tucked into sheets.
 import * as DocumentPicker from 'expo-document-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,6 +28,7 @@ export default function Editor() {
 
   const [tool, setToolState] = useState<Tool>('pen');
   const [optsOpen, setOptsOpen] = useState(true);
+  const closeOpts = useCallback(() => setOptsOpen(false), []);
   const [split, setSplit] = useState<string | null>(splitParam ?? null);
   const [activePane, setActivePane] = useState<'a' | 'b'>('a');
   const [pagesOpen, setPagesOpen] = useState(false);
@@ -140,14 +141,14 @@ export default function Editor() {
         {pagesOpen && st?.doc ? <Guard label="The page list"><PagePanel doc={st.doc} current={st.page} api={api} /></Guard> : null}
         <View style={{ flex: 1, flexDirection: 'row' }}>
           <View style={{ flex: split ? undefined : 1, width: paneW }}>
-            <Guard key={'g' + id} label="This note"><NoteView key={id} noteId={id} tool={tool} active={activePane === 'a'} onActivate={() => setActivePane('a')} onState={setStA} onRequestTool={setToolState} handleRef={apiA}
+            <Guard key={'g' + id} label="This note"><NoteView key={id} noteId={id} tool={tool} active={activePane === 'a'} onActivate={() => setActivePane('a')} onState={setStA} onRequestTool={setToolState} handleRef={apiA} onInkStart={closeOpts}
               stamp={audio.stampFor(id)} replay={audioOpen ? audio.replayFor(id) : null} onSeek={seek} onPageBadge={() => setPagesOpen((v) => !v)} /></Guard>
           </View>
           {split ? (
             <>
               <View style={{ width: 1, backgroundColor: t.line }} />
               <View style={{ flex: 1 }}>
-                <Guard key={'g' + split} label="This note"><NoteView key={split} noteId={split} tool={tool} active={activePane === 'b'} onActivate={() => setActivePane('b')} onState={setStB} onRequestTool={setToolState} handleRef={apiB}
+                <Guard key={'g' + split} label="This note"><NoteView key={split} noteId={split} tool={tool} active={activePane === 'b'} onActivate={() => setActivePane('b')} onState={setStB} onRequestTool={setToolState} handleRef={apiB} onInkStart={closeOpts}
                   stamp={audio.stampFor(split)} replay={audioOpen ? audio.replayFor(split) : null} onSeek={seek} onPageBadge={() => setPagesOpen((v) => !v)} /></Guard>
                 <Pressable onPress={() => setSplit(null)} style={{ position: 'absolute', top: 8, right: 8, backgroundColor: t.elev, borderRadius: 14, paddingHorizontal: 12, height: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: t.line }}>
                   <Text style={{ color: t.sub, fontSize: 12, fontWeight: '600', maxWidth: 160 }} numberOfLines={1}>{lib.meta(split)?.title ?? 'Note'}</Text>
@@ -156,7 +157,7 @@ export default function Editor() {
               </View>
             </>
           ) : null}
-          {optsOpen && !drawing ? <ToolOptions tool={tool} onColors={() => setSheet('colors')} onPaste={() => api.current?.paste()} /> : null}
+          {optsOpen ? <ToolOptions tool={tool} onColors={() => setSheet('colors')} onPaste={() => api.current?.paste()} /> : null}
           {audioOpen ? <Guard label="Audio"><AudioBar audio={audio} noteId={activeId} doc={st?.doc ?? null} onStartRec={startRec} onStopRec={stopRec} onDelete={(rid) => setDelRec(rid)} /></Guard> : null}
         </View>
       </View>
@@ -181,6 +182,7 @@ export default function Editor() {
         <SectionTitle title="Writing" />
         <ToggleRow label="Draw with finger" hint="Off: only Apple Pencil writes, fingers scroll and zoom" value={!s.pencilOnly} onChange={(v) => set({ pencilOnly: !v, pencilSeen: true })} />
         <ToggleRow label="Pressure" hint="Lines get thicker the harder you press" value={s.pressure} onChange={(v) => set({ pressure: v })} />
+        <Text style={{ color: t.faint, fontSize: 12, marginTop: 4 }}>Ink engine 3</Text>
         <ChoiceRow label="Smoothing" value={s.smoothing < 0.25 ? 0.1 : s.smoothing < 0.6 ? 0.4 : 0.75} options={[[0.1, 'Low'], [0.4, 'Medium'], [0.75, 'High']]} onChange={(v) => set({ smoothing: v })} />
         <ToggleRow label="Hold to snap shapes" hint="Pause at the end of a line, circle or box" value={s.holdToShape} onChange={(v) => set({ holdToShape: v })} />
         <ToggleRow label="Straight highlighter" value={s.hlStraight} onChange={(v) => set({ hlStraight: v })} />

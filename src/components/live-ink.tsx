@@ -4,7 +4,7 @@
 // The outline is the same perfect-freehand shape the saved stroke uses (with
 // the open end still following the nib), plus a short predicted segment to
 // hide touch latency.
-import { BlendMode, Skia, type SkPath, type SkPicture } from '@shopify/react-native-skia';
+import { BlendMode, ClipOp, Skia, type SkPath, type SkPicture } from '@shopify/react-native-skia';
 
 import type { Pt } from '@/lib/geom';
 import { type InkKind, inkOutline, inkOutline2, outlineSvg } from '@/lib/ink';
@@ -27,6 +27,7 @@ export type LiveStroke = {
   raw?: Pt | null;          // the nib's latest unfiltered position (the line reaches it)
   frozen?: SkPath | null;   // finished chunks of a long stroke, never recomputed
   from?: number;            // pts index where the unfrozen tail starts
+  clip?: { w: number; h: number };   // the page: ink never shows past its edge
 };
 
 /** Appends an outline polygon to a path (smooth quadratic curves through the midpoints). */
@@ -85,6 +86,7 @@ export function liveFrame(l: LiveStroke): SkPicture {
   const c = rec.beginRecording(Skia.XYWHRect(-1e5, -1e5, 2e5, 2e5));
   c.translate(l.tf.tx, l.tf.ty);
   c.scale(l.tf.z, l.tf.z);
+  if (l.clip) c.clipRect(Skia.XYWHRect(0, 0, l.clip.w, l.clip.h), ClipOp.Intersect, true);
   let path: SkPath | null;
   if (l.v2) path = livePath2(l);
   else {
