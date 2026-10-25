@@ -27,7 +27,7 @@ import { imagePages, loadDoc, notePath, pdfKey, pdfPages, saveDoc, saveImage } f
 import { engine } from '@/lib/pdf-engine';
 import { useSettings, useTheme } from '@/lib/settings';
 import { BG_TIERS, bestBg, bgImages, HL_ALPHA, inkPicture, itemImages, livePath, paperPicture, renderPageImage, type Replay, selectionPicture, textBounds } from '@/lib/skia-render';
-import type { InkKind } from '@/lib/ink';
+import { filterPt, type InkKind, jitterK } from '@/lib/ink';
 import { emptyPicture, liveFrame, type LiveStroke } from './live-ink';
 import { useToast } from './ui';
 
@@ -67,6 +67,7 @@ type Drawer = {
   fp: number;
   pts: Pt[]; live: LiveStroke;
   lastRaw?: { x: number; y: number; t: number };
+  filt?: Pt;            // the jitter filter's current position
 };
 type Mode = 'idle' | 'pending' | 'draw' | 'nav' | 'ignore';
 
@@ -510,13 +511,18 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const q = toPage(dr.page, sx, sy);
     if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) return;
     const tSec = (Number.isFinite(ts) ? (ts as number) : Date.now()) / 1000;
-    // Raw positions: perfect-freehand's streamline does the smoothing, the same way live and saved.
     // Pressure is smoothed a little so a twitchy force reading never makes a blob.
     const raw = dr.pencil && SRef.current.pressure ? pressureFromForce(force) : 0.5;
     dr.fp = dr.pts.length ? dr.fp + (raw - dr.fp) * 0.35 : raw;
+    const z = dr.live.tf.z || 1;
+    // Positions go through the jitter filter (see ink.ts); the live line still reaches the raw nib.
+    const rp = { x: q.x, y: q.y, p: dr.fp };
+    const fpt = dr.live.v2 && !dr.snapped ? filterPt(dr.filt, rp, jitterK(SRef.current.smoothing, z)) : rp;
+    dr.filt = fpt;
+    dr.live.raw = dr.live.v2 ? rp : null;
     const lastP = dr.pts[dr.pts.length - 1];
-    if (lastP && Math.hypot(q.x - lastP.x, q.y - lastP.y) < 0.15) { lastP.p = Math.max(lastP.p, dr.fp); return; }
-    dr.pts.push({ x: q.x, y: q.y, p: dr.fp });
+    if (lastP && Math.hypot(fpt.x - lastP.x, fpt.y - lastP.y) < Math.min(0.3, 0.45 / z)) { lastP.p = Math.max(lastP.p, dr.fp); return; }
+    dr.pts.push(fpt);
     // Predict where the nib will be one frame from now and draw up to there:
     // hides most of the touch-to-screen delay. Replaced by real points next move.
     const lr = dr.lastRaw;
@@ -552,6 +558,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       dr.live.pts = shape.pts;
       dr.live.pred = null;
       dr.live.pressure = false;
+      dr.live.v2 = false; dr.live.frozen = null; dr.live.from = 0; dr.live.raw = null;
       try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
       drawLive(dr.live);
     }, HOLD_MS);
@@ -567,7 +574,10 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     if (dr.live.laser) { fadeLaser(dr.live, gen); return; }
     const t = toolRef.current;
     const hl = t === 'hl';
-    let pts = dr.pts;
+    let pts = dr.pts.slice();
+    // The filtered line trails the nib slightly: finish exactly where the pencil lifted.
+    const rw = dr.live.raw, lp = pts[pts.length - 1];
+    if (dr.live.v2 && !dr.snapped && rw && lp && Math.hypot(rw.x - lp.x, rw.y - lp.y) > 0.05) pts.push(rw);
     // Highlighter swipes that are nearly straight become perfectly straight.
     if (hl && SRef.current.hlStraight && !dr.snapped) {
       const shape = recognizeShape(pts);
@@ -580,6 +590,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       ...(dr.rt ? { rt: dr.rt } : {}),
       ...(!hl && SRef.current.penType && SRef.current.penType !== 'fountain' ? { pen: SRef.current.penType } : {}),
       sm: Math.round(SRef.current.smoothing * 100) / 100,
+      ...(dr.live.v2 && !dr.snapped ? { f: 1 as const } : {}),
     };
     if (st.pts.length < 3) { clearLive(0); force(); return; }
     setPage(dr.page, (p) => ({ ...p, strokes: [...p.strokes, st] }));
@@ -600,7 +611,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       const pts: Pt[] = [];
       const live: LiveStroke = {
         pts, base: hl ? S0.hlWidth : laser ? 3 : S0.penWidth, kind: kindFor(hl, laser), pressure: !laser && pressureFor(t.pencil), smoothing: S0.smoothing,
-        color: hl ? S0.hlColor : laser ? '#FF2D55' : S0.penColor, multiply: !dark, pred: null, laser,
+        color: hl ? S0.hlColor : laser ? '#FF2D55' : S0.penColor, multiply: !dark, pred: null, laser, v2: true,
         tf: { tx: v.tx + LRef.current.xs[page] * v.z, ty: v.ty + LRef.current.tops[page] * v.z, z: v.z },
       };
       const dr: Drawer = { touch: t.id, page, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false, fp: 0.5, pts, live };

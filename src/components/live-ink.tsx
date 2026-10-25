@@ -4,10 +4,10 @@
 // The outline is the same perfect-freehand shape the saved stroke uses (with
 // the open end still following the nib), plus a short predicted segment to
 // hide touch latency.
-import { BlendMode, Skia, type SkPicture } from '@shopify/react-native-skia';
+import { BlendMode, Skia, type SkPath, type SkPicture } from '@shopify/react-native-skia';
 
 import type { Pt } from '@/lib/geom';
-import { type InkKind, inkOutline, outlineSvg } from '@/lib/ink';
+import { type InkKind, inkOutline, inkOutline2, outlineSvg } from '@/lib/ink';
 import { HL_ALPHA, inkFill } from '@/lib/skia-render';
 
 export type LiveStroke = {
@@ -23,7 +23,55 @@ export type LiveStroke = {
   multiply: boolean;
   tf: { tx: number; ty: number; z: number };   // page -> screen
   pred: { x: number; y: number } | null;       // predicted nib position a frame ahead
+  v2?: boolean;             // clean-input ink (pts are filtered; see inkOutline2)
+  raw?: Pt | null;          // the nib's latest unfiltered position (the line reaches it)
+  frozen?: SkPath | null;   // finished chunks of a long stroke, never recomputed
+  from?: number;            // pts index where the unfrozen tail starts
 };
+
+/** Appends an outline polygon to a path (smooth quadratic curves through the midpoints). */
+export function addOutline(path: SkPath, poly: number[][]) {
+  const n = poly.length;
+  if (n < 3) return;
+  const mx = (i: number) => (poly[i][0] + poly[(i + 1) % n][0]) / 2, my = (i: number) => (poly[i][1] + poly[(i + 1) % n][1]) / 2;
+  path.moveTo(mx(n - 1), my(n - 1));
+  for (let i = 0; i < n; i++) path.quadTo(poly[i][0], poly[i][1], mx(i), my(i));
+  path.close();
+}
+
+// Once the tail is long, everything but its last couple of points is final:
+// turn it into a frozen chunk so each frame only redoes a short tail.
+const CHUNK = 36;
+function freezeChunks(l: LiveStroke) {
+  const from = l.from ?? 0, n = l.pts.length;
+  if (n - from < CHUNK) return;
+  const to = n - 2;
+  if (from === 0) {
+    // Let the start taper finish inside the first chunk.
+    let L = 0;
+    for (let i = 1; i <= to; i++) L += Math.hypot(l.pts[i].x - l.pts[i - 1].x, l.pts[i].y - l.pts[i - 1].y);
+    if (L < l.base * 12 + 6) return;
+  }
+  const poly = inkOutline2(l.pts, l.base, l.kind, l.pressure, { last: false, from, to, cutStart: from > 0, cutEnd: true });
+  if (!l.frozen) l.frozen = Skia.Path.Make();
+  addOutline(l.frozen, poly);
+  l.from = to;
+}
+
+function livePath2(l: LiveStroke): SkPath {
+  freezeChunks(l);
+  const from = l.from ?? 0;
+  // The tail (plus one point before it, so the curve bends the same way) up to the nib.
+  const s0 = Math.max(0, from - 1);
+  const tail = l.pts.slice(s0);
+  const end = tail[tail.length - 1];
+  if (l.raw && end && Math.hypot(l.raw.x - end.x, l.raw.y - end.y) > 0.02) tail.push(l.raw);
+  const nib = tail[tail.length - 1];
+  if (l.pred && nib) tail.push({ x: l.pred.x, y: l.pred.y, p: nib.p });
+  const path = l.frozen ? l.frozen.copy() : Skia.Path.Make();
+  addOutline(path, inkOutline2(tail, l.base, l.kind, l.pressure, { last: false, from: from - s0, cutStart: from > 0, cutEnd: true }));
+  return path;
+}
 
 let EMPTY: SkPicture | null = null;
 export function emptyPicture(): SkPicture {
@@ -37,11 +85,15 @@ export function liveFrame(l: LiveStroke): SkPicture {
   const c = rec.beginRecording(Skia.XYWHRect(-1e5, -1e5, 2e5, 2e5));
   c.translate(l.tf.tx, l.tf.ty);
   c.scale(l.tf.z, l.tf.z);
-  const last = l.pts[l.pts.length - 1];
-  const pts = l.pred && last ? [...l.pts, { x: l.pred.x, y: l.pred.y, p: last.p }] : l.pts;
-  let d = outlineSvg(inkOutline(pts, l.base, l.kind, l.pressure, { last: false, smoothing: l.smoothing }));
-  for (const part of l.extra ?? []) d += outlineSvg(inkOutline(part, l.base, l.kind, false, { last: true, smoothing: 0 }));
-  const path = d ? Skia.Path.MakeFromSVGString(d) : null;
+  let path: SkPath | null;
+  if (l.v2) path = livePath2(l);
+  else {
+    const last = l.pts[l.pts.length - 1];
+    const pts = l.pred && last ? [...l.pts, { x: l.pred.x, y: l.pred.y, p: last.p }] : l.pts;
+    let d = outlineSvg(inkOutline(pts, l.base, l.kind, l.pressure, { last: false, smoothing: l.smoothing }));
+    for (const part of l.extra ?? []) d += outlineSvg(inkOutline(part, l.base, l.kind, false, { last: true, smoothing: 0 }));
+    path = d ? Skia.Path.MakeFromSVGString(d) : null;
+  }
   if (path) {
     if (l.laser) {
       // A soft glow under a bright core.

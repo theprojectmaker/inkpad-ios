@@ -7,7 +7,7 @@
     "start": "expo start",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "tsx --test tests/ink.test.ts tests/pf.test.ts",
+    "test": "tsx --test tests/ink.test.ts tests/pf.test.ts tests/ink2.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

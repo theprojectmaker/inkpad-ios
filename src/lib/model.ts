@@ -17,6 +17,7 @@ export type Stroke = {
   rt?: [string, number]; // written during recording [recording id, ms into it] (for replay)
   sm?: number;          // smoothing it was drawn with (0..1)
   c0?: 1; c1?: 1;       // start / end were cut by the eraser (no taper there)
+  f?: 1;                // points are already filtered: drawn with the clean-input ink (inkOutline2)
 };
 
 export type TextItem = {
