@@ -16,7 +16,7 @@ EU?.setGlobalHandler?.((error, isFatal) => {
   if (!isFatal) { fallback?.(error, isFatal); return; }
   if (shown) return;
   shown = true;
-  try { Alert.alert('Inkpad hit an error', text.slice(0, 1500), [{ text: 'OK', onPress: () => { shown = false; } }]); }
+  try { Alert.alert('Quill hit an error', text.slice(0, 1500), [{ text: 'OK', onPress: () => { shown = false; } }]); }
   catch { fallback?.(error, isFatal); }
 });
 

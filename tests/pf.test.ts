@@ -5,16 +5,16 @@ import { inkOutline, outlineSvg, strokeSvg } from '../src/lib/ink';
 import { pack } from '../src/lib/geom';
 
 const line = (n: number, p = 0.5) => Array.from({ length: n }, (_, i) => ({ x: i * 2, y: Math.sin(i / 8) * 10, p }));
-const widthAt = (poly: number[][], x: number) => {
+const widthAt = (poly: number[][], x: number, tol = 1.5) => {
   // vertical extent of the outline near x
-  const ys = poly.filter((q) => Math.abs(q[0] - x) < 1.5).map((q) => q[1]);
+  const ys = poly.filter((q) => Math.abs(q[0] - x) < tol).map((q) => q[1]);
   return ys.length ? Math.max(...ys) - Math.min(...ys) : 0;
 };
 
 test('outlines are finite, closed and single-path', () => {
-  for (const style of ['fountain', 'ball', 'finger', 'hl'] as const) {
+  for (const style of ['fountain', 'ball', 'brush', 'marker', 'pencil', 'fine', 'hl'] as const) for (const pressure of [true, false]) {
     for (const pts of [line(1), line(2), line(80), [{ x: 0, y: 0, p: NaN }, { x: 5, y: 5, p: 2 }, { x: 10, y: 0, p: -1 }]]) {
-      const d = outlineSvg(inkOutline(pts, 2, style, { last: true }));
+      const d = outlineSvg(inkOutline(pts, 2, style, pressure, { last: true }));
       assert.ok(d.startsWith('M') && d.endsWith('Z'), style);
       assert.ok(!/NaN|Infinity/.test(d));
       assert.equal((d.match(/M/g) || []).length, 1, 'one contour');
@@ -24,8 +24,8 @@ test('outlines are finite, closed and single-path', () => {
 
 test('fountain ends taper; eraser-cut ends stay full width', () => {
   const pts = Array.from({ length: 60 }, (_, i) => ({ x: i * 2, y: 0, p: 0.5 }));
-  const tapered = inkOutline(pts, 3, 'fountain', { last: true });
-  const cut = inkOutline(pts, 3, 'fountain', { last: true, cutStart: true, cutEnd: true });
+  const tapered = inkOutline(pts, 3, 'fountain', true, { last: true });
+  const cut = inkOutline(pts, 3, 'fountain', true, { last: true, cutStart: true, cutEnd: true });
   assert.ok(widthAt(tapered, 0) < widthAt(tapered, 60) * 0.3, 'start tapers to a point');
   assert.ok(widthAt(cut, 0) > widthAt(tapered, 60) * 0.8, 'cut start stays full width');
   const w = widthAt(tapered, 60);
@@ -34,7 +34,7 @@ test('fountain ends taper; eraser-cut ends stay full width', () => {
 
 test('ballpoint is nearly even even with jumpy pressure', () => {
   const pts = Array.from({ length: 80 }, (_, i) => ({ x: i * 2, y: 0, p: i % 2 ? 0.9 : 0.1 }));
-  const poly = inkOutline(pts, 2, 'ball', { last: true });
+  const poly = inkOutline(pts, 2, 'ball', true, { last: true });
   const ws = [30, 60, 90, 120].map((x) => widthAt(poly, x));
   assert.ok(Math.max(...ws) - Math.min(...ws) < 0.8, ws.join());
 });
@@ -42,4 +42,13 @@ test('ballpoint is nearly even even with jumpy pressure', () => {
 test('saved stroke svg uses stored flags', () => {
   const s = { id: 's', kind: 'pen' as const, color: '#000', w: 2, pts: pack(line(40)), pr: 1 as const, c0: 1 as const };
   assert.ok(strokeSvg(s).length > 100);
+});
+
+test('every pen style draws at a sensible width', () => {
+  const pts = Array.from({ length: 60 }, (_, i) => ({ x: i * 2, y: 0, p: 0.5 }));
+  for (const kind of ['fountain', 'ball', 'brush', 'marker', 'pencil', 'fine'] as const) {
+    const poly = inkOutline(pts, 4, kind, true, { last: true });
+    const w = widthAt(poly, 60, 12);
+    assert.ok(w > 4 * 0.6 && w < 4 * 2.6, kind + ' width ' + w);
+  }
 });

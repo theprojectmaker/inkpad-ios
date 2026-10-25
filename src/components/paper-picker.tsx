@@ -2,7 +2,7 @@
 import { Canvas, Group, Picture } from '@shopify/react-native-skia';
 import { Pressable, Text, View } from 'react-native';
 
-import { LETTER, type PaperColor, type PaperStyle, paperPage } from '@/lib/model';
+import { LETTER, PAGE_SIZES, type PageSizeId, type PaperColor, type PaperStyle, paperPage } from '@/lib/model';
 import { PAPER_STYLES, PAPERS } from '@/lib/paper';
 import { useTheme } from '@/lib/settings';
 import { paperPicture } from '@/lib/skia-render';
@@ -19,10 +19,26 @@ function Mini({ style, color }: { style: PaperStyle; color: PaperColor }) {
   );
 }
 
-export function PaperPicker({ style, color, onChange }: { style: PaperStyle; color: PaperColor; onChange: (s: PaperStyle, c: PaperColor) => void }) {
+export function PaperPicker({ style, color, onChange, size, onSize }: {
+  style: PaperStyle; color: PaperColor; onChange: (s: PaperStyle, c: PaperColor) => void;
+  size?: PageSizeId; onSize?: (s: PageSizeId) => void;
+}) {
   const t = useTheme();
   return (
     <View style={{ gap: 14 }}>
+      {onSize ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {PAGE_SIZES.map((p) => {
+            const on = (size ?? 'letter') === p.id;
+            return (
+              <Pressable key={p.id} onPress={() => onSize(p.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: on ? t.accent : t.chip }}>
+                <View style={{ width: (p.w / p.h) * 16, height: 16, borderRadius: 2, borderWidth: 1.5, borderColor: on ? '#fff' : t.sub }} />
+                <Text style={{ color: on ? '#fff' : t.text, fontSize: 14, fontWeight: '600' }}>{p.name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
         {PAPER_STYLES.map((p) => (
           <Pressable key={p.id} onPress={() => onChange(p.id, color)} style={{ alignItems: 'center', gap: 5 }}>

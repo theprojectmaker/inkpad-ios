@@ -1,4 +1,4 @@
-// "Share to Inkpad": files shared from Mail, Files, Photos, Safari... arrive
+// "Share to Quill": files shared from Mail, Files, Photos, Safari... arrive
 // through the iOS share extension that expo-share-intent adds at build time.
 // The native module only exists in a build made after it was added, so it is
 // loaded defensively: in an older build, Expo Go or on web this simply reports

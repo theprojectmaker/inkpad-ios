@@ -1,4 +1,4 @@
-// Files shared to Inkpad from other apps (Files, Mail, Safari, Photos...)
+// Files shared to Quill from other apps (Files, Mail, Safari, Photos...)
 // become a new note straight away: a PDF keeps its pages, photos become pages.
 // Mounted once for the whole app; renders nothing.
 import { router } from 'expo-router';

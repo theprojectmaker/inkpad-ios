@@ -2,6 +2,7 @@
 // saved as one file per note. Page coordinates are PDF points (1/72 inch),
 // so ink lines up 1:1 with the PDF page when it is exported.
 
+export type PenType = 'fountain' | 'ball' | 'brush' | 'marker' | 'pencil' | 'fine';
 export type PaperStyle = 'blank' | 'lined' | 'narrow' | 'grid' | 'dotted' | 'cornell' | 'todo';
 export type PaperColor = 'white' | 'ivory' | 'yellow' | 'gray' | 'blue' | 'dark';
 
@@ -12,7 +13,7 @@ export type Stroke = {
   w: number;            // base width in points
   pts: number[];        // flat [x, y, pressure, x, y, pressure, ...]
   pr?: 1;               // 1 = pressure values are real (Apple Pencil)
-  pen?: 'ball';         // ballpoint (default is the fountain pen)
+  pen?: PenType;        // pen style (missing = fountain)
   rt?: [string, number]; // written during recording [recording id, ms into it] (for replay)
   sm?: number;          // smoothing it was drawn with (0..1)
   c0?: 1; c1?: 1;       // start / end were cut by the eraser (no taper there)
@@ -51,7 +52,7 @@ export type Recording = { id: string; file: string; dur: number; created: number
 export type NoteDoc = {
   v: 1;
   id: string;
-  paper: { style: PaperStyle; color: PaperColor };
+  paper: { style: PaperStyle; color: PaperColor; size?: PageSizeId };
   pages: Page[];
   recordings?: Recording[];
 };
@@ -80,6 +81,15 @@ export type Library = { v: 1; folders: Folder[]; notes: NoteMeta[] };
 
 export const LETTER = { w: 612, h: 792 };
 
+export type PageSizeId = 'letter' | 'a4' | 'landscape' | 'tall';
+export const PAGE_SIZES: { id: PageSizeId; name: string; w: number; h: number }[] = [
+  { id: 'letter', name: 'Letter', w: 612, h: 792 },
+  { id: 'a4', name: 'A4', w: 595, h: 842 },
+  { id: 'landscape', name: 'Landscape', w: 792, h: 612 },
+  { id: 'tall', name: 'Tall', w: 612, h: 1584 },   // two pages long, for long notes
+];
+export const pageSizeOf = (id?: PageSizeId) => PAGE_SIZES.find((p) => p.id === id) ?? PAGE_SIZES[0];
+
 let counter = 0;
 export function uid(prefix = ''): string {
   counter = (counter + 1) % 1296;
@@ -90,16 +100,19 @@ export function paperPage(style: PaperStyle, color: PaperColor, size = LETTER): 
   return { id: uid('p'), w: size.w, h: size.h, bg: { kind: 'paper', style, color }, strokes: [], texts: [], images: [] };
 }
 
-export function emptyNote(id: string, style: PaperStyle, color: PaperColor): NoteDoc {
-  return { v: 1, id, paper: { style, color }, pages: [paperPage(style, color)] };
+export function emptyNote(id: string, style: PaperStyle, color: PaperColor, size?: PageSizeId): NoteDoc {
+  const sz = pageSizeOf(size);
+  return { v: 1, id, paper: { style, color, size }, pages: [paperPage(style, color, { w: sz.w, h: sz.h })] };
 }
 
 export const FOLDER_COLORS = ['#E5484D', '#F76B15', '#FFC53D', '#30A46C', '#12A594', '#0090FF', '#6E56CF', '#D6409F', '#8D8D86'];
 
 export const INK_COLORS = ['#111111', '#5A5F6B', '#1E5EFF', '#0AA35B', '#E5322D', '#F28C18', '#8E44EC', '#E0408A', '#0BB5C9', '#FFFFFF'];
 export const HL_COLORS = ['#FFE14D', '#7CF27C', '#6FD3FF', '#FF8FD0', '#FFB45C', '#B9A1FF'];
-export const PEN_WIDTHS = [0.9, 1.4, 2.1, 3.2];
-export const HL_WIDTHS = [10, 16, 24];
+export const PEN_WIDTHS = [1, 1.8, 2.8, 4.2, 6.5];
+export const PEN_RANGE = [0.5, 24] as const;     // the size slider
+export const HL_WIDTHS = [12, 20, 32];
+export const HL_RANGE = [6, 64] as const;
 export const ERASER_SIZES = [6, 14, 30];
 export const TEXT_SIZES = [14, 18, 24, 32];
 export const STICKERS = ['⭐', '✅', '❗', '❓', '💡', '📌', '🔥', '❤️', '👍', '🎯', '📝', '📅', '⚠️', '✏️', '🧠', '🚀', '😀', '🎉'];

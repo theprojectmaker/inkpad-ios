@@ -12,7 +12,7 @@ import { NoteView, type NoteViewHandle, type NoteViewState, type Tool } from '@/
 import { PagePanel } from '@/components/page-panel';
 import { PaperPicker } from '@/components/paper-picker';
 import { ToolOptions, TopBar } from '@/components/toolbar';
-import { ActionRow, ChoiceRow, ConfirmSheet, Icon, MenuSheet, PromptSheet, SectionTitle, Sheet, ToggleRow, useToast } from '@/components/ui';
+import { ActionRow, ChoiceRow, ConfirmSheet, Guard, Icon, MenuSheet, PromptSheet, SectionTitle, Sheet, ToggleRow, useToast } from '@/components/ui';
 import { useLibrary } from '@/lib/library';
 import { STICKERS } from '@/lib/model';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -137,19 +137,19 @@ export default function Editor() {
       ) : null}
 
       <View style={{ flex: 1, flexDirection: 'row' }}>
-        {pagesOpen && st?.doc ? <PagePanel doc={st.doc} current={st.page} api={api} /> : null}
+        {pagesOpen && st?.doc ? <Guard label="The page list"><PagePanel doc={st.doc} current={st.page} api={api} /></Guard> : null}
         <View style={{ flex: 1, flexDirection: 'row' }}>
           <View style={{ flex: split ? undefined : 1, width: paneW }}>
-            <NoteView key={id} noteId={id} tool={tool} active={activePane === 'a'} onActivate={() => setActivePane('a')} onState={setStA} onRequestTool={setToolState} handleRef={apiA}
-              stamp={audio.stampFor(id)} replay={audioOpen ? audio.replayFor(id) : null} onSeek={seek} onPageBadge={() => setPagesOpen((v) => !v)} />
+            <Guard key={'g' + id} label="This note"><NoteView key={id} noteId={id} tool={tool} active={activePane === 'a'} onActivate={() => setActivePane('a')} onState={setStA} onRequestTool={setToolState} handleRef={apiA}
+              stamp={audio.stampFor(id)} replay={audioOpen ? audio.replayFor(id) : null} onSeek={seek} onPageBadge={() => setPagesOpen((v) => !v)} /></Guard>
           </View>
           {split ? (
             <>
               <View style={{ width: 1, backgroundColor: t.line }} />
               <View style={{ flex: 1 }}>
-                <NoteView key={split} noteId={split} tool={tool} active={activePane === 'b'} onActivate={() => setActivePane('b')} onState={setStB} onRequestTool={setToolState} handleRef={apiB}
-                  stamp={audio.stampFor(split)} replay={audioOpen ? audio.replayFor(split) : null} onSeek={seek} onPageBadge={() => setPagesOpen((v) => !v)} />
-                <Pressable onPress={() => setSplit(null)} style={{ position: 'absolute', bottom: 12, left: 12, backgroundColor: t.elev, borderRadius: 14, paddingHorizontal: 12, height: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: t.line }}>
+                <Guard key={'g' + split} label="This note"><NoteView key={split} noteId={split} tool={tool} active={activePane === 'b'} onActivate={() => setActivePane('b')} onState={setStB} onRequestTool={setToolState} handleRef={apiB}
+                  stamp={audio.stampFor(split)} replay={audioOpen ? audio.replayFor(split) : null} onSeek={seek} onPageBadge={() => setPagesOpen((v) => !v)} /></Guard>
+                <Pressable onPress={() => setSplit(null)} style={{ position: 'absolute', top: 8, right: 8, backgroundColor: t.elev, borderRadius: 14, paddingHorizontal: 12, height: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: t.line }}>
                   <Text style={{ color: t.sub, fontSize: 12, fontWeight: '600', maxWidth: 160 }} numberOfLines={1}>{lib.meta(split)?.title ?? 'Note'}</Text>
                   <Icon name="xmark" size={10} color={t.faint} />
                 </Pressable>
@@ -157,7 +157,7 @@ export default function Editor() {
             </>
           ) : null}
           {optsOpen && !drawing ? <ToolOptions tool={tool} onColors={() => setSheet('colors')} onPaste={() => api.current?.paste()} /> : null}
-          {audioOpen ? <AudioBar audio={audio} noteId={activeId} doc={st?.doc ?? null} onStartRec={startRec} onStopRec={stopRec} onDelete={(rid) => setDelRec(rid)} /> : null}
+          {audioOpen ? <Guard label="Audio"><AudioBar audio={audio} noteId={activeId} doc={st?.doc ?? null} onStartRec={startRec} onStopRec={stopRec} onDelete={(rid) => setDelRec(rid)} /></Guard> : null}
         </View>
       </View>
 
@@ -199,8 +199,9 @@ export default function Editor() {
       </Sheet>
 
       <Sheet visible={sheet === 'paper'} onClose={() => setSheet(null)} title="Paper" width={480}>
-        {st?.doc ? <PaperPicker style={st.doc.paper.style} color={st.doc.paper.color} onChange={(style, color) => api.current?.setPaper({ kind: 'paper', style, color })} /> : null}
-        <Text style={{ color: t.faint, fontSize: 13, marginTop: 12 }}>Changes every paper page in this note. PDF and photo pages stay as they are.</Text>
+        {st?.doc ? <PaperPicker style={st.doc.paper.style} color={st.doc.paper.color} onChange={(style, color) => api.current?.setPaper({ kind: 'paper', style, color })}
+          size={st.doc.paper.size} onSize={(size) => api.current?.setPageSize(size)} /> : null}
+        <Text style={{ color: t.faint, fontSize: 13, marginTop: 12 }}>Style and colour change every paper page in this note. The size is used for new pages.</Text>
       </Sheet>
 
       <Sheet visible={sheet === 'split'} onClose={() => setSheet(null)} title="Open beside this note" width={440}>

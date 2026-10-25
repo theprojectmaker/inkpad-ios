@@ -80,7 +80,7 @@ export function polyLen(pts: { x: number; y: number }[]) {
   return L;
 }
 
-export const inkMode = (s: { kind: 'pen' | 'hl'; pr?: 1; pen?: 'ball' }): InkMode =>
+export const inkMode = (s: { kind: 'pen' | 'hl'; pr?: 1; pen?: string }): InkMode =>
   s.kind === 'hl' ? 'even' : s.pen === 'ball' ? 'ball' : s.pr ? 'fountain' : 'finger';
 
 /** Builds a stroke's samples as points arrive. */

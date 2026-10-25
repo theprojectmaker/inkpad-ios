@@ -12,7 +12,7 @@ import { Button, ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, Sheet, 
 import { exportNotePdf, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
-import { FOLDER_COLORS, type NoteMeta, type PaperColor, type PaperStyle, uid } from '@/lib/model';
+import { FOLDER_COLORS, type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, loadDoc, notePath, pdfPages } from '@/lib/noteio';
 import { paperOf } from '@/lib/paper';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
@@ -42,7 +42,7 @@ export default function LibraryScreen() {
   const [sheet, setSheet] = useState<null | 'new' | 'paper' | 'sort' | 'note' | 'move' | 'rename' | 'delete' | 'folder' | 'newFolder' | 'renameFolder' | 'deleteFolder' | 'settings'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
-  const [paper, setPaper] = useState<{ style: PaperStyle; color: PaperColor }>({ style: 'lined', color: 'white' });
+  const [paper, setPaper] = useState<{ style: PaperStyle; color: PaperColor; size?: PageSizeId }>({ style: 'lined', color: 'white', size: 'letter' });
 
   const wide = width >= 760;
   const sideW = wide ? 250 : 0;
@@ -152,7 +152,7 @@ export default function LibraryScreen() {
   const Side = (
     <View style={{ width: sideW, backgroundColor: t.side, borderRightWidth: 1, borderRightColor: t.line, paddingTop: ins.top + 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 44 }}>
-        <Text style={{ flex: 1, color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>Inkpad</Text>
+        <Text style={{ flex: 1, color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 }}>Quill</Text>
         <IconButton name="gearshape" label="Settings" onPress={() => setSheet('settings')} />
       </View>
       <ScrollView contentContainerStyle={{ padding: 10, gap: 2 }}>
@@ -226,7 +226,7 @@ export default function LibraryScreen() {
       {wide ? Side : null}
       <View style={{ flex: 1, paddingTop: ins.top + 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 8, height: 50 }}>
-          {!wide ? <Text style={{ color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.5, marginRight: 4 }}>Inkpad</Text> : null}
+          {!wide ? <Text style={{ color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.5, marginRight: 4 }}>Quill</Text> : null}
           <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: wide ? 28 : 18, fontWeight: '800', letterSpacing: -0.5 }}>{wide ? title : ''}</Text>
           <IconButton name="arrow.up.arrow.down" label="Sort" onPress={() => setSheet('sort')} />
           <IconButton name={s.view === 'grid' ? 'list.bullet' : 'square.grid.2x2'} label={s.view === 'grid' ? 'List view' : 'Grid view'} onPress={() => set({ view: s.view === 'grid' ? 'list' : 'grid' })} />
@@ -279,7 +279,7 @@ export default function LibraryScreen() {
         { label: 'New subject', icon: 'folder.badge.plus', onPress: () => setSheet('newFolder') },
       ]} />
       <Sheet visible={sheet === 'paper'} onClose={() => setSheet(null)} title="New note" width={460}>
-        <PaperPicker style={paper.style} color={paper.color} onChange={(style, color) => setPaper({ style, color })} />
+        <PaperPicker style={paper.style} color={paper.color} onChange={(style, color) => setPaper({ ...paper, style, color })} size={paper.size} onSize={(size) => setPaper({ ...paper, size })} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 }}>
           <Button title="PDF" icon="doc" onPress={importPdf} />
           <Button title="Photos" icon="photo" onPress={importPhotos} />

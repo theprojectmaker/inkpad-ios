@@ -3,6 +3,9 @@ import { clamp } from './geom';
 import type { Page } from './model';
 
 export const GAP = 24;
+/** Zoom limits, relative to "page fits the width". */
+export const MIN_ZOOM = 0.4;
+export const MAX_ZOOM = 10;
 export const TOP = 20;
 
 export type DocLayout = { tops: number[]; xs: number[]; w: number; h: number };
@@ -21,7 +24,7 @@ export const fitZoom = (L: DocLayout, W: number) => clamp((W - 40) / L.w, 0.15, 
 
 export function clampView(v: View, L: DocLayout, W: number, H: number): View {
   const z0 = fitZoom(L, W);
-  const z = clamp(v.z, z0 * 0.45, z0 * 6);
+  const z = clamp(v.z, z0 * MIN_ZOOM, z0 * MAX_ZOOM);
   const cw = L.w * z, ch = L.h * z;
   const tx = cw <= W - 24 ? (W - cw) / 2 : clamp(v.tx, W - cw - 24, 24);
   const ty = ch + TOP * 2 <= H ? TOP : clamp(v.ty, H - ch - 120, TOP);
@@ -32,7 +35,7 @@ export function clampView(v: View, L: DocLayout, W: number, H: number): View {
 // back on release, instead of stopping dead.
 const rubber = (v: number, lo: number, hi: number, k = 0.32) => (v < lo ? lo - (lo - v) * k : v > hi ? hi + (v - hi) * k : v);
 export function softClampView(v: View, L: DocLayout, W: number, H: number): View {
-  const z0 = fitZoom(L, W), zmin = z0 * 0.45, zmax = z0 * 6;
+  const z0 = fitZoom(L, W), zmin = z0 * MIN_ZOOM, zmax = z0 * MAX_ZOOM;
   const z = v.z < zmin ? zmin * Math.pow(v.z / zmin, 0.3) : v.z > zmax ? zmax * Math.pow(v.z / zmax, 0.3) : v.z;
   const cw = L.w * z, ch = L.h * z;
   const [xl, xh] = cw <= W - 24 ? [(W - cw) / 2, (W - cw) / 2] : [W - cw - 24, 24];

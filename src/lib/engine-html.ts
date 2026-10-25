@@ -111,7 +111,7 @@ NE.exportPdf = async (req, specId) => {
     const spec = JSON.parse(strs[specId]); delete strs[specId];
     const L = PDFLib;
     const out = await L.PDFDocument.create();
-    out.setTitle(spec.title || 'Note'); out.setCreator('Inkpad'); out.setProducer('Inkpad');
+    out.setTitle(spec.title || 'Note'); out.setCreator('Quill'); out.setProducer('Quill');
     const srcs = {}, imgs = {};
     const embed = async (id) => {
       if (imgs[id]) return imgs[id];

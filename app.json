@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Inkpad",
+    "name": "Quill",
     "slug": "inkpad",
     "version": "1.0.0",
     "orientation": "default",
@@ -12,7 +12,7 @@
       "requireFullScreen": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "CFBundleDisplayName": "Inkpad"
+        "CFBundleDisplayName": "Quill"
       }
     },
     "web": {
@@ -23,14 +23,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Inkpad opens the photos you pick so you can add them to a note.",
+          "photosPermission": "Quill opens the photos you pick so you can add them to a note.",
           "cameraPermission": false
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "Inkpad uses the microphone only while you tap Record, to save audio with your notes."
+          "microphonePermission": "Quill uses the microphone only while you tap Record, to save audio with your notes."
         }
       ],
       [
@@ -55,13 +55,13 @@
         "./plugins/with-share-display-name",
         {
           "target": "InkpadShare",
-          "displayName": "Inkpad"
+          "displayName": "Quill"
         }
       ],
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F6F5F2",
+          "backgroundColor": "#1B2A6B",
           "image": "./assets/icon.png",
           "imageWidth": 120
         }

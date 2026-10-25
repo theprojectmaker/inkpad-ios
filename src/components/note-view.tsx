@@ -20,18 +20,18 @@ import {
   type Box, clamp, pressureFromForce, eraseSplit, unpack, fin, imageBox, inBox, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
   strokeHitSwept, strokeInLasso, unionBox, xfImage, xfStroke, xfText, type Xf,
 } from '@/lib/geom';
-import { clampView, fitZoom, GAP, layoutDoc, pageAt, softClampView, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
+import { clampView, fitZoom, GAP, layoutDoc, MAX_ZOOM, MIN_ZOOM, pageAt, softClampView, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
 import { useLibrary } from '@/lib/library';
-import { docText, type ImageItem, type NoteDoc, type Page, paperPage, type Recording, type Stroke, type TextItem, uid } from '@/lib/model';
+import { docText, LETTER, pageSizeOf, type PageSizeId, type ImageItem, type NoteDoc, type Page, paperPage, type Recording, type Stroke, type TextItem, uid } from '@/lib/model';
 import { imagePages, loadDoc, notePath, pdfKey, pdfPages, saveDoc, saveImage } from '@/lib/noteio';
 import { engine } from '@/lib/pdf-engine';
 import { useSettings, useTheme } from '@/lib/settings';
 import { BG_TIERS, bestBg, bgImages, HL_ALPHA, inkPicture, itemImages, livePath, paperPicture, renderPageImage, type Replay, selectionPicture, textBounds } from '@/lib/skia-render';
-import { type InkStyle } from '@/lib/ink';
+import type { InkKind } from '@/lib/ink';
 import { emptyPicture, liveFrame, type LiveStroke } from './live-ink';
 import { useToast } from './ui';
 
-export type Tool = 'pen' | 'hl' | 'eraser' | 'lasso' | 'text' | 'hand';
+export type Tool = 'pen' | 'hl' | 'eraser' | 'lasso' | 'text' | 'hand' | 'laser';
 
 export type NoteViewHandle = {
   undo: () => void;
@@ -49,6 +49,7 @@ export type NoteViewHandle = {
   exportPdf: () => Promise<void>;
   flush: () => Promise<void>;
   setPaper: (style: Page['bg'] & { kind: 'paper' }) => void;
+  setPageSize: (size: PageSizeId) => void;
   addRecording: (r: Recording) => void;
   removeRecording: (id: string) => void;
 };
@@ -464,8 +465,23 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   const liveGen = useRef(0);
   const drawLive = (l: LiveStroke | null) => { livePic.value = l ? liveFrame(l) : emptyPicture(); };
 
-  const styleFor = (pencil: boolean, hl: boolean, snapped = false): InkStyle =>
-    hl ? 'hl' : SRef.current.penType === 'ball' ? 'ball' : pencil && SRef.current.pressure && !snapped ? 'fountain' : 'finger';
+  const kindFor = (hl: boolean, laser: boolean): InkKind => (hl ? 'hl' : laser ? 'fine' : SRef.current.penType ?? 'fountain');
+  const pressureFor = (pencil: boolean, snapped = false) => pencil && SRef.current.pressure && !snapped;
+
+  // The laser pointer glows while you draw, then fades away; nothing is saved.
+  const fadeLaser = (l: LiveStroke, gen: number) => {
+    const t0 = Date.now(), hold = 700, dur = 450;
+    const step = () => {
+      if (liveGen.current !== gen) return;
+      const k = Date.now() - t0;
+      if (k < hold) { requestAnimationFrame(step); return; }
+      const f = 1 - Math.min(1, (k - hold) / dur);
+      l.fade = f;
+      drawLive(f > 0 ? l : null);
+      if (f > 0) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
 
   const addPoint = (dr: Drawer, sx: number, sy: number, force: number, ts?: number) => {
     const q = toPage(dr.page, sx, sy);
@@ -497,7 +513,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
 
   // The pencil was recognised late: redo the stroke with pressure.
   const rebuildInk = (dr: Drawer) => {
-    dr.live.style = styleFor(dr.pencil, toolRef.current === 'hl');
+    dr.live.pressure = pressureFor(dr.pencil);
   };
 
   const armHold = (dr: Drawer) => {
@@ -512,7 +528,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       dr.pts = shape.pts;
       dr.live.pts = shape.pts;
       dr.live.pred = null;
-      dr.live.style = styleFor(dr.pencil, toolRef.current === 'hl', true);
+      dr.live.pressure = false;
       try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
       drawLive(dr.live);
     }, HOLD_MS);
@@ -525,6 +541,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     // Keep the live stroke up until the saved one has drawn, so nothing flickers.
     const clearLive = (ms: number) => setTimeout(() => { if (liveGen.current === gen) drawLive(null); }, ms);
     if (cancel || !dr.pts.length) { clearLive(0); force(); return; }
+    if (dr.live.laser) { fadeLaser(dr.live, gen); return; }
     const t = toolRef.current;
     const hl = t === 'hl';
     let pts = dr.pts;
@@ -538,7 +555,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       w: hl ? SRef.current.hlWidth : SRef.current.penWidth, pts: pack(pts),
       ...(dr.pencil && SRef.current.pressure && !hl && !dr.snapped ? { pr: 1 as const } : {}),
       ...(dr.rt ? { rt: dr.rt } : {}),
-      ...(!hl && SRef.current.penType === 'ball' ? { pen: 'ball' as const } : {}),
+      ...(!hl && SRef.current.penType && SRef.current.penType !== 'fountain' ? { pen: SRef.current.penType } : {}),
       sm: Math.round(SRef.current.smoothing * 100) / 100,
     };
     if (st.pts.length < 3) { clearLive(0); force(); return; }
@@ -551,16 +568,16 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const tl = toolRef.current;
     const page = pageUnder(t.sx, t.sy);
     if (page < 0) return;
-    if (tl === 'pen' || tl === 'hl') {
-      const hl = tl === 'hl';
+    if (tl === 'pen' || tl === 'hl' || tl === 'laser') {
+      const hl = tl === 'hl', laser = tl === 'laser';
       const S0 = SRef.current;
       const v = viewRef.current;
       const pg = docRef.current!.pages[page];
       const dark = pg.bg.kind === 'paper' && pg.bg.color === 'dark';
       const pts: Pt[] = [];
       const live: LiveStroke = {
-        pts, base: hl ? S0.hlWidth : S0.penWidth, style: styleFor(t.pencil, hl), smoothing: S0.smoothing,
-        color: hl ? S0.hlColor : S0.penColor, multiply: !dark, pred: null,
+        pts, base: hl ? S0.hlWidth : laser ? 3 : S0.penWidth, kind: kindFor(hl, laser), pressure: !laser && pressureFor(t.pencil), smoothing: S0.smoothing,
+        color: hl ? S0.hlColor : laser ? '#FF2D55' : S0.penColor, multiply: !dark, pred: null, laser,
         tf: { tx: v.tx + LRef.current.xs[page] * v.z, ty: v.ty + LRef.current.tops[page] * v.z, z: v.z },
       };
       const dr: Drawer = { touch: t.id, page, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false, fp: 0.5, pts, live };
@@ -715,6 +732,44 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   };
 
   // ----- navigation -----
+  const animateView = (to: ViewT, dur = 240) => {
+    stopMomentumOnly();
+    const from = viewRef.current;
+    const end = clampView(to, LRef.current, sizeRef.current.w, sizeRef.current.h);
+    const t0 = Date.now();
+    const step = () => {
+      const k = Math.min(1, (Date.now() - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      const v = { z: from.z + (end.z - from.z) * e, tx: from.tx + (end.tx - from.tx) * e, ty: from.ty + (end.ty - from.ty) * e };
+      if (k < 1) { setView(v, false, true); momentum.current = requestAnimationFrame(step); }
+      else { momentum.current = null; setView(end, true); }
+    };
+    momentum.current = requestAnimationFrame(step);
+  };
+  // Zoom by a factor around a screen point (keeps that point still).
+  const zoomAround = (factor: number, cx = sizeRef.current.w / 2, cy = sizeRef.current.h / 2, absolute?: number) => {
+    const v = viewRef.current;
+    const z0 = fitZoom(LRef.current, sizeRef.current.w);
+    const z = clamp(absolute ?? v.z * factor, z0 * MIN_ZOOM, z0 * MAX_ZOOM);
+    const dx = (cx - v.tx) / v.z, dy = (cy - v.ty) / v.z;
+    animateView({ z, tx: cx - dx * z, ty: cy - dy * z });
+  };
+  const fitWidth = () => {
+    const z0 = fitZoom(LRef.current, sizeRef.current.w);
+    const v = viewRef.current, cy = sizeRef.current.h / 2;
+    const dy = (cy - v.ty) / v.z;
+    animateView({ z: z0, tx: (sizeRef.current.w - LRef.current.w * z0) / 2, ty: cy - dy * z0 });
+  };
+  const stopMomentumOnly = () => { if (momentum.current != null) { cancelAnimationFrame(momentum.current); momentum.current = null; } };
+  const lastTap = useRef<{ t: number; x: number; y: number } | null>(null);
+  // Little label in the middle of the screen ("Undo", "Redo"...).
+  const [hud, setHud] = useState<{ text: string; n: number } | null>(null);
+  const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showHud = (text: string) => {
+    if (hudTimer.current) clearTimeout(hudTimer.current);
+    setHud((h) => ({ text, n: (h?.n ?? 0) + 1 }));
+    hudTimer.current = setTimeout(() => setHud(null), 900);
+  };
+
   const stopMomentum = () => { if (momentum.current != null) { cancelAnimationFrame(momentum.current); momentum.current = null; setView(viewRef.current, true); } };
 
   const navBegin = () => {
@@ -752,8 +807,22 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const now = Date.now();
     // Multi-finger tap: 2 = undo, 3 = redo.
     if (nv.maxN >= 2 && now - nv.t0 < 300 && nv.moved < 10) {
-      if (nv.maxN === 2) doUndo(); else doRedo();
+      if (nv.maxN === 2) { const ok = undoRef.current.length > 0; doUndo(); showHud(ok ? 'Undo' : 'Nothing to undo'); }
+      else { const ok = redoRef.current.length > 0; doRedo(); showHud(ok ? 'Redo' : 'Nothing to redo'); }
+      try { Haptics.selectionAsync(); } catch {}
       return;
+    }
+    // One-finger double-tap (when fingers scroll): zoom in there, or back to fit.
+    if (nv.maxN === 1 && now - nv.t0 < 250 && nv.moved < 8) {
+      const tp = { t: now, x: nv.cx, y: nv.cy };
+      const lt = lastTap.current;
+      if (lt && now - lt.t < 320 && Math.hypot(lt.x - tp.x, lt.y - tp.y) < 40) {
+        lastTap.current = null;
+        const z0 = fitZoom(LRef.current, sizeRef.current.w);
+        if (viewRef.current.z < z0 * 1.6) zoomAround(1, tp.x, tp.y, z0 * 2.5); else fitWidth();
+        return;
+      }
+      lastTap.current = tp;
     }
     navigatingRef.current = false; setNavigating(false);
     if (badgeTimer.current) clearTimeout(badgeTimer.current);
@@ -1069,7 +1138,8 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       if (!d) return;
       const i = after ?? currentPage();
       const ref = d.pages[i];
-      const np = paperPage(d.paper.style, d.paper.color, ref && ref.bg.kind === 'paper' ? { w: ref.w, h: ref.h } : undefined);
+      const sz = d.paper.size ? pageSizeOf(d.paper.size) : ref && ref.bg.kind === 'paper' ? ref : LETTER;
+      const np = paperPage(d.paper.style, d.paper.color, { w: sz.w, h: sz.h });
       const pages = d.pages.slice();
       pages.splice(i + 1, 0, np);
       setSel(null);
@@ -1199,6 +1269,13 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       undoRef.current = []; redoRef.current = [];
       lib.updateNote(d.id, { audio: rest.length });
       if (r) fsx.remove(notePath(d.id, r.file));
+    },
+    setPageSize: (size) => {
+      const d = docRef.current;
+      if (!d) return;
+      const nd = { ...d, paper: { ...d.paper, size } };
+      docRef.current = nd; setDoc(nd); scheduleSave();
+      toast(`New pages will be ${pageSizeOf(size).name}`);
     },
     setPaper: (bg) => {
       const d = docRef.current;
@@ -1374,6 +1451,26 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
           <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{Math.round((view.z / Math.max(0.01, fitZoom(L, size.w || 1))) * 100)}%</Text>
           <Text style={{ color: '#ffffffaa', fontSize: 13 }}>Tap to fit</Text>
         </Pressable>
+      ) : null}
+
+      {hud ? (
+        <View pointerEvents="none" style={{ position: 'absolute', top: '38%', alignSelf: 'center', backgroundColor: th.dark ? 'rgba(240,241,244,0.95)' : 'rgba(24,25,29,0.86)', borderRadius: 20, paddingHorizontal: 22, height: 44, justifyContent: 'center' }}>
+          <Text key={hud.n} style={{ color: th.dark ? '#111' : '#fff', fontSize: 17, fontWeight: '700' }}>{hud.text}</Text>
+        </View>
+      ) : null}
+
+      {doc && !navigating ? (
+        <View style={{ position: 'absolute', left: 12, bottom: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: th.dark ? 'rgba(40,41,46,0.92)' : 'rgba(255,255,255,0.94)', borderRadius: 15, height: 30, borderWidth: 1, borderColor: th.line }}>
+          <Pressable onPress={() => zoomAround(1 / 1.35)} accessibilityLabel="Zoom out" hitSlop={6} style={{ width: 34, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: th.sub, fontSize: 18, fontWeight: '600' }}>−</Text>
+          </Pressable>
+          <Pressable onPress={fitWidth} accessibilityLabel="Fit page width" style={{ paddingHorizontal: 4, height: 30, justifyContent: 'center' }}>
+            <Text style={{ color: th.sub, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'], minWidth: 40, textAlign: 'center' }}>{Math.round((view.z / Math.max(0.01, fitZoom(L, size.w || 1))) * 100)}%</Text>
+          </Pressable>
+          <Pressable onPress={() => zoomAround(1.35)} accessibilityLabel="Zoom in" hitSlop={6} style={{ width: 34, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: th.sub, fontSize: 18, fontWeight: '600' }}>+</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {doc ? (

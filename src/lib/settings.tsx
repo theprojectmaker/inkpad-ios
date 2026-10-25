@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
+import type { PenType } from './model';
+
 export type Sort = 'updated' | 'created' | 'title';
 export type Settings = {
   theme: 'system' | 'light' | 'dark';
@@ -13,7 +15,7 @@ export type Settings = {
   pressure: boolean;
   smoothing: number;        // 0..1
   holdToShape: boolean;
-  penType: 'fountain' | 'ball';
+  penType: PenType;
   hlStraight: boolean;      // highlighter lines snap straight
   tabs: string[];           // open note tabs
   penColor: string; penWidth: number;
@@ -27,14 +29,14 @@ const DEFAULTS: Settings = {
   theme: 'system', view: 'grid', sort: 'updated',
   pencilOnly: false, pencilSeen: false, pressure: true, smoothing: 0.4, holdToShape: true, penType: 'fountain', hlStraight: true,
   tabs: [],
-  penColor: '#111111', penWidth: 1.4,
-  hlColor: '#FFE14D', hlWidth: 16,
+  penColor: '#111111', penWidth: 1.8,
+  hlColor: '#FFE14D', hlWidth: 20,
   eraser: 'partial', eraserSize: 14,
   textSize: 18,
   recentColors: [],
 };
 
-const KEY = 'inkpad.settings.v1';
+const KEY = 'inkpad.settings.v1';   // key kept from the app's first name (Inkpad) so settings survive the rename
 
 type Ctx = { s: Settings; set: (patch: Partial<Settings>) => void; loaded: boolean };
 const SettingsCtx = createContext<Ctx>({ s: DEFAULTS, set: () => {}, loaded: false });

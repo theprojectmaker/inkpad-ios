@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { fsx } from './fsx';
-import { emptyNote, FOLDER_COLORS, type Folder, type Library, type NoteDoc, type NoteKind, type NoteMeta, type Page, type PaperColor, type PaperStyle, uid } from './model';
+import { emptyNote, FOLDER_COLORS, type Folder, type Library, type NoteDoc, type NoteKind, type NoteMeta, type Page, type PageSizeId, type PaperColor, type PaperStyle, uid } from './model';
 import { deleteNoteFiles, duplicateDoc, LIB_PATH, loadDoc, saveDoc } from './noteio';
 
 type Ctx = {
@@ -12,7 +12,7 @@ type Ctx = {
   addFolder: (name: string, color?: string) => string;
   updateFolder: (id: string, patch: Partial<Folder>) => void;
   removeFolder: (id: string) => void;
-  createNote: (opts: { folderId: string | null; title?: string; kind: NoteKind; paper?: { style: PaperStyle; color: PaperColor }; pages?: Page[]; id?: string }) => Promise<string>;
+  createNote: (opts: { folderId: string | null; title?: string; kind: NoteKind; paper?: { style: PaperStyle; color: PaperColor; size?: PageSizeId }; pages?: Page[]; id?: string }) => Promise<string>;
   updateNote: (id: string, patch: Partial<NoteMeta>) => void;
   removeNote: (id: string) => Promise<void>;
   duplicateNote: (id: string) => Promise<string | null>;
@@ -76,7 +76,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const createNote: Ctx['createNote'] = useCallback(async (o) => {
     const id = o.id ?? uid('n');
     const paper = o.paper ?? { style: 'lined', color: 'white' };
-    const doc: NoteDoc = o.pages?.length ? { v: 1, id, paper, pages: o.pages } : emptyNote(id, paper.style, paper.color);
+    const doc: NoteDoc = o.pages?.length ? { v: 1, id, paper, pages: o.pages } : emptyNote(id, paper.style, paper.color, paper.size);
     await saveDoc(doc);
     const now = Date.now();
     const count = libRef.current.notes.filter((n) => n.title.startsWith('Note ')).length;

@@ -36,9 +36,30 @@ export function inkPaint(color: string, width: number, alpha = 1, blend?: BlendM
   return p;
 }
 
+// Pencil strokes get a graphite grain: the ink colour masked by fractal noise.
+let grainShader: ReturnType<typeof Skia.Shader.MakeFractalNoise> | null | undefined;
+const grain = () => {
+  if (grainShader === undefined) { try { grainShader = Skia.Shader.MakeFractalNoise(1.3, 1.3, 2, 11, 0, 0); } catch { grainShader = null; } }
+  return grainShader;
+};
+
+/** The fill paint for a stroke (shared by saved strokes and the live stroke). */
+export function inkFill(color: string, kind: string, alpha = 1, blend?: BlendMode): SkPaint {
+  const p = paint(color, alpha, blend);
+  if (kind === 'pencil') {
+    const g = grain();
+    if (g) {
+      // Keep most of the line solid and let the grain thin it out a little.
+      try { p.setShader(Skia.Shader.MakeBlend(BlendMode.DstIn, Skia.Shader.MakeColor(Skia.Color(color)), g)); } catch {}
+      p.setAlphaf(Math.min(1, alpha * 1.9));
+    } else p.setAlphaf(alpha * 0.8);
+  }
+  return p;
+}
+
 export function drawStroke(c: SkCanvas, s: Stroke, alpha: number, blend?: BlendMode) {
   const p = skInk(s);
-  if (p) c.drawPath(p, paint(s.color, alpha, blend));
+  if (p) c.drawPath(p, inkFill(s.color, s.kind === 'hl' ? 'hl' : s.pen ?? 'fountain', alpha, blend));
 }
 
 export function livePath(d: string): SkPath | null {

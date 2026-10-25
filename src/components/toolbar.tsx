@@ -1,11 +1,12 @@
 // Editor chrome, kept minimal: one top bar (back · title · tools · undo/redo ·
 // share · settings) and a small floating capsule with the current tool's
 // colours and sizes. Nothing else sits on the page.
-import { useEffect, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { type GestureResponderEvent, Platform, Pressable, Text, View } from 'react-native';
 
 import { clipboard } from '@/lib/clip';
-import { ERASER_SIZES, HL_COLORS, HL_WIDTHS, INK_COLORS, PEN_WIDTHS, TEXT_SIZES } from '@/lib/model';
+import { PEN_TYPES } from '@/lib/ink';
+import { ERASER_SIZES, HL_COLORS, HL_RANGE, HL_WIDTHS, INK_COLORS, PEN_RANGE, PEN_WIDTHS, TEXT_SIZES } from '@/lib/model';
 import { useSettings, useTheme } from '@/lib/settings';
 import type { Tool } from './note-view';
 import { Icon, IconButton } from './ui';
@@ -16,6 +17,7 @@ const TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: 'eraser', icon: 'eraser', label: 'Eraser' },
   { id: 'lasso', icon: 'lasso', label: 'Lasso' },
   { id: 'text', icon: 'textformat', label: 'Text' },
+  { id: 'laser', icon: 'wand.and.rays', label: 'Laser pointer' },
 ];
 
 export function TopBar({ title, onBack, onTitle, tool, setTool, canUndo, canRedo, onUndo, onRedo, onInsert, onAudio, recording, audioOpen, onShare, onSettings, compact }: {
@@ -25,7 +27,7 @@ export function TopBar({ title, onBack, onTitle, tool, setTool, canUndo, canRedo
 }) {
   const t = useTheme();
   const { s } = useSettings();
-  const toolColor = (id: Tool) => (id === 'pen' ? s.penColor : id === 'hl' ? s.hlColor : undefined);
+  const toolColor = (id: Tool) => (id === 'pen' ? s.penColor : id === 'hl' ? s.hlColor : id === 'laser' ? '#FF2D55' : undefined);
   return (
     <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, backgroundColor: t.bar, borderBottomWidth: 1, borderBottomColor: t.line }}>
       <IconButton name="chevron.left" label="Library" onPress={onBack} />
@@ -99,6 +101,29 @@ function Seg({ items, value, onChange }: { items: [string, string][]; value: str
   );
 }
 
+/** Drag to pick any size; logarithmic so small sizes are easy to hit. */
+function SizeSlider({ value, range, onChange }: { value: number; range: readonly [number, number]; onChange: (v: number) => void }) {
+  const t = useTheme();
+  const w = 120;
+  const [lo, hi] = range;
+  const toX = (v: number) => (Math.log(Math.max(lo, Math.min(hi, v)) / lo) / Math.log(hi / lo)) * w;
+  const fromX = (x: number) => lo * Math.pow(hi / lo, Math.max(0, Math.min(1, x / w)));
+  const [drag, setDrag] = useState<number | null>(null);
+  const shown = drag ?? value;
+  const at = (e: GestureResponderEvent) => { const v = Math.round(fromX(e.nativeEvent.locationX) * 10) / 10; setDrag(v); onChange(v); };
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 6 }}>
+      <View style={{ width: w, height: 32, justifyContent: 'center' }} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false} onResponderGrant={at} onResponderMove={at} onResponderRelease={() => setDrag(null)}>
+        <View pointerEvents="none" style={{ height: 4, borderRadius: 2, backgroundColor: t.line }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: Math.max(0, toX(shown) - 10), width: 20, height: 20, borderRadius: 10, backgroundColor: t.card, borderWidth: 1, borderColor: t.line,
+          shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } }} />
+      </View>
+      <Text style={{ color: t.sub, fontSize: 12, fontWeight: '700', width: 30, fontVariant: ['tabular-nums'] }}>{shown < 10 ? shown.toFixed(1) : Math.round(shown)}</Text>
+    </View>
+  );
+}
+
 const Sep = () => { const t = useTheme(); return <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 4 }} />; };
 
 /** Floating capsule under the top bar with the current tool's options. */
@@ -125,9 +150,8 @@ export function ToolOptions({ tool, onColors, onPaste }: { tool: Tool; onColors:
         <Sep />
         {tool === 'pen' ? (
           <>
-            {PEN_WIDTHS.map((w) => <Dot key={w} size={w * 3.2} color={s.penColor.toUpperCase() === '#FFFFFF' ? '#999' : s.penColor} on={s.penWidth === w} onPress={() => set({ penWidth: w })} />)}
-            <Sep />
-            <Seg items={[['fountain', 'Fountain'], ['ball', 'Ballpoint']]} value={s.penType} onChange={(v) => set({ penType: v as 'fountain' | 'ball' })} />
+            {PEN_WIDTHS.map((w) => <Dot key={w} size={4 + w * 2.2} color={s.penColor.toUpperCase() === '#FFFFFF' ? '#999' : s.penColor} on={Math.abs(s.penWidth - w) < 0.05} onPress={() => set({ penWidth: w })} />)}
+            <SizeSlider value={s.penWidth} range={PEN_RANGE} onChange={(v) => set({ penWidth: v })} />
           </>
         ) : TEXT_SIZES.map((z) => (
           <Pressable key={z} onPress={() => set({ textSize: z })} style={{ paddingHorizontal: 8, height: 30, borderRadius: 9, justifyContent: 'center', backgroundColor: s.textSize === z ? t.chip : 'transparent' }}>
@@ -144,7 +168,8 @@ export function ToolOptions({ tool, onColors, onPaste }: { tool: Tool; onColors:
           <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: t.faint, alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={11} color={t.sub} /></View>
         </Pressable>
         <Sep />
-        {HL_WIDTHS.map((w) => <Dot key={w} size={w * 0.75} color={s.hlColor} on={s.hlWidth === w} onPress={() => set({ hlWidth: w })} />)}
+        {HL_WIDTHS.map((w) => <Dot key={w} size={6 + w * 0.4} color={s.hlColor} on={Math.abs(s.hlWidth - w) < 0.5} onPress={() => set({ hlWidth: w })} />)}
+        <SizeSlider value={s.hlWidth} range={HL_RANGE} onChange={(v) => set({ hlWidth: v })} />
       </>
     );
   } else if (tool === 'eraser') {
@@ -163,13 +188,23 @@ export function ToolOptions({ tool, onColors, onPaste }: { tool: Tool; onColors:
       </>
     );
   }
+  if (tool === 'laser') body = <Text style={{ color: t.sub, fontSize: 13, marginHorizontal: 10 }}>Laser pointer: draw to point at things, it fades away</Text>;
   if (!body) return null;
+  const capsule = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 2, paddingHorizontal: 8, height: 44, borderRadius: 22, backgroundColor: t.elev,
+    borderWidth: t.dark ? 1 : 0, borderColor: t.line, shadowColor: '#000', shadowOpacity: Platform.OS === 'ios' ? 0.12 : 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 4 };
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 0, right: 0, alignItems: 'center', zIndex: 5 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 8, height: 44, borderRadius: 22, backgroundColor: t.elev,
-        borderWidth: t.dark ? 1 : 0, borderColor: t.line, shadowColor: '#000', shadowOpacity: Platform.OS === 'ios' ? 0.12 : 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
-        {body}
-      </View>
+    <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 0, right: 0, alignItems: 'center', zIndex: 5, gap: 8 }}>
+      <View style={capsule}>{body}</View>
+      {tool === 'pen' ? (
+        <View style={capsule}>
+          {PEN_TYPES.map((p) => (
+            <Pressable key={p.id} onPress={() => set({ penType: p.id })} accessibilityLabel={p.name}
+              style={{ paddingHorizontal: 11, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: (s.penType ?? 'fountain') === p.id ? t.chip : 'transparent' }}>
+              <Text style={{ color: (s.penType ?? 'fountain') === p.id ? t.text : t.sub, fontSize: 13, fontWeight: '600' }}>{p.name}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -1,6 +1,6 @@
 // Small shared UI pieces: icons, buttons, sheets, prompts, toasts.
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, createContext, Fragment, type ErrorInfo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
 
 import { useTheme } from '@/lib/settings';
@@ -15,7 +15,7 @@ const FALLBACK: Record<string, string> = {
   'books.vertical': '▥', 'clock': '◷', 'tray': '▱', 'arrow.up.arrow.down': '⇅', 'pencil': '✎', 'checkmark': '✓',
   'moon': '☾', 'sun.max': '☼', 'doc.badge.plus': '⊞', 'arrow.up': '↑', 'arrow.down': '↓', 'plus.square.on.square': '⧉',
   'scissors': '✂', 'doc.on.clipboard': '📋', 'square.on.square': '⧉', 'paintpalette': '◍', 'scribble': '〰',
-  'hand.draw': '✍', 'pencil.and.outline': '✎', 'square.and.pencil': '✎', 'folder.badge.plus': '⊕', 'arrow.right.square': '⇥', 'play.fill': '▶', 'pause.fill': '❚❚', 'mic': '🎙', 'mic.fill': '🎙', 'eyedropper': '◍',
+  'hand.draw': '✍', 'pencil.and.outline': '✎', 'square.and.pencil': '✎', 'folder.badge.plus': '⊕', 'arrow.right.square': '⇥', 'play.fill': '▶', 'wand.and.rays': '✦', 'minus': '−', 'arrow.up.left.and.arrow.down.right': '⤢', 'pause.fill': '❚❚', 'mic': '🎙', 'mic.fill': '🎙', 'eyedropper': '◍',
 };
 
 export function Icon({ name, size = 20, color }: { name: string; size?: number; color?: string }) {
@@ -206,5 +206,37 @@ export function ActionRow({ label, icon, onPress, danger }: { label: string; ico
       {icon ? <Icon name={icon} size={19} color={danger ? t.danger : t.sub} /> : null}
       <Text style={{ flex: 1, color: danger ? t.danger : t.text, fontSize: 16 }}>{label}</Text>
     </Pressable>
+  );
+}
+
+// ---------- crash guard ----------
+
+
+/**
+ * Catches errors in one part of the screen (a note, the page list, the audio
+ * bar...) and shows a small "Try again" card there, so one bug never takes
+ * down the whole app.
+ */
+export class Guard extends Component<{ children: ReactNode; label?: string }, { error: Error | null; n: number }> {
+  state = { error: null as Error | null, n: 0 };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { if (__DEV__) console.warn('Guard caught', error, info?.componentStack); }
+  render() {
+    if (!this.state.error) return <Fragment key={this.state.n}>{this.props.children}</Fragment>;
+    return <GuardCard label={this.props.label} error={this.state.error} retry={() => this.setState((s) => ({ error: null, n: s.n + 1 }))} />;
+  }
+}
+
+function GuardCard({ label, error, retry }: { label?: string; error: Error; retry: () => void }) {
+  const t = useTheme();
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: t.desk }}>
+      <View style={{ maxWidth: 420, backgroundColor: t.card, borderRadius: 16, padding: 20, gap: 10, borderWidth: 1, borderColor: t.line }}>
+        <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>{label ? `${label} hit a problem` : 'Something went wrong'}</Text>
+        <Text style={{ color: t.sub, fontSize: 14 }}>Your notes are saved. Tap Try again to reload this part.</Text>
+        <Text selectable numberOfLines={4} style={{ color: t.faint, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : undefined }}>{String(error?.message ?? error)}</Text>
+        <View style={{ flexDirection: 'row' }}><Button title="Try again" kind="primary" onPress={retry} /></View>
+      </View>
+    </View>
   );
 }
