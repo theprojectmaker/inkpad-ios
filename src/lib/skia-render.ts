@@ -1,10 +1,10 @@
 // Skia drawing for pages. Each page becomes two cached SkPictures (paper and
 // ink) drawn under one transform, so the whole document is a handful of
 // nodes on one Canvas and ink stays sharp at any zoom.
-import { BlendMode, FilterMode, ImageFormat, MipmapMode, PaintStyle, Skia, type SkCanvas, type SkImage, type SkParagraph, type SkPath, type SkPicture } from '@shopify/react-native-skia';
+import { BlendMode, FilterMode, ImageFormat, MipmapMode, PaintStyle, Skia, type SkCanvas, type SkImage, type SkPaint, type SkParagraph, type SkPath, type SkPicture, StrokeCap, StrokeJoin } from '@shopify/react-native-skia';
 
 import { fsx } from './fsx';
-import { type Box, fin, strokePath, textBox } from './geom';
+import { type Box, fin, strokeBands, textBox } from './geom';
 import type { ImageItem, Page, Stroke, TextItem } from './model';
 import { notePath, pdfKey, renderDir } from './noteio';
 import { paperMarks, paperOf } from './paper';
@@ -12,25 +12,38 @@ import { engine } from './pdf-engine';
 
 // ---------- strokes ----------
 
-const pathCache = new WeakMap<Stroke, SkPath | null>();
-export function skPath(s: Stroke): SkPath | null {
-  if (pathCache.has(s)) return pathCache.get(s)!;
-  let p: SkPath | null = null;
+// A stroke = a few centre-line polylines, each stroked at its width band.
+export type SkBand = { w: number; path: SkPath };
+const bandCache = new WeakMap<Stroke, SkBand[]>();
+export function skBands(s: Stroke): SkBand[] {
+  const hit = bandCache.get(s);
+  if (hit) return hit;
+  const out: SkBand[] = [];
   try {
-    const d = strokePath(s);
-    p = d ? Skia.Path.MakeFromSVGString(d) : null;
-  } catch { p = null; }
-  pathCache.set(s, p);
+    for (const b of strokeBands(s)) {
+      const path = Skia.Path.MakeFromSVGString(b.d);
+      if (path && b.w > 0) out.push({ w: b.w, path });
+    }
+  } catch {}
+  bandCache.set(s, out);
+  return out;
+}
+
+export function inkPaint(color: string, width: number, alpha = 1, blend?: BlendMode): SkPaint {
+  const p = Skia.Paint();
+  p.setAntiAlias(true);
+  p.setColor(Skia.Color(color));
+  if (alpha < 1) p.setAlphaf(alpha);
+  if (blend != null) p.setBlendMode(blend);
+  p.setStyle(PaintStyle.Stroke);
+  p.setStrokeWidth(Math.max(0.1, width));
+  p.setStrokeCap(StrokeCap.Round);
+  p.setStrokeJoin(StrokeJoin.Round);
   return p;
 }
 
-/** The saved stroke's merged outline as SVG (what goes into exported PDFs). */
-export function strokeSvg(s: Stroke): string {
-  // Merge the overlapping round pieces into one clean outline, so PDF viewers
-  // (which smooth each piece separately) show no hairline seams.
-  const p = skPath(s);
-  try { const m = p ? Skia.Path.Simplify(p) : null; if (m) return m.toSVGString(); } catch {}
-  return strokePath(s);
+export function drawStroke(c: SkCanvas, s: Stroke, alpha: number, blend?: BlendMode) {
+  for (const b of skBands(s)) c.drawPath(b.path, inkPaint(s.color, b.w, alpha, blend));
 }
 
 export function livePath(d: string): SkPath | null {
@@ -220,8 +233,7 @@ export function drawInk(c: SkCanvas, noteId: string, page: Page, ex: Exclude, da
   const hlBlend = darkPaper ? undefined : BlendMode.Multiply;
   for (const s of page.strokes) {
     if (s.kind !== 'hl' || ex?.strokes?.has(s.id)) continue;
-    const p = skPath(s);
-    if (p) c.drawPath(p, paint(s.color, HL_ALPHA * (future(s, replay) ? FUTURE_ALPHA * 2 : 1), hlBlend));
+    drawStroke(c, s, HL_ALPHA * (future(s, replay) ? FUTURE_ALPHA * 2 : 1), hlBlend);
   }
   for (const im of page.images) {
     if (ex?.images?.has(im.id)) continue;
@@ -234,8 +246,7 @@ export function drawInk(c: SkCanvas, noteId: string, page: Page, ex: Exclude, da
   }
   for (const s of page.strokes) {
     if (s.kind !== 'pen' || ex?.strokes?.has(s.id)) continue;
-    const p = skPath(s);
-    if (p) c.drawPath(p, paint(s.color, future(s, replay) ? FUTURE_ALPHA : 1));
+    drawStroke(c, s, future(s, replay) ? FUTURE_ALPHA : 1);
   }
   for (const t of page.texts) {
     if (ex?.texts?.has(t.id)) continue;

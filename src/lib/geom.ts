@@ -65,10 +65,10 @@ export class OneEuro {
 }
 
 /** Smoothing setting (0..1) -> filter. Low = raw and crisp, high = very steady. */
-export const euroFor = (smoothing: number) => new OneEuro(26 - 20 * clamp(smoothing, 0, 1), 0.08);
+export const euroFor = (smoothing: number) => new OneEuro(24 - 17 * clamp(smoothing, 0, 1), 0.1);
 
 /** Apple Pencil force (0..1 of max) -> pressure 0..1. Typical writing lands mid-range. */
-export const pressureFromForce = (force: number) => clamp(Math.pow(clamp((force - 0.015) * 2.6, 0, 1), 0.8), 0, 1);
+export const pressureFromForce = (force: number) => clamp(Math.pow(clamp((force - 0.03) / 0.45, 0, 1), 0.85), 0, 1);
 
 export type PenType = 'fountain' | 'ball';
 export type InkMode = 'fountain' | 'ball' | 'finger' | 'even';
@@ -96,9 +96,9 @@ export class InkBuilder {
   private target(p: number, gap: number) {
     const b = this.base;
     switch (this.mode) {
-      case 'fountain': return b * (0.5 + 0.95 * Math.pow(clamp(p, 0, 1), 0.9));
-      case 'ball': return b * (0.86 + 0.24 * clamp(p, 0, 1));
-      case 'finger': return b * clamp(1.06 - (gap / Math.max(1, b)) * 0.018, 0.8, 1.06);
+      case 'fountain': return b * (0.62 + 0.78 * Math.pow(clamp(p, 0, 1), 0.85));
+      case 'ball': return b * (0.9 + 0.2 * clamp(p, 0, 1));
+      case 'finger': return b * clamp(1.05 - (gap / Math.max(1, b)) * 0.012, 0.86, 1.05);
       default: return b;
     }
   }
@@ -106,8 +106,8 @@ export class InkBuilder {
   // Soft entry so strokes start fine, like a real nib touching down (a smooth multiplier).
   private entry(dist: number) {
     if (this.mode !== 'finger' && this.mode !== 'fountain') return 1;
-    const ramp = this.base * (this.mode === 'finger' ? 3 : 1.6);
-    return 0.55 + 0.45 * Math.min(1, dist / Math.max(0.01, ramp));
+    const ramp = this.base * (this.mode === 'finger' ? 2.5 : 1.5);
+    return 0.65 + 0.35 * Math.min(1, dist / Math.max(0.01, ramp));
   }
 
   // Width may only change a little per point of travel: no sudden blobs.
@@ -118,7 +118,7 @@ export class InkBuilder {
     const tw = this.target(p, gap);
     if (this.mode === 'even') st.w = tw;
     else {
-      const k = Math.max(0.06, this.base * 0.11) * Math.max(d, 0.25);
+      const k = Math.max(0.04, this.base * 0.07) * Math.max(d, 0.25);
       st.w += clamp(tw - st.w, -k, k);
     }
     out.push({ x, y, r: Math.max(0.16, (st.w * this.entry(st.dist)) / 2) });
@@ -197,63 +197,71 @@ export function buildSamples(pts: Pt[], base: number, mode: InkMode): Sample[] {
 }
 
 /**
- * Capsule geometry for samples[from..]: calls circle() and quad() so the
- * same shapes can go into an SkPath (screen) or an SVG string (PDF).
- * Every shape is clockwise, so a non-zero fill gives their clean union.
+ * Stroke rendering: the centre line is stroked (round caps + round joins) in
+ * "width bands" — each run of samples whose width falls in the same 5% band
+ * is one smooth polyline drawn at that width. A stroke is a handful of
+ * GPU-stroked lines: no polygons to crack, nothing to fold over, and
+ * neighbouring bands overlap under their round caps so width changes are
+ * seamless. Highlighters use a single band so their transparency stays even.
  */
-export function capsules(s: Sample[], from: number, circle: (x: number, y: number, r: number) => void, quad: (q: number[]) => void, prev?: Sample) {
-  const n = s.length;
-  for (let i = from; i < n; i++) {
-    const c = s[i];
-    const a = i > 0 ? s[i - 1] : prev;
-    const b = i < n - 1 ? s[i + 1] : undefined;
-    // Interior circles are only needed where the line turns or changes width.
-    let needCircle = !a || !b;
-    if (!needCircle && a && b) {
-      const ax = c.x - a.x, ay = c.y - a.y, bx = b.x - c.x, by = b.y - c.y;
-      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
-      const cos = la && lb ? (ax * bx + ay * by) / (la * lb) : 0;
-      needCircle = cos < 0.996 || Math.abs(b.r - a.r) > c.r * 0.04;
-    }
-    if (needCircle) circle(c.x, c.y, c.r);
-    if (a) {
-      const dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
-      if (d > Math.abs(c.r - a.r) + 1e-3) {
-        const ux = dx / d, uy = dy / d, nx = -uy, ny = ux;
-        const k = (a.r - c.r) / d, h = Math.sqrt(Math.max(0, 1 - k * k));
-        const v1x = k * ux + h * nx, v1y = k * uy + h * ny, v2x = k * ux - h * nx, v2y = k * uy - h * ny;
-        const q = [a.x + a.r * v1x, a.y + a.r * v1y, c.x + c.r * v1x, c.y + c.r * v1y, c.x + c.r * v2x, c.y + c.r * v2y, a.x + a.r * v2x, a.y + a.r * v2y];
-        // Make it clockwise (positive area in y-down coordinates).
-        let area = 0;
-        for (let j = 0; j < 8; j += 2) { const k2 = (j + 2) % 8; area += q[j] * q[k2 + 1] - q[k2] * q[j + 1]; }
-        if (area < 0) quad([q[6], q[7], q[4], q[5], q[2], q[3], q[0], q[1]]); else quad(q);
-      }
-    }
+export const BAND_STEP = 0.05;
+
+export type BandSink = { moveTo: (x: number, y: number) => void; lineTo: (x: number, y: number) => void };
+
+export class BandWriter {
+  private last = -1;
+  private lastPt: Sample | null = null;
+  constructor(readonly base: number, readonly even: boolean, readonly sink: (band: number) => BandSink) {}
+
+  band(r: number) {
+    if (this.even) return Math.round(1 / BAND_STEP);
+    return Math.max(1, Math.round((2 * r) / this.base / BAND_STEP));
   }
+
+  /** Adds the segment a -> b (b is the new sample). */
+  seg(a: Sample, b: Sample) {
+    const k = this.band((a.r + b.r) / 2);
+    const s = this.sink(k);
+    if (k !== this.last || this.lastPt !== a) s.moveTo(a.x, a.y);
+    s.lineTo(b.x, b.y);
+    this.last = k;
+    this.lastPt = b;
+  }
+
+  /** A stroke that is just a dot. */
+  dot(a: Sample) {
+    const s = this.sink(this.band(a.r));
+    s.moveTo(a.x, a.y);
+    s.lineTo(a.x + 0.01, a.y);
+  }
+
+  reset() { this.last = -1; this.lastPt = null; }
 }
 
-/** SVG path of a sample list (for the PDF exporter, and cached on screen). */
-export function samplesSvg(s: Sample[]): string {
-  let d = '';
-  capsules(s, 0,
-    (x, y, r) => { d += `M${f2(x - r)} ${f2(y)}A${f2(r)} ${f2(r)} 0 1 1 ${f2(x + r)} ${f2(y)}A${f2(r)} ${f2(r)} 0 1 1 ${f2(x - r)} ${f2(y)}Z`; },
-    (q) => { d += `M${f2(q[0])} ${f2(q[1])}L${f2(q[2])} ${f2(q[3])}L${f2(q[4])} ${f2(q[5])}L${f2(q[6])} ${f2(q[7])}Z`; });
-  return d;
+export const bandWidth = (band: number, base: number, even: boolean) => (even ? base : band * BAND_STEP * base);
+
+export type Band = { w: number; d: string };
+
+/** SVG polylines per width band, for the PDF exporter and the on-screen cache. */
+export function samplesBands(s: Sample[], base: number, even: boolean): Band[] {
+  const map = new Map<number, string>();
+  const w = new BandWriter(base, even, (k) => ({
+    moveTo: (x, y) => { map.set(k, (map.get(k) ?? '') + `M${f2(x)} ${f2(y)}`); },
+    lineTo: (x, y) => { map.set(k, (map.get(k) ?? '') + `L${f2(x)} ${f2(y)}`); },
+  }));
+  if (s.length === 1) w.dot(s[0]);
+  for (let i = 1; i < s.length; i++) w.seg(s[i - 1], s[i]);
+  return [...map].sort((a, b) => a[0] - b[0]).map(([k, d]) => ({ w: bandWidth(k, base, even), d }));
 }
 
 export function strokeSamples(s: Stroke): Sample[] {
   return buildSamples(unpack(s.pts), s.w, inkMode(s));
 }
 
-export function strokePath(s: Stroke): string {
-  return samplesSvg(strokeSamples(s));
+export function strokeBands(s: Stroke): Band[] {
+  return samplesBands(strokeSamples(s), clamp(s.w, 0.2, 200), s.kind === 'hl');
 }
 
-/** Kept for callers that draw from raw points (shape previews, tests). */
-export function outlinePath(pts: Pt[], base: number, opts: { pressure: boolean; even?: boolean; pen?: PenType }): string {
-  const mode: InkMode = opts.even ? 'even' : opts.pen === 'ball' ? 'ball' : opts.pressure ? 'fountain' : 'finger';
-  return samplesSvg(buildSamples(pts, base, mode));
-}
 
 // ---------- boxes / hit tests ----------
 

@@ -27,7 +27,7 @@ const DEFAULTS: Settings = {
   theme: 'system', view: 'grid', sort: 'updated',
   pencilOnly: false, pencilSeen: false, pressure: true, smoothing: 0.4, holdToShape: true, penType: 'fountain', hlStraight: true,
   tabs: [],
-  penColor: '#111111', penWidth: 2,
+  penColor: '#111111', penWidth: 1.4,
   hlColor: '#FFE14D', hlWidth: 16,
   eraser: 'partial', eraserSize: 14,
   textSize: 18,

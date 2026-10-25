@@ -118,10 +118,16 @@ NE.exportPdf = async (req, specId) => {
       // Our page space is the page as displayed (top-left origin); map it to PDF user space.
       const map = (u, v) => R === 90 ? [cx + v, cy + u] : R === 180 ? [cx + W - u, cy + v] : R === 270 ? [cx + W - v, cy + H - u] : [cx + u, cy + H - v];
       const o = map(0, 0); const rot = L.degrees(R);
+      // Ink is stroked with round caps and joins, exactly like on screen.
+      page.pushOperators(L.setLineJoin(L.LineJoinStyle.Round));
       for (const r of pg.rules || []) page.drawSvgPath(r.d, { x: o[0], y: o[1], rotate: rot, color: hex(r.color), borderWidth: 0 });
       for (const it of pg.items) {
         if (it.t === 'path') {
           const opt = { x: o[0], y: o[1], rotate: rot, color: hex(it.color), borderWidth: 0, opacity: it.opacity == null ? 1 : it.opacity };
+          if (it.multiply) opt.blendMode = L.BlendMode.Multiply;
+          page.drawSvgPath(it.d, opt);
+        } else if (it.t === 'line') {
+          const opt = { x: o[0], y: o[1], rotate: rot, borderColor: hex(it.color), borderWidth: it.w, borderLineCap: L.LineCapStyle.Round, borderOpacity: it.opacity == null ? 1 : it.opacity };
           if (it.multiply) opt.blendMode = L.BlendMode.Multiply;
           page.drawSvgPath(it.d, opt);
         } else if (it.t === 'img') {

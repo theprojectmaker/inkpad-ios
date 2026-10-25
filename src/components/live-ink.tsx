@@ -1,82 +1,116 @@
-// The stroke being drawn right now. It lives in its own tiny component inside
-// the Skia canvas, so each Pencil movement redraws just this one path — the
-// pages around it are not touched. The path grows piece by piece: finished
-// samples are appended once to `stable`, and only the last few (still moving)
-// samples plus a band to the pen tip are rebuilt each frame.
-import { Group, Path, Skia, type SkPath, type SkPathBuilder, type Transforms3d } from '@shopify/react-native-skia';
-import { useEffect, useState, type MutableRefObject } from 'react';
+// The stroke being drawn right now, rendered without React: every Pencil
+// movement records a tiny SkPicture and hands it to a Reanimated shared
+// value, which Skia draws on the UI thread straight away. Finished samples
+// are written into per-band path builders once; only the moving tail (plus a
+// short predicted segment ahead of the nib, to hide latency) is rebuilt.
+import { BlendMode, Skia, type SkPath, type SkPathBuilder, type SkPicture } from '@shopify/react-native-skia';
 
-import { capsules, type InkBuilder, type Sample } from '@/lib/geom';
-import { HL_ALPHA } from '@/lib/skia-render';
-
-export function appendSamples(path: SkPathBuilder, s: Sample[], from: number, prev?: Sample) {
-  capsules(s, from,
-    (x, y, r) => { path.addCircle(x, y, r); },
-    (q) => { path.addPoly([{ x: q[0], y: q[1] }, { x: q[2], y: q[3] }, { x: q[4], y: q[5] }, { x: q[6], y: q[7] }], true); },
-    prev);
-}
+import { BAND_STEP, BandWriter, bandWidth, type InkBuilder, type Sample } from '@/lib/geom';
+import { HL_ALPHA, inkPaint } from '@/lib/skia-render';
 
 export type LiveStroke = {
   ink: InkBuilder;
-  stable: SkPathBuilder;    // finished part of the stroke (grows, never rebuilt)
-  stablePath: SkPath;       // snapshot of `stable`, refreshed when it grows
-  drawn: number;            // samples already in `stable`
-  tip: Sample | null;       // raw pen position (unsmoothed) so ink reaches the nib
   color: string;
   hl: boolean;
   multiply: boolean;
-  transform: Transforms3d;
+  tf: { tx: number; ty: number; z: number };   // page -> screen
+  builders: Map<number, SkPathBuilder>;
+  snaps: Map<number, SkPath>;
+  writer: BandWriter;
+  drawn: number;            // samples already written into the builders
+  tip: { x: number; y: number } | null;    // raw nib position
+  pred: { x: number; y: number } | null;   // predicted position a frame ahead
 };
 
-export function newLive(ink: InkBuilder, color: string, hl: boolean, multiply: boolean, transform: LiveStroke['transform']): LiveStroke {
-  const stable = Skia.PathBuilder.Make();
-  return { ink, stable, stablePath: stable.build(), drawn: 0, tip: null, color, hl, multiply, transform };
+let EMPTY: SkPicture | null = null;
+export function emptyPicture(): SkPicture {
+  if (!EMPTY) { const r = Skia.PictureRecorder(); r.beginRecording(Skia.XYWHRect(0, 0, 1, 1)); EMPTY = r.finishRecordingAsPicture(); }
+  return EMPTY;
 }
 
-/** Moves newly finished samples into the stable path. */
+export function newLive(ink: InkBuilder, color: string, hl: boolean, multiply: boolean, tf: LiveStroke['tf']): LiveStroke {
+  const builders = new Map<number, SkPathBuilder>();
+  return {
+    ink, color, hl, multiply, tf, builders, snaps: new Map(), drawn: 0, tip: null, pred: null,
+    writer: new BandWriter(ink.base, hl, (k) => {
+      let b = builders.get(k);
+      if (!b) { b = Skia.PathBuilder.Make(); builders.set(k, b); }
+      return b;
+    }),
+  };
+}
+
+/** Writes newly finished samples into the band paths. */
 export function growLive(l: LiveStroke) {
   const s = l.ink.samples;
-  if (s.length > l.drawn) {
-    appendSamples(l.stable, s, l.drawn, l.drawn > 0 ? s[l.drawn - 1] : undefined);
-    l.drawn = s.length;
-    l.stablePath = l.stable.build();
+  if (s.length <= l.drawn) return;
+  const touched = new Set<number>();
+  for (let i = Math.max(1, l.drawn); i < s.length; i++) {
+    l.writer.seg(s[i - 1], s[i]);
+    touched.add(l.writer.band((s[i - 1].r + s[i].r) / 2));
   }
+  // Refresh snapshots of the bands that grew (a cheap native copy).
+  for (const k of touched) { const b = l.builders.get(k); if (b) l.snaps.set(k, b.build()); }
+  l.drawn = s.length;
 }
 
-/** Rebuilds the stroke from scratch (after it snapped to a shape). */
-export function resetLive(l: LiveStroke, ink: InkBuilder) {
+/** Switches the live stroke to a new builder (e.g. the pencil was recognised late). */
+export function restartLive(l: LiveStroke, ink: InkBuilder) {
   l.ink = ink;
-  l.stable = Skia.PathBuilder.Make();
-  l.stablePath = l.stable.build();
+  l.builders.clear();
+  l.snaps.clear();
+  l.writer.reset();
   l.drawn = 0;
-  l.tip = null;
-  ink.finish();
   growLive(l);
 }
 
-function frame(l: LiveStroke): SkPath {
-  const p = Skia.PathBuilder.MakeFromPath(l.stablePath);
-  const s = l.ink.samples;
-  const tail = l.ink.tail();
-  const last = tail.length ? tail[tail.length - 1] : s[s.length - 1];
-  if (l.tip && last && Math.hypot(l.tip.x - last.x, l.tip.y - last.y) > 0.3) tail.push({ x: l.tip.x, y: l.tip.y, r: last.r });
-  if (tail.length) appendSamples(p, tail, 0, s[s.length - 1]);
-  return p.detach();
+/** Starts the stroke over from new samples (after it snapped to a shape). */
+export function resetLive(l: LiveStroke, ink: InkBuilder) {
+  ink.finish();
+  l.tip = null;
+  l.pred = null;
+  restartLive(l, ink);
 }
 
-export type LiveCtl = { draw?: (l: LiveStroke | null) => void };
+const segPath = (pts: { x: number; y: number }[], into?: SkPathBuilder) => {
+  const b = into ?? Skia.PathBuilder.Make();
+  for (let i = 1; i < pts.length; i++) { b.moveTo(pts[i - 1].x, pts[i - 1].y); b.lineTo(pts[i].x, pts[i].y); }
+  return b;
+};
 
-export function LiveInk({ ctl }: { ctl: MutableRefObject<LiveCtl> }) {
-  const [state, setState] = useState<{ path: SkPath; l: LiveStroke } | null>(null);
-  useEffect(() => {
-    ctl.current.draw = (l) => setState(l ? { path: frame(l), l } : null);
-    return () => { ctl.current.draw = undefined; };
-  }, [ctl]);
-  if (!state) return null;
-  const { l, path } = state;
-  return (
-    <Group transform={l.transform}>
-      <Path path={path} color={l.color} opacity={l.hl ? HL_ALPHA : 1} blendMode={l.hl && l.multiply ? 'multiply' : 'srcOver'} />
-    </Group>
-  );
+/** Records the current frame of the live stroke. */
+export function liveFrame(l: LiveStroke): SkPicture {
+  const rec = Skia.PictureRecorder();
+  const c = rec.beginRecording(Skia.XYWHRect(-1e5, -1e5, 2e5, 2e5));
+  c.translate(l.tf.tx, l.tf.ty);
+  c.scale(l.tf.z, l.tf.z);
+  const s = l.ink.samples;
+  const base = l.ink.base;
+  const last0 = s[s.length - 1];
+  const ext: Sample[] = l.ink.tail();
+  const last = ext.length ? ext[ext.length - 1] : last0;
+  if (last && l.tip && Math.hypot(l.tip.x - last.x, l.tip.y - last.y) > 0.25) ext.push({ x: l.tip.x, y: l.tip.y, r: last.r });
+  if (last && l.pred) ext.push({ x: l.pred.x, y: l.pred.y, r: (ext[ext.length - 1] ?? last).r });
+  const chain = last0 ? [last0, ...ext] : ext;
+
+  if (l.hl) {
+    // One single path so the transparency stays even where it overlaps itself.
+    const snap = l.snaps.get(Math.round(1 / BAND_STEP));
+    const b = snap ? Skia.PathBuilder.MakeFromPath(snap) : Skia.PathBuilder.Make();
+    if (s.length === 1 && chain.length < 2) { b.moveTo(s[0].x, s[0].y); b.lineTo(s[0].x + 0.01, s[0].y); }
+    segPath(chain, b);
+    c.drawPath(b.detach(), inkPaint(l.color, base, HL_ALPHA, l.multiply ? BlendMode.Multiply : undefined));
+  } else {
+    for (const [k, p] of l.snaps) c.drawPath(p, inkPaint(l.color, bandWidth(k, base, false)));
+    if (s.length === 1 && chain.length < 2) {
+      const d = Skia.PathBuilder.Make(); d.moveTo(s[0].x, s[0].y); d.lineTo(s[0].x + 0.01, s[0].y);
+      c.drawPath(d.detach(), inkPaint(l.color, s[0].r * 2));
+    }
+    // The tail goes into width bands too, so it joins the finished part seamlessly.
+    const tmp = new Map<number, SkPathBuilder>();
+    const w = new BandWriter(base, false, (k) => { let b = tmp.get(k); if (!b) { b = Skia.PathBuilder.Make(); tmp.set(k, b); } return b; });
+    for (let i = 1; i < chain.length; i++) w.seg(chain[i - 1], chain[i]);
+    for (const [k, b] of tmp) c.drawPath(b.detach(), inkPaint(l.color, bandWidth(k, base, false)));
+  }
+  return rec.finishRecordingAsPicture();
 }

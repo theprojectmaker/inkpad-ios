@@ -96,7 +96,7 @@ export const FOLDER_COLORS = ['#E5484D', '#F76B15', '#FFC53D', '#30A46C', '#12A5
 
 export const INK_COLORS = ['#111111', '#5A5F6B', '#1E5EFF', '#0AA35B', '#E5322D', '#F28C18', '#8E44EC', '#E0408A', '#0BB5C9', '#FFFFFF'];
 export const HL_COLORS = ['#FFE14D', '#7CF27C', '#6FD3FF', '#FF8FD0', '#FFB45C', '#B9A1FF'];
-export const PEN_WIDTHS = [1.2, 2, 3.2, 5];
+export const PEN_WIDTHS = [0.9, 1.4, 2.1, 3.2];
 export const HL_WIDTHS = [10, 16, 24];
 export const ERASER_SIZES = [6, 14, 30];
 export const TEXT_SIZES = [14, 18, 24, 32];

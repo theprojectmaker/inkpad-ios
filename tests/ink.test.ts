@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { eraseSplit, outlinePath, pack, recognizeShape, strokeHit, strokeInLasso, strokePath, unpack, xfStroke, type Pt } from '../src/lib/geom';
+import { eraseSplit, pack, recognizeShape, strokeBands, strokeHit, strokeInLasso, unpack, xfStroke, type Pt } from '../src/lib/geom';
 import type { Stroke } from '../src/lib/model';
 import { paperMarks, paperSvg } from '../src/lib/paper';
 
@@ -16,19 +16,18 @@ test('pack/unpack round trip drops NaN', () => {
   assert.deepEqual(back[1], { x: 4, y: 5.1, p: 1 });
 });
 
-test('outline has no NaN for odd input', () => {
+test('bands have no NaN for odd input', () => {
   const cases: Pt[][] = [
-    [], [{ x: 5, y: 5, p: 0.5 }], [{ x: 5, y: 5, p: 0.5 }, { x: 5, y: 5, p: 0.5 }],
+    [{ x: 5, y: 5, p: 0.5 }], [{ x: 5, y: 5, p: 0.5 }, { x: 5, y: 5, p: 0.5 }],
     line(0, 0, 100, 0), line(0, 0, 0.1, 0.1, 5), [{ x: 0, y: 0, p: NaN }, { x: 10, y: 10, p: Infinity }, { x: 20, y: 0, p: -1 }],
   ];
-  for (const c of cases) {
-    for (const pressure of [true, false]) {
-      const d = outlinePath(c, 2, { pressure, taper: !pressure });
-      assert.ok(!/NaN|Infinity/.test(d), d);
-      if (c.length) assert.ok(d.startsWith('M') && d.endsWith('Z'));
-    }
+  for (const c of cases) for (const pr of [true, false]) {
+    const bands = strokeBands(mk(c, pr ? { pr: 1 } : {}));
+    assert.ok(bands.length >= 1, 'something is drawn');
+    for (const bd of bands) { assert.ok(!/NaN|Infinity/.test(bd.d)); assert.ok(bd.w > 0 && Number.isFinite(bd.w)); }
   }
-  assert.ok(!/NaN/.test(strokePath(mk(line(0, 0, 50, 50), { kind: 'hl', w: 16 }))));
+  const hl = strokeBands(mk(line(0, 0, 50, 50), { kind: 'hl', w: 16 }));
+  assert.equal(hl.length, 1, 'highlighter is one band (even transparency)');
 });
 
 test('eraser splits a line into two pieces', () => {
@@ -73,7 +72,7 @@ test('paper marks', () => {
   for (const g of paperSvg('dotted', 'dark', 612, 792)) assert.ok(!/NaN/.test(g.d));
 });
 
-import { buildSamples, capsules, InkBuilder } from '../src/lib/geom';
+import { buildSamples, InkBuilder, samplesBands } from '../src/lib/geom';
 
 test('live stroke equals the saved stroke (no jump on lift)', () => {
   const pts = Array.from({ length: 80 }, (_, i) => ({ x: i * 2.3, y: Math.sin(i / 6) * 30, p: 0.3 + 0.4 * Math.abs(Math.sin(i / 9)) }));
@@ -97,16 +96,10 @@ test('pressure spikes cannot make blobs (width is rate limited)', () => {
   assert.ok(Math.max(...rs) - Math.min(...rs.slice(10)) < 1.2, 'stays even');
 });
 
-test('capsule shapes are all clockwise and finite', () => {
-  const pts = Array.from({ length: 60 }, (_, i) => { const a = i / 8; return { x: Math.cos(a) * (5 + i), y: Math.sin(a) * (5 + i), p: 0.5 }; });
-  const s = buildSamples(pts, 2.5, 'fountain');
-  let quads = 0;
-  capsules(s, 0, (x, y, r) => { assert.ok(Number.isFinite(x + y + r) && r > 0); }, (q) => {
-    quads++;
-    assert.ok(q.every(Number.isFinite));
-    let area = 0;
-    for (let j = 0; j < 8; j += 2) { const k = (j + 2) % 8; area += q[j] * q[k + 1] - q[k] * q[j + 1]; }
-    assert.ok(area >= -1e-6, 'clockwise');
-  });
-  assert.ok(quads > 20);
+test('bands: few paths per stroke, widths follow pressure smoothly', () => {
+  const pts = Array.from({ length: 200 }, (_, i) => ({ x: i * 1.2, y: Math.sin(i / 10) * 20, p: 0.2 + 0.6 * (i / 200) }));
+  const bands = samplesBands(buildSamples(pts, 2, 'fountain'), 2, false);
+  assert.ok(bands.length >= 3 && bands.length <= 30, 'band count ' + bands.length);
+  const ws = bands.map((b) => b.w);
+  assert.ok(Math.max(...ws) / Math.min(...ws) < 2.4, 'no extreme widths');
 });
