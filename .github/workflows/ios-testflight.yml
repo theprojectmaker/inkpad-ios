@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check every Expo module is from the same SDK
+        run: node scripts/check-sdk.cjs
+
       - name: Check the token is set
         run: |
           if [ -z "$EXPO_TOKEN" ]; then echo "::error::Add the EXPO_TOKEN repository secret first"; exit 1; fi
