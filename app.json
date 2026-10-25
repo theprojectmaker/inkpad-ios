@@ -24,8 +24,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Inkpad opens the photos you pick so you can add them to a note.",
-          "cameraPermission": false,
-          "microphonePermission": false
+          "cameraPermission": false
         }
       ],
       [
