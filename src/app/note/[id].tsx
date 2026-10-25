@@ -44,7 +44,7 @@ export default function Editor() {
   const st = activePane === 'b' && split ? stB : stA;
   const activeId = activePane === 'b' && split ? split : id;
   const meta = lib.lib.notes.find((n) => n.id === activeId);
-  const compact = width < 700;
+  const compact = width < 1000;   // hide the title so all the tools fit on a portrait iPad
 
   // Tapping the current tool again shows/hides its options.
   const setTool = (x: Tool) => {
@@ -177,6 +177,7 @@ export default function Editor() {
         {!compact ? <ActionRow label={split ? 'Close split view' : 'Open another note beside this one'} icon="rectangle.split.2x1" onPress={() => (split ? (setSplit(null), setSheet(null)) : setSheet('split'))} /> : null}
         <ActionRow label={meta?.fav ? 'Remove from Favorites' : 'Add to Favorites'} icon={meta?.fav ? 'star.fill' : 'star'} onPress={() => { if (meta) lib.updateNote(meta.id, { fav: !meta.fav }); setSheet(null); }} />
         <ActionRow label="Export as PDF" icon="square.and.arrow.up" onPress={() => { setSheet(null); api.current?.exportPdf(); }} />
+        <ActionRow label="Share this page as an image" icon="photo" onPress={() => { setSheet(null); api.current?.sharePageImage(); }} />
         <SectionTitle title="Writing" />
         <ToggleRow label="Draw with finger" hint="Off: only Apple Pencil writes, fingers scroll and zoom" value={!s.pencilOnly} onChange={(v) => set({ pencilOnly: !v, pencilSeen: true })} />
         <ToggleRow label="Pressure" hint="Lines get thicker the harder you press" value={s.pressure} onChange={(v) => set({ pressure: v })} />

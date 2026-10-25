@@ -19,6 +19,8 @@ export const PAPER_STYLES: { id: PaperStyle; name: string }[] = [
   { id: 'dotted', name: 'Dotted' },
   { id: 'cornell', name: 'Cornell' },
   { id: 'todo', name: 'Checklist' },
+  { id: 'music', name: 'Music' },
+  { id: 'iso', name: 'Isometric' },
 ];
 
 export const paperOf = (c: PaperColor) => PAPERS.find((p) => p.id === c) ?? PAPERS[0];
@@ -53,6 +55,13 @@ export function paperMarks(style: PaperStyle, color: PaperColor, w: number, h: n
       const s = 14, x = 42, by = y - s - 4;
       out.push({ x, y: by, w: s, h: 1, color: P.line }, { x, y: by + s, w: s + 1, h: 1, color: P.line }, { x, y: by, w: 1, h: s, color: P.line }, { x: x + s, y: by, w: 1, h: s, color: P.line });
     }
+  } else if (style === 'music') {
+    // Staves of five lines.
+    for (let y = 80; y + 4 * 7 < h - 30; y += 4 * 7 + 46) for (let k = 0; k < 5; k++) out.push({ x: 40, y: y + k * 7, w: w - 80, h: 0.6, color: P.line });
+  } else if (style === 'iso') {
+    // Isometric dot grid (triangular lattice) for 3D sketches.
+    const gx = 20, gy = gx * Math.sqrt(3) / 2;
+    for (let r = 0, y = gy; y < h; r++, y += gy) for (let x = (r % 2) * gx / 2 + gx / 2; x < w; x += gx) out.push({ cx: x, cy: y, r: 0.9, color: P.line });
   } else if (style === 'dotted') {
     const gap = 20;
     for (let y = gap; y < h; y += gap) for (let x = gap; x < w; x += gap) out.push({ cx: x, cy: y, r: 0.9, color: P.line });

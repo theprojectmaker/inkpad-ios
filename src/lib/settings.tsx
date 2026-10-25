@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
-import type { PenType } from './model';
+import type { FavPen, PenType, ShapeKind } from './model';
 
 export type Sort = 'updated' | 'created' | 'title';
 export type Settings = {
@@ -23,6 +23,9 @@ export type Settings = {
   eraser: 'stroke' | 'partial'; eraserSize: number;
   textSize: number;
   recentColors: string[];
+  shapeKind: ShapeKind;
+  tapeColor: string;
+  favPens: FavPen[];
 };
 
 const DEFAULTS: Settings = {
@@ -34,6 +37,9 @@ const DEFAULTS: Settings = {
   eraser: 'partial', eraserSize: 14,
   textSize: 18,
   recentColors: [],
+  shapeKind: 'arrow',
+  tapeColor: '#F7B731',
+  favPens: [],
 };
 
 const KEY = 'inkpad.settings.v1';   // key kept from the app's first name (Inkpad) so settings survive the rename

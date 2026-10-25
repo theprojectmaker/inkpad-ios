@@ -39,8 +39,13 @@ export default function LibraryScreen() {
 
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'new' | 'paper' | 'sort' | 'note' | 'move' | 'rename' | 'delete' | 'folder' | 'newFolder' | 'renameFolder' | 'deleteFolder' | 'settings'>(null);
+  const [sheet, setSheet] = useState<null | 'new' | 'paper' | 'sort' | 'note' | 'move' | 'rename' | 'delete' | 'folder' | 'newFolder' | 'renameFolder' | 'deleteFolder' | 'settings' | 'bulkMove' | 'bulkDelete'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
+  // Select mode: tap notes to pick several, then move / favourite / delete them together.
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const togglePick = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const endSelect = () => { setSelecting(false); setPicked(new Set()); };
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
   const [paper, setPaper] = useState<{ style: PaperStyle; color: PaperColor; size?: PageSizeId }>({ style: 'lined', color: 'white', size: 'letter' });
 
@@ -186,11 +191,19 @@ export default function LibraryScreen() {
     }
     const f = folderOf(n.folderId);
     const thumb = n.thumb ? fsx.uri(notePath(n.id, n.thumb)) : '';
-    const longPress = () => { setTarget(n); setSheet('note'); };
+    const longPress = () => { if (selecting) { togglePick(n.id); return; } setTarget(n); setSheet('note'); };
+    const press = () => (selecting ? togglePick(n.id) : open(n.id));
+    const isPicked = picked.has(n.id);
+    const check = selecting ? (
+      <View style={{ position: 'absolute', left: 8, top: 8, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: isPicked ? t.accent : 'rgba(255,255,255,0.9)', borderWidth: isPicked ? 0 : 1.5, borderColor: '#9AA0AA' }}>
+        {isPicked ? <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>✓</Text> : null}
+      </View>
+    ) : null;
     if (s.view === 'list') {
       return (
-        <Pressable onPress={() => open(n.id)} onLongPress={longPress} delayLongPress={350}
-          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: pressed ? t.chip : t.card, marginBottom: 8, borderWidth: 1, borderColor: t.line })}>
+        <Pressable onPress={press} onLongPress={longPress} delayLongPress={350}
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: pressed ? t.chip : t.card, marginBottom: 8, borderWidth: isPicked ? 2 : 1, borderColor: isPicked ? t.accent : t.line })}>
+          {selecting ? <View style={{ width: 26 }}>{check}</View> : null}
           <View style={{ width: 44, height: 56, borderRadius: 5, overflow: 'hidden', backgroundColor: '#fff', borderWidth: 1, borderColor: t.line }}>
             {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : null}
           </View>
@@ -204,14 +217,15 @@ export default function LibraryScreen() {
       );
     }
     return (
-      <Pressable onPress={() => open(n.id)} onLongPress={longPress} delayLongPress={350} style={({ pressed }) => ({ width: cardW, opacity: pressed ? 0.75 : 1 })}>
-        <View style={{ width: cardW, height: cardW * 1.29, borderRadius: 10, overflow: 'hidden', backgroundColor: n.kind === 'paper' ? '#fff' : '#fff', borderWidth: 1, borderColor: t.line, shadowColor: '#000', shadowOpacity: t.dark ? 0 : 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}>
+      <Pressable onPress={press} onLongPress={longPress} delayLongPress={350} style={({ pressed }) => ({ width: cardW, opacity: pressed ? 0.75 : 1 })}>
+        <View style={{ width: cardW, height: cardW * 1.29, borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff', borderWidth: isPicked ? 3 : 1, borderColor: isPicked ? t.accent : t.line, shadowColor: '#000', shadowOpacity: t.dark ? 0 : 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}>
           {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: paperOf('white').bg }}><Icon name="doc" size={30} color="#B9BDC6" /></View>
           )}
           {f ? <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: f.color }} /> : null}
           {n.fav ? <View style={{ position: 'absolute', right: 8, top: 8 }}><Icon name="star.fill" size={16} color="#F5B301" /></View> : null}
           {n.audio ? <View style={{ position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, padding: 4 }}><Icon name="mic.fill" size={13} color="#fff" /></View> : null}
+          {check}
         </View>
         <Text numberOfLines={2} style={{ color: t.text, fontSize: 15, fontWeight: '600', marginTop: 8 }}>{n.title}</Text>
         <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12, marginTop: 2 }}>{fmtDate(n.updated)} · {n.pages} pg</Text>
@@ -231,7 +245,10 @@ export default function LibraryScreen() {
           <IconButton name="arrow.up.arrow.down" label="Sort" onPress={() => setSheet('sort')} />
           <IconButton name={s.view === 'grid' ? 'list.bullet' : 'square.grid.2x2'} label={s.view === 'grid' ? 'List view' : 'Grid view'} onPress={() => set({ view: s.view === 'grid' ? 'list' : 'grid' })} />
           {!wide ? <IconButton name="gearshape" label="Settings" onPress={() => setSheet('settings')} /> : null}
-          <Button title="New" icon="plus" kind="primary" onPress={() => setSheet('paper')} />
+          <Pressable onPress={() => (selecting ? endSelect() : setSelecting(true))} style={{ paddingHorizontal: 12, height: 38, justifyContent: 'center', borderRadius: 10 }}>
+            <Text style={{ color: t.accent, fontSize: 16, fontWeight: '600' }}>{selecting ? 'Done' : 'Select'}</Text>
+          </Pressable>
+          {!selecting ? <Button title="New" icon="plus" kind="primary" onPress={() => setSheet('paper')} /> : null}
         </View>
 
         {!wide ? (
@@ -254,7 +271,7 @@ export default function LibraryScreen() {
         {notes.length ? (
           <FlatList
             key={s.view + cols}
-            data={s.view === 'grid' && !q && filter.kind !== 'recent' && filter.kind !== 'fav' ? [NEW_CARD, ...notes] : notes}
+            data={s.view === 'grid' && !q && !selecting && filter.kind !== 'recent' && filter.kind !== 'fav' ? [NEW_CARD, ...notes] : notes}
             keyExtractor={(n) => n.id}
             numColumns={s.view === 'grid' ? cols : 1}
             columnWrapperStyle={s.view === 'grid' ? { gap: 18 } : undefined}
@@ -270,6 +287,31 @@ export default function LibraryScreen() {
           </View>
         )}
       </View>
+
+      {selecting ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 24, alignItems: 'center' }} pointerEvents="box-none">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: t.elev, borderRadius: 24, paddingHorizontal: 10, height: 52, borderWidth: t.dark ? 1 : 0, borderColor: t.line,
+            shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } }}>
+            <Text style={{ color: t.sub, fontSize: 14, fontWeight: '600', marginHorizontal: 8 }}>{picked.size} selected</Text>
+            <Button title="All" onPress={() => setPicked(new Set(notes.map((x) => x.id)))} />
+            <Button title="Move" icon="folder" disabled={!picked.size} onPress={() => setSheet('bulkMove')} />
+            <Button title="Favorite" icon="star" disabled={!picked.size} onPress={() => { for (const id of picked) lib.updateNote(id, { fav: true }); toast(`Added ${picked.size} to Favorites`); endSelect(); }} />
+            <Button title="Delete" kind="danger" icon="trash" disabled={!picked.size} onPress={() => setSheet('bulkDelete')} />
+          </View>
+        </View>
+      ) : null}
+      <MenuSheet visible={sheet === 'bulkMove'} onClose={() => setSheet(null)} title={`Move ${picked.size} note${picked.size === 1 ? '' : 's'} to`} items={[
+        { label: 'Unfiled', icon: 'doc', onPress: () => { for (const id of picked) lib.updateNote(id, { folderId: null }); endSelect(); } },
+        ...lib.lib.folders.map((f) => ({ label: f.name, icon: 'folder', onPress: () => { for (const id of picked) lib.updateNote(id, { folderId: f.id }); toast(`Moved to ${f.name}`); endSelect(); } })),
+      ]} />
+      <ConfirmSheet visible={sheet === 'bulkDelete'} title={`Delete ${picked.size} note${picked.size === 1 ? '' : 's'}?`} message="They and everything written in them will be removed from this iPad." onCancel={() => setSheet(null)}
+        onConfirm={async () => {
+          setSheet(null);
+          const ids = [...picked];
+          set({ tabs: s.tabs.filter((x) => !ids.includes(x)) });
+          for (const id of ids) await lib.removeNote(id);
+          endSelect();
+        }} />
 
       {/* New */}
       <MenuSheet visible={sheet === 'new'} onClose={() => setSheet(null)} title="New" items={[

@@ -37,6 +37,16 @@ export async function exportNotePdf(doc: NoteDoc, title: string, onProgress?: (d
   return out;
 }
 
+export async function shareImage(path: string) {
+  if (Platform.OS === 'web') {
+    const a = (globalThis as any).document.createElement('a');
+    a.href = fsx.uri(path); a.download = path.split('/').pop() || 'page.jpg'; a.click();
+    return;
+  }
+  if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device.');
+  await Sharing.shareAsync(fsx.uri(path), { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+}
+
 export async function sharePdf(path: string, title: string) {
   if (Platform.OS === 'web') {
     const a = (globalThis as any).document.createElement('a');

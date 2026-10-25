@@ -502,3 +502,21 @@ export function recognizeShape(raw: Pt[]): { kind: ShapeKind; pts: Pt[] } | null
   }
   return null;
 }
+
+/** Polylines for a dragged shape from a to b (an arrow is two: shaft + head). */
+export function shapeParts(kind: 'line' | 'arrow' | 'rect' | 'ellipse', a: { x: number; y: number }, b: { x: number; y: number }, headSize = 14): Pt[][] {
+  const p = 0.5;
+  if (kind === 'rect') return [poly([{ x: a.x, y: a.y }, { x: b.x, y: a.y }, { x: b.x, y: b.y }, { x: a.x, y: b.y }], p)];
+  if (kind === 'ellipse') {
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2, rx = Math.abs(b.x - a.x) / 2, ry = Math.abs(b.y - a.y) / 2;
+    const n = Math.max(24, Math.round((Math.PI * (rx + ry)) / 3));
+    return [Array.from({ length: n + 1 }, (_, k) => { const t = (k / n) * Math.PI * 2; return { x: cx + Math.cos(t) * rx, y: cy + Math.sin(t) * ry, p }; })];
+  }
+  const shaft = line(a, b, p);
+  if (kind === 'line') return [shaft];
+  const ang = Math.atan2(b.y - a.y, b.x - a.x), L = Math.hypot(b.x - a.x, b.y - a.y);
+  const hs = Math.min(headSize, L * 0.45), spread = 0.5;
+  const l = { x: b.x - Math.cos(ang - spread) * hs, y: b.y - Math.sin(ang - spread) * hs };
+  const r = { x: b.x - Math.cos(ang + spread) * hs, y: b.y - Math.sin(ang + spread) * hs };
+  return [shaft, [...line(l, b, p), ...line(b, r, p).slice(1)]];
+}

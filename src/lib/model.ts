@@ -3,7 +3,7 @@
 // so ink lines up 1:1 with the PDF page when it is exported.
 
 export type PenType = 'fountain' | 'ball' | 'brush' | 'marker' | 'pencil' | 'fine';
-export type PaperStyle = 'blank' | 'lined' | 'narrow' | 'grid' | 'dotted' | 'cornell' | 'todo';
+export type PaperStyle = 'blank' | 'lined' | 'narrow' | 'grid' | 'dotted' | 'cornell' | 'todo' | 'music' | 'iso';
 export type PaperColor = 'white' | 'ivory' | 'yellow' | 'gray' | 'blue' | 'dark';
 
 export type Stroke = {
@@ -32,6 +32,12 @@ export type TextItem = {
 
 export type ImageItem = { id: string; x: number; y: number; w: number; h: number; file: string };
 
+/** Study tape: covers part of the page; tap it to reveal what's underneath. */
+export type Tape = { id: string; x: number; y: number; w: number; h: number; color: string; shown?: 1 };
+
+export type ShapeKind = 'line' | 'arrow' | 'rect' | 'ellipse';
+export type FavPen = { type: PenType; color: string; width: number };
+
 export type PageBg =
   | { kind: 'paper'; style: PaperStyle; color: PaperColor }
   | { kind: 'pdf'; file: string; index: number }   // file = a PDF inside the note folder
@@ -45,6 +51,7 @@ export type Page = {
   strokes: Stroke[];
   texts: TextItem[];
   images: ImageItem[];
+  tapes?: Tape[];
 };
 
 export type Recording = { id: string; file: string; dur: number; created: number };
@@ -115,6 +122,7 @@ export const HL_WIDTHS = [12, 20, 32];
 export const HL_RANGE = [6, 64] as const;
 export const ERASER_SIZES = [6, 14, 30];
 export const TEXT_SIZES = [14, 18, 24, 32];
+export const TAPE_COLORS = ['#F7B731', '#45AAF2', '#26DE81', '#FC5C65', '#A55EEA', '#4B4B4B'];
 export const STICKERS = ['⭐', '✅', '❗', '❓', '💡', '📌', '🔥', '❤️', '👍', '🎯', '📝', '📅', '⚠️', '✏️', '🧠', '🚀', '😀', '🎉'];
 
 // Doc text for search: every typed text box, trimmed.

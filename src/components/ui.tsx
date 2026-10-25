@@ -15,7 +15,7 @@ const FALLBACK: Record<string, string> = {
   'books.vertical': '▥', 'clock': '◷', 'tray': '▱', 'arrow.up.arrow.down': '⇅', 'pencil': '✎', 'checkmark': '✓',
   'moon': '☾', 'sun.max': '☼', 'doc.badge.plus': '⊞', 'arrow.up': '↑', 'arrow.down': '↓', 'plus.square.on.square': '⧉',
   'scissors': '✂', 'doc.on.clipboard': '📋', 'square.on.square': '⧉', 'paintpalette': '◍', 'scribble': '〰',
-  'hand.draw': '✍', 'pencil.and.outline': '✎', 'square.and.pencil': '✎', 'folder.badge.plus': '⊕', 'arrow.right.square': '⇥', 'play.fill': '▶', 'wand.and.rays': '✦', 'minus': '−', 'arrow.up.left.and.arrow.down.right': '⤢', 'pause.fill': '❚❚', 'mic': '🎙', 'mic.fill': '🎙', 'eyedropper': '◍',
+  'hand.draw': '✍', 'pencil.and.outline': '✎', 'square.and.pencil': '✎', 'folder.badge.plus': '⊕', 'arrow.right.square': '⇥', 'play.fill': '▶', 'wand.and.rays': '✦', 'square.on.circle': '◰', 'rectangle.fill': '▬', 'photo.on.rectangle': '🖼', 'checkmark.circle.fill': '✔', 'circle': '○', 'minus': '−', 'arrow.up.left.and.arrow.down.right': '⤢', 'pause.fill': '❚❚', 'mic': '🎙', 'mic.fill': '🎙', 'eyedropper': '◍',
 };
 
 export function Icon({ name, size = 20, color }: { name: string; size?: number; color?: string }) {

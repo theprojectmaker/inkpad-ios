@@ -17,6 +17,7 @@ export type LiveStroke = {
   pressure: boolean;        // real Apple Pencil pressure
   laser?: boolean;          // laser pointer: glows, then fades away (never saved)
   fade?: number;            // 0..1 while the laser fades out
+  extra?: Pt[][];           // more polylines drawn the same way (e.g. an arrow's head)
   smoothing: number;
   color: string;
   multiply: boolean;
@@ -38,7 +39,8 @@ export function liveFrame(l: LiveStroke): SkPicture {
   c.scale(l.tf.z, l.tf.z);
   const last = l.pts[l.pts.length - 1];
   const pts = l.pred && last ? [...l.pts, { x: l.pred.x, y: l.pred.y, p: last.p }] : l.pts;
-  const d = outlineSvg(inkOutline(pts, l.base, l.kind, l.pressure, { last: false, smoothing: l.smoothing }));
+  let d = outlineSvg(inkOutline(pts, l.base, l.kind, l.pressure, { last: false, smoothing: l.smoothing }));
+  for (const part of l.extra ?? []) d += outlineSvg(inkOutline(part, l.base, l.kind, false, { last: true, smoothing: 0 }));
   const path = d ? Skia.Path.MakeFromSVGString(d) : null;
   if (path) {
     if (l.laser) {

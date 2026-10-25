@@ -6,7 +6,7 @@ import { type GestureResponderEvent, Platform, Pressable, Text, View } from 'rea
 
 import { clipboard } from '@/lib/clip';
 import { PEN_TYPES } from '@/lib/ink';
-import { ERASER_SIZES, HL_COLORS, HL_RANGE, HL_WIDTHS, INK_COLORS, PEN_RANGE, PEN_WIDTHS, TEXT_SIZES } from '@/lib/model';
+import { ERASER_SIZES, HL_COLORS, HL_RANGE, HL_WIDTHS, INK_COLORS, PEN_RANGE, PEN_WIDTHS, type ShapeKind, TAPE_COLORS, TEXT_SIZES } from '@/lib/model';
 import { useSettings, useTheme } from '@/lib/settings';
 import type { Tool } from './note-view';
 import { Icon, IconButton } from './ui';
@@ -17,6 +17,8 @@ const TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: 'eraser', icon: 'eraser', label: 'Eraser' },
   { id: 'lasso', icon: 'lasso', label: 'Lasso' },
   { id: 'text', icon: 'textformat', label: 'Text' },
+  { id: 'shape', icon: 'square.on.circle', label: 'Shapes' },
+  { id: 'tape', icon: 'rectangle.fill', label: 'Study tape' },
   { id: 'laser', icon: 'wand.and.rays', label: 'Laser pointer' },
 ];
 
@@ -27,7 +29,7 @@ export function TopBar({ title, onBack, onTitle, tool, setTool, canUndo, canRedo
 }) {
   const t = useTheme();
   const { s } = useSettings();
-  const toolColor = (id: Tool) => (id === 'pen' ? s.penColor : id === 'hl' ? s.hlColor : id === 'laser' ? '#FF2D55' : undefined);
+  const toolColor = (id: Tool) => (id === 'pen' || id === 'shape' ? s.penColor : id === 'hl' ? s.hlColor : id === 'laser' ? '#FF2D55' : id === 'tape' ? s.tapeColor : undefined);
   return (
     <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, backgroundColor: t.bar, borderBottomWidth: 1, borderBottomColor: t.line }}>
       <IconButton name="chevron.left" label="Library" onPress={onBack} />
@@ -43,7 +45,7 @@ export function TopBar({ title, onBack, onTitle, tool, setTool, canUndo, canRedo
           const c = toolColor(x.id);
           return (
             <Pressable key={x.id} accessibilityRole="button" accessibilityLabel={x.label} onPress={() => setTool(x.id)}
-              style={{ width: 42, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.card : 'transparent',
+              style={{ width: 38, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.card : 'transparent',
                 shadowColor: '#000', shadowOpacity: on && !t.dark ? 0.08 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } }}>
               <Icon name={x.icon} size={19} color={on ? t.text : t.sub} />
               {c ? <View style={{ position: 'absolute', bottom: 3, width: 14, height: 3, borderRadius: 2, backgroundColor: c, opacity: on ? 1 : 0.7 }} /> : null}
@@ -188,6 +190,29 @@ export function ToolOptions({ tool, onColors, onPaste }: { tool: Tool; onColors:
       </>
     );
   }
+  if (tool === 'shape') {
+    body = (
+      <>
+        {([['line', 'Line'], ['arrow', 'Arrow'], ['rect', 'Box'], ['ellipse', 'Circle']] as [ShapeKind, string][]).map(([k, label]) => (
+          <Pressable key={k} onPress={() => set({ shapeKind: k })} style={{ paddingHorizontal: 11, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: (s.shapeKind ?? 'arrow') === k ? t.chip : 'transparent' }}>
+            <Text style={{ color: (s.shapeKind ?? 'arrow') === k ? t.text : t.sub, fontSize: 13, fontWeight: '600' }}>{label}</Text>
+          </Pressable>
+        ))}
+        <Sep />
+        {quick(INK_COLORS, s.penColor).slice(0, 4).map((c) => <Swatch key={c} color={c} on={s.penColor === c} onPress={() => set({ penColor: c })} />)}
+        <Sep />
+        <SizeSlider value={s.penWidth} range={PEN_RANGE} onChange={(v) => set({ penWidth: v })} />
+      </>
+    );
+  } else if (tool === 'tape') {
+    body = (
+      <>
+        {TAPE_COLORS.map((c) => <Swatch key={c} color={c} on={(s.tapeColor ?? TAPE_COLORS[0]) === c} onPress={() => set({ tapeColor: c })} />)}
+        <Sep />
+        <Text style={{ color: t.sub, fontSize: 13, marginHorizontal: 8 }}>Drag to cover · tap tape to reveal · erase to remove</Text>
+      </>
+    );
+  }
   if (tool === 'laser') body = <Text style={{ color: t.sub, fontSize: 13, marginHorizontal: 10 }}>Laser pointer: draw to point at things, it fades away</Text>;
   if (!body) return null;
   const capsule = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 2, paddingHorizontal: 8, height: 44, borderRadius: 22, backgroundColor: t.elev,
@@ -197,6 +222,22 @@ export function ToolOptions({ tool, onColors, onPaste }: { tool: Tool; onColors:
       <View style={capsule}>{body}</View>
       {tool === 'pen' ? (
         <View style={capsule}>
+          {(s.favPens ?? []).map((f, i) => {
+            const on = f.type === (s.penType ?? 'fountain') && f.color === s.penColor && Math.abs(f.width - s.penWidth) < 0.05;
+            return (
+              <Pressable key={i} onPress={() => set({ penType: f.type, penColor: f.color, penWidth: f.width })} onLongPress={() => set({ favPens: (s.favPens ?? []).filter((_, k) => k !== i) })}
+                accessibilityLabel={`Favourite pen ${i + 1}`} style={{ width: 34, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.chip : 'transparent' }}>
+                <View style={{ width: Math.min(22, 6 + f.width * 2.2), height: Math.min(22, 6 + f.width * 2.2), borderRadius: 11, backgroundColor: f.color, borderWidth: f.color.toUpperCase() === '#FFFFFF' ? 1 : 0, borderColor: t.line }} />
+              </Pressable>
+            );
+          })}
+          {(s.favPens ?? []).length < 5 ? (
+            <Pressable onPress={() => set({ favPens: [...(s.favPens ?? []), { type: s.penType ?? 'fountain', color: s.penColor, width: s.penWidth }] })} accessibilityLabel="Save this pen as a favourite"
+              style={{ paddingHorizontal: 10, height: 32, borderRadius: 16, justifyContent: 'center' }}>
+              <Text style={{ color: t.accent, fontSize: 13, fontWeight: '700' }}>☆ Save</Text>
+            </Pressable>
+          ) : null}
+          <Sep />
           {PEN_TYPES.map((p) => (
             <Pressable key={p.id} onPress={() => set({ penType: p.id })} accessibilityLabel={p.name}
               style={{ paddingHorizontal: 11, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: (s.penType ?? 'fountain') === p.id ? t.chip : 'transparent' }}>

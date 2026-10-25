@@ -6,7 +6,7 @@
 //     "Pencil only" is on (turned on automatically the first time a pencil is seen).
 //   • Two-finger tap = undo, three-finger tap = redo.
 // All state the touch code reads lives in refs, so handlers never go stale.
-import { Canvas, Circle, DashPathEffect, Group, Image as SkImageNode, Path, Picture, Rect, Skia, type SkPicture, type Transforms3d } from '@shopify/react-native-skia';
+import { Canvas, Circle, DashPathEffect, Group, Image as SkImageNode, Path, Picture, Rect, RoundedRect, Skia, type SkPicture, type Transforms3d } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useImperativeHandle, useMemo, useReducer, useRef, useState, type Ref } from 'react';
@@ -14,10 +14,10 @@ import { AppState, type GestureResponderEvent, Keyboard, PixelRatio, Platform, P
 import { useSharedValue } from 'react-native-reanimated';
 
 import { clipboard } from '@/lib/clip';
-import { exportNotePdf, sharePdf } from '@/lib/export';
+import { exportNotePdf, shareImage, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import {
-  type Box, clamp, pressureFromForce, eraseSplit, unpack, fin, imageBox, inBox, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
+  type Box, clamp, pressureFromForce, eraseSplit, shapeParts, unpack, fin, imageBox, inBox, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
   strokeHitSwept, strokeInLasso, unionBox, xfImage, xfStroke, xfText, type Xf,
 } from '@/lib/geom';
 import { clampView, fitZoom, GAP, layoutDoc, MAX_ZOOM, MIN_ZOOM, pageAt, softClampView, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
@@ -31,7 +31,7 @@ import type { InkKind } from '@/lib/ink';
 import { emptyPicture, liveFrame, type LiveStroke } from './live-ink';
 import { useToast } from './ui';
 
-export type Tool = 'pen' | 'hl' | 'eraser' | 'lasso' | 'text' | 'hand' | 'laser';
+export type Tool = 'pen' | 'hl' | 'eraser' | 'lasso' | 'text' | 'hand' | 'laser' | 'shape' | 'tape';
 
 export type NoteViewHandle = {
   undo: () => void;
@@ -47,6 +47,7 @@ export type NoteViewHandle = {
   insertPhotosAsPages: () => Promise<void>;
   paste: () => void;
   exportPdf: () => Promise<void>;
+  sharePageImage: () => Promise<void>;
   flush: () => Promise<void>;
   setPaper: (style: Page['bg'] & { kind: 'paper' }) => void;
   setPageSize: (size: PageSizeId) => void;
@@ -125,6 +126,9 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   const momentum = useRef<number | null>(null);
   const eraseRef = useRef<{ page: number; last: { x: number; y: number } | null; before: Page[]; changed: boolean } | null>(null);
   const lassoRef = useRef<{ page: number; pts: { x: number; y: number }[] } | null>(null);
+  // Shapes tool: dragging from a to b; study tape: dragging out a rectangle.
+  const shapeRef = useRef<{ page: number; a: { x: number; y: number }; b: { x: number; y: number }; live: LiveStroke } | null>(null);
+  const tapeRef = useRef<{ page: number; a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
   const [sel, setSelState] = useState<Sel | null>(null);
   const selRef = useRef<Sel | null>(null);
   const dragRef = useRef<{ kind: 'move' | 'scale'; sx: number; sy: number; xf: Xf } | null>(null);
@@ -457,7 +461,26 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
         strokes.push(...parts);
       }
     }
-    if (changed) { er.changed = true; setPage(er.page, (pg) => ({ ...pg, strokes }), null); }
+    const tapes = (p.tapes ?? []).filter((tp) => {
+      const hit = !(tp.x > box.x + box.w || tp.x + tp.w < box.x || tp.y > box.y + box.h || tp.y + tp.h < box.y);
+      if (hit) changed = true;
+      return !hit;
+    });
+    if (changed) { er.changed = true; setPage(er.page, (pg) => ({ ...pg, strokes, tapes }), null); }
+  };
+
+  // Study tape: tap it to show or hide what's under it.
+  const tapeAt = (page: number, x: number, y: number) => (docRef.current?.pages[page]?.tapes ?? []).slice().reverse().find((tp) => inBox(tp, x, y, 4));
+  const toggleTape = (t: Touch) => {
+    const page = pageUnder(t.sx, t.sy);
+    if (page < 0) return false;
+    const q = toPage(page, t.sx, t.sy);
+    const hit = tapeAt(page, q.x, q.y);
+    if (!hit) return false;
+    setPage(page, (pg) => ({ ...pg, tapes: (pg.tapes ?? []).map((tp) => (tp.id === hit.id ? { ...tp, shown: tp.shown ? undefined : 1 } : tp)) }), null);
+    scheduleSave();
+    try { Haptics.selectionAsync(); } catch {}
+    return true;
   };
 
   // ----- strokes -----
@@ -588,6 +611,20 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       armHold(dr);
       if (selRef.current) setSel(null);
       drawLive(live);
+    } else if (tl === 'shape') {
+      const S0 = SRef.current, v = viewRef.current;
+      const q = toPage(page, t.sx, t.sy);
+      const live: LiveStroke = {
+        pts: [], base: S0.penWidth, kind: S0.penType ?? 'fountain', pressure: false, smoothing: 0,
+        color: S0.penColor, multiply: false, pred: null,
+        tf: { tx: v.tx + LRef.current.xs[page] * v.z, ty: v.ty + LRef.current.tops[page] * v.z, z: v.z },
+      };
+      shapeRef.current = { page, a: q, b: q, live };
+      ++liveGen.current;
+      if (selRef.current) setSel(null);
+    } else if (tl === 'tape') {
+      const q = toPage(page, t.sx, t.sy);
+      tapeRef.current = { page, a: q, b: q };
     } else if (tl === 'eraser') {
       eraseRef.current = { page, last: null, before: docRef.current!.pages, changed: false };
       const q = toPage(page, t.sx, t.sy);
@@ -611,6 +648,17 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
 
   const toolMove = (t: Touch, force0: number) => {
     const tl = toolRef.current;
+    const sh = shapeRef.current;
+    if (sh) {
+      sh.b = toPage(sh.page, t.x, t.y);
+      const parts = shapeParts(SRef.current.shapeKind ?? 'arrow', sh.a, sh.b, 6 + SRef.current.penWidth * 4);
+      sh.live.pts = parts[0];
+      sh.live.extra = parts.slice(1);
+      drawLive(sh.live);
+      return;
+    }
+    const tp = tapeRef.current;
+    if (tp) { tp.b = toPage(tp.page, t.x, t.y); force(); return; }
     const dr = drawer.current;
     if (dr && dr.touch === t.id) {
       if (dr.snapped) return;
@@ -685,6 +733,36 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   };
 
   const toolEnd = (t: Touch, cancel: boolean) => {
+    const sh = shapeRef.current;
+    if (sh) {
+      shapeRef.current = null;
+      const gen = ++liveGen.current;
+      const big = Math.hypot(sh.b.x - sh.a.x, sh.b.y - sh.a.y) > 4;
+      if (!cancel && big) {
+        const S0 = SRef.current;
+        const parts = shapeParts(S0.shapeKind ?? 'arrow', sh.a, sh.b, 6 + S0.penWidth * 4);
+        const strokes: Stroke[] = parts.map((pts) => ({
+          id: uid('s'), kind: 'pen', color: S0.penColor, w: S0.penWidth, pts: pack(pts), sm: 0, c0: 1, c1: 1,
+          ...(S0.penType && S0.penType !== 'fountain' ? { pen: S0.penType } : {}),
+        }));
+        setPage(sh.page, (p) => ({ ...p, strokes: [...p.strokes, ...strokes] }));
+      }
+      setTimeout(() => { if (liveGen.current === gen) drawLive(null); }, 50);
+      return;
+    }
+    const tp = tapeRef.current;
+    if (tp) {
+      tapeRef.current = null;
+      const pg0 = docRef.current?.pages[tp.page];
+      const PW = pg0?.w ?? 1e9, PH = pg0?.h ?? 1e9;   // keep the tape on the page
+      const x = clamp(Math.min(tp.a.x, tp.b.x), 0, PW), y = clamp(Math.min(tp.a.y, tp.b.y), 0, PH);
+      const w = clamp(Math.max(tp.a.x, tp.b.x), 0, PW) - x, h = clamp(Math.max(tp.a.y, tp.b.y), 0, PH) - y;
+      if (!cancel && w > 6 && h > 4) {
+        const tape = { id: uid('k'), x, y, w: Math.max(w, 10), h: Math.max(h, 10), color: SRef.current.tapeColor ?? '#F7B731' };
+        setPage(tp.page, (p) => ({ ...p, tapes: [...(p.tapes ?? []), tape] }));
+      } else force();
+      return;
+    }
     const dr = drawer.current;
     if (dr && dr.touch === t.id) {
       // End exactly where the pen lifted (the smoothed points lag a little behind).
@@ -1036,6 +1114,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       mode.current = 'idle';
       const tl = toolRef.current;
       if (quick && trySeek(t)) return;
+      if (quick && toggleTape(t)) return;
       if (quick && (tl === 'text' || tl === 'lasso')) { tapAt(t); return; }
       mode.current = 'draw';
       toolStart(t);
@@ -1049,6 +1128,14 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
         if (dr) finishStroke(dr, true);
         lassoRef.current = null;
         if (eraseRef.current) { eraseRef.current = null; cursor.current = null; }
+        force();
+        return;
+      }
+      if (quick && !dragRef.current && tl !== 'eraser' && toggleTape(t)) {
+        const dr = drawer.current;
+        if (dr) finishStroke(dr, true);
+        shapeRef.current = null; tapeRef.current = null; lassoRef.current = null;
+        drawLive(null);
         force();
         return;
       }
@@ -1237,6 +1324,21 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       const ctr = visibleCentre(i);
       placeItems(i, c, { dx: ctr.x - (c.box.x + c.box.w / 2), dy: ctr.y - (c.box.y + c.box.h / 2), s: 1, ox: 0, oy: 0 }, c.noteId);
     },
+    sharePageImage: async () => {
+      const d = docRef.current;
+      if (!d) return;
+      const i = currentPage();
+      const p = d.pages[i];
+      const bg = p.bg.kind === 'paper' ? null : bestBg(d.id, p, BG_TIERS[1]) ?? bgImages.peek(`${d.id}|${p.bg.kind === 'image' ? p.bg.file : ''}`);
+      if (p.bg.kind !== 'paper' && !bg) { toast('This page is still loading. Try again in a moment.'); return; }
+      try {
+        const b64 = renderPageImage(d.id, p, 2000, bg);
+        if (!b64) throw new Error('render failed');
+        const path = `inkpad/out/page-${i + 1}.jpg`;
+        await fsx.writeBase64(path, b64);
+        await shareImage(path);
+      } catch (e) { toast("Couldn't share the page: " + String((e as Error)?.message ?? e)); }
+    },
     exportPdf: async () => {
       commitEditing();
       await flush();
@@ -1385,6 +1487,16 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
                 {bg ? <SkImageNode image={bg} x={0} y={0} width={p.w} height={p.h} fit="fill" /> : null}
                 {tile && tile.pageId === p.id && tile.img ? <SkImageNode image={tile.img} x={tile.x} y={tile.y} width={tile.w} height={tile.h} fit="fill" /> : null}
                 <Picture picture={inkPicture(noteId, p, sel?.page === i || editing?.page === i ? exclude : null, imgVer, replay)} />
+                {(p.tapes ?? []).map((tp) => (
+                  <Group key={tp.id}>
+                    <RoundedRect x={tp.x} y={tp.y} width={tp.w} height={tp.h} r={Math.min(6, tp.h / 3)} color={tp.color} opacity={tp.shown ? 0.16 : 1} />
+                    {tp.shown ? <RoundedRect x={tp.x} y={tp.y} width={tp.w} height={tp.h} r={Math.min(6, tp.h / 3)} color={tp.color} style="stroke" strokeWidth={1.5 / z} /> : null}
+                  </Group>
+                ))}
+                {tapeRef.current && tapeRef.current.page === i ? (
+                  <RoundedRect x={Math.min(tapeRef.current.a.x, tapeRef.current.b.x)} y={Math.min(tapeRef.current.a.y, tapeRef.current.b.y)}
+                    width={Math.abs(tapeRef.current.b.x - tapeRef.current.a.x)} height={Math.abs(tapeRef.current.b.y - tapeRef.current.a.y)} r={4} color={S.tapeColor ?? '#F7B731'} opacity={0.85} />
+                ) : null}
                 {selPic && sel?.page === i ? (
                   <Group transform={dg ? [{ translateX: dg.xf.ox + dg.xf.dx }, { translateY: dg.xf.oy + dg.xf.dy }, { scale: dg.xf.s }, { translateX: -dg.xf.ox }, { translateY: -dg.xf.oy }] : []}>
                     <Picture picture={selPic} />
