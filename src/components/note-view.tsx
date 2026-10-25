@@ -16,7 +16,7 @@ import { clipboard } from '@/lib/clip';
 import { exportNotePdf, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import {
-  type Box, clamp, euroFor, type OneEuro, eraseSplit, fin, imageBox, inBox, outlinePath, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
+  type Box, clamp, euroFor, InkBuilder, type InkMode, type OneEuro, pressureFromForce, eraseSplit, fin, imageBox, inBox, outlinePath, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
   strokeHitSwept, strokeInLasso, unionBox, xfImage, xfStroke, xfText, type Xf,
 } from '@/lib/geom';
 import { clampView, fitZoom, GAP, layoutDoc, pageAt, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
@@ -25,6 +25,7 @@ import { docText, type ImageItem, type NoteDoc, type Page, paperPage, type Recor
 import { imagePages, loadDoc, notePath, pdfPages, saveDoc, saveImage } from '@/lib/noteio';
 import { useSettings, useTheme } from '@/lib/settings';
 import { BG_TIERS, bestBg, bgImages, HL_ALPHA, inkPicture, itemImages, livePath, paperPicture, renderPageImage, type Replay, selectionPicture, textBounds } from '@/lib/skia-render';
+import { growLive, LiveInk, type LiveCtl, type LiveStroke, newLive, resetLive } from './live-ink';
 import { useToast } from './ui';
 
 export type Tool = 'pen' | 'hl' | 'eraser' | 'lasso' | 'text' | 'hand';
@@ -55,10 +56,11 @@ type Sel = { page: number; strokes: Set<string>; texts: Set<string>; images: Set
 type Editing = { page: number; item: TextItem; isNew: boolean };
 type Touch = { id: string; x: number; y: number; sx: number; sy: number; t0: number; pencil: boolean };
 type Drawer = {
-  touch: string; page: number; pts: Pt[]; sm: { x: number; y: number } | null; pencil: boolean; t0: number;
-  hold: ReturnType<typeof setTimeout> | null; anchor: { x: number; y: number }; snapped: boolean; moved: number;
+  touch: string; page: number; pencil: boolean; t0: number;
+  hold: ReturnType<typeof setTimeout> | null; anchor: { x: number; y: number }; snapped: boolean;
   rt?: [string, number] | null;
-  fx: OneEuro; fy: OneEuro; fp: number; tip: Pt | null;
+  fx: OneEuro; fy: OneEuro; fp: number;
+  ink: InkBuilder; live: LiveStroke;
 };
 type Mode = 'idle' | 'pending' | 'draw' | 'nav' | 'ignore';
 
@@ -432,7 +434,11 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   };
 
   // ----- strokes -----
-  const pressureOf = (force: number) => clamp(Math.pow(clamp(force * 2.1, 0, 1), 0.8), 0.05, 1);
+  const liveCtl = useRef<LiveCtl>({});
+  const liveGen = useRef(0);
+
+  const modeFor = (pencil: boolean, hl: boolean, snapped = false): InkMode =>
+    hl ? 'even' : SRef.current.penType === 'ball' ? 'ball' : pencil && SRef.current.pressure && !snapped ? 'fountain' : 'finger';
 
   const addPoint = (dr: Drawer, sx: number, sy: number, force: number, ts?: number) => {
     const q = toPage(dr.page, sx, sy);
@@ -440,11 +446,21 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const tSec = (Number.isFinite(ts) ? (ts as number) : Date.now()) / 1000;
     // Velocity-adaptive smoothing: steady when slow, no lag when fast.
     const x = dr.fx.filter(q.x, tSec), y = dr.fy.filter(q.y, tSec);
-    const raw = dr.pencil && SRef.current.pressure ? pressureOf(force) : 0.5;
-    dr.fp = dr.pts.length ? dr.fp + (raw - dr.fp) * 0.45 : raw;
-    dr.sm = { x, y };
-    dr.pts.push({ x, y, p: dr.fp });
-    dr.tip = { x: q.x, y: q.y, p: dr.fp };
+    // Pressure is smoothed too, so a twitchy force reading never makes a blob.
+    const raw = dr.pencil && SRef.current.pressure ? pressureFromForce(force) : 0.5;
+    dr.fp = dr.ink.pts.length ? dr.fp + (raw - dr.fp) * 0.3 : raw;
+    dr.ink.add({ x, y, p: dr.fp });
+    growLive(dr.live);
+    dr.live.tip = { x: q.x, y: q.y, r: 0 };
+  };
+
+  // The pencil was recognised late: redo the stroke with pressure.
+  const rebuildInk = (dr: Drawer) => {
+    const nb = new InkBuilder(dr.ink.base, modeFor(dr.pencil, toolRef.current === 'hl'));
+    for (const p of dr.ink.pts) nb.add(p);
+    dr.ink = nb;
+    dr.live.ink = nb; dr.live.stable = Skia.PathBuilder.Make(); dr.live.stablePath = dr.live.stable.build(); dr.live.drawn = 0;
+    growLive(dr.live);
   };
 
   const armHold = (dr: Drawer) => {
@@ -452,36 +468,44 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     if (!SRef.current.holdToShape || dr.snapped) return;
     dr.hold = setTimeout(() => {
       const cur = drawer.current;
-      if (cur !== dr || dr.snapped || dr.pts.length < 6) return;
-      const shape = recognizeShape(dr.pts);
+      if (cur !== dr || dr.snapped || dr.ink.pts.length < 6) return;
+      const shape = recognizeShape(dr.ink.pts);
       if (!shape) return;
-      dr.pts = shape.pts;
       dr.snapped = true;
+      const nb = new InkBuilder(dr.ink.base, modeFor(dr.pencil, toolRef.current === 'hl', true));
+      for (const p of shape.pts) nb.add(p);
+      dr.ink = nb;
+      resetLive(dr.live, nb);
       try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-      force();
+      liveCtl.current.draw?.(dr.live);
     }, HOLD_MS);
   };
 
   const finishStroke = (dr: Drawer, cancel = false) => {
     if (dr.hold) clearTimeout(dr.hold);
     drawer.current = null;
-    if (cancel || !dr.pts.length) { force(); return; }
+    const gen = ++liveGen.current;
+    // Keep the live stroke up until the saved one has drawn, so nothing flickers.
+    const clearLive = (ms: number) => setTimeout(() => { if (liveGen.current === gen) liveCtl.current.draw?.(null); }, ms);
+    if (cancel || !dr.ink.pts.length) { clearLive(0); force(); return; }
     const t = toolRef.current;
     const hl = t === 'hl';
+    let pts = dr.ink.pts;
     // Highlighter swipes that are nearly straight become perfectly straight.
     if (hl && SRef.current.hlStraight && !dr.snapped) {
-      const shape = recognizeShape(dr.pts);
-      if (shape?.kind === 'line') dr.pts = shape.pts;
+      const shape = recognizeShape(pts);
+      if (shape?.kind === 'line') pts = shape.pts;
     }
     const st: Stroke = {
       id: uid('s'), kind: hl ? 'hl' : 'pen', color: hl ? SRef.current.hlColor : SRef.current.penColor,
-      w: hl ? SRef.current.hlWidth : SRef.current.penWidth, pts: pack(dr.pts),
+      w: hl ? SRef.current.hlWidth : SRef.current.penWidth, pts: pack(pts),
       ...(dr.pencil && SRef.current.pressure && !hl && !dr.snapped ? { pr: 1 as const } : {}),
       ...(dr.rt ? { rt: dr.rt } : {}),
       ...(!hl && SRef.current.penType === 'ball' ? { pen: 'ball' as const } : {}),
     };
-    if (st.pts.length < 3) { force(); return; }
+    if (st.pts.length < 3) { clearLive(0); force(); return; }
     setPage(dr.page, (p) => ({ ...p, strokes: [...p.strokes, st] }));
+    clearLive(50);
   };
 
   // ----- tool start / move / end (one pointer) -----
@@ -490,13 +514,23 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const page = pageUnder(t.sx, t.sy);
     if (page < 0) return;
     if (tl === 'pen' || tl === 'hl') {
-      const dr: Drawer = { touch: t.id, page, pts: [], sm: null, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false, moved: 0,
-        fx: euroFor(SRef.current.smoothing), fy: euroFor(SRef.current.smoothing), fp: 0.5, tip: null };
+      const hl = tl === 'hl';
+      const S0 = SRef.current;
+      const ink = new InkBuilder(hl ? S0.hlWidth : S0.penWidth, modeFor(t.pencil, hl));
+      const v = viewRef.current;
+      const pg = docRef.current!.pages[page];
+      const dark = pg.bg.kind === 'paper' && pg.bg.color === 'dark';
+      const live = newLive(ink, hl ? S0.hlColor : S0.penColor, hl, !dark,
+        [{ translateX: v.tx + LRef.current.xs[page] * v.z }, { translateY: v.ty + LRef.current.tops[page] * v.z }, { scale: v.z }]);
+      const dr: Drawer = { touch: t.id, page, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false,
+        fx: euroFor(S0.smoothing), fy: euroFor(S0.smoothing), fp: 0.5, ink, live };
+      ++liveGen.current;
       try { dr.rt = stampRef.current?.() ?? null; } catch { dr.rt = null; }
       addPoint(dr, t.sx, t.sy, (t as any).force ?? 0, (t as any).ts0);
       drawer.current = dr;
       armHold(dr);
-      setSel(null);
+      if (selRef.current) setSel(null);
+      liveCtl.current.draw?.(live);
     } else if (tl === 'eraser') {
       eraseRef.current = { page, last: null, before: docRef.current!.pages, changed: false };
       const q = toPage(page, t.sx, t.sy);
@@ -525,7 +559,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       if (dr.snapped) return;
       if (Math.hypot(t.x - dr.anchor.x, t.y - dr.anchor.y) > 3) { dr.anchor = { x: t.x, y: t.y }; armHold(dr); }
       addPoint(dr, t.x, t.y, force0, (t as any).ts);
-      force();
+      liveCtl.current.draw?.(dr.live);
       return;
     }
     if (tl === 'eraser' && eraseRef.current) {
@@ -599,8 +633,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       // End exactly where the pen lifted (the smoothed points lag a little behind).
       if (!cancel && !dr.snapped) {
         const q = toPage(dr.page, t.x, t.y);
-        const lastP = dr.pts[dr.pts.length - 1]?.p ?? 0.5;
-        if (Number.isFinite(q.x) && Number.isFinite(q.y)) dr.pts.push({ x: q.x, y: q.y, p: dr.pencil ? lastP * 0.6 : lastP });
+        if (Number.isFinite(q.x) && Number.isFinite(q.y)) dr.ink.add({ x: q.x, y: q.y, p: dr.pencil ? dr.fp * 0.7 : dr.fp });
       }
       finishStroke(dr, cancel);
       return;
@@ -827,6 +860,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       nav.current = null;
     } else if (mode.current === 'draw' && drawer.current?.touch === t.id) {
       drawer.current.pencil = true;
+      rebuildInk(drawer.current);
       return;
     } else return;
     pencilSeen();
@@ -1136,22 +1170,12 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   const dg = dragRef.current;
   const cur = cursor.current;
 
-  let live: { page: number; path: ReturnType<typeof livePath>; color: string; hl: boolean } | null = null;
-  if (dr && dr.pts.length) {
-    const hl = tool === 'hl';
-    const pr = dr.pencil && S.pressure && !hl && !dr.snapped;
-    // The live stroke runs right up to the pen tip, so the ink never trails behind it.
-    const pts = dr.tip && !dr.snapped ? [...dr.pts, dr.tip] : dr.pts;
-    const d = hl ? outlinePath(pts, S.hlWidth, { pressure: false, taper: false, even: true, fast: true })
-      : outlinePath(pts, S.penWidth, { pressure: pr, taper: !pr, pen: S.penType === 'ball' ? 'ball' : 'fountain', fast: true, openEnd: true });
-    live = { page: dr.page, path: livePath(d), color: hl ? S.hlColor : S.penColor, hl };
-  }
   let lassoPath = null as ReturnType<typeof livePath>;
   if (la && la.pts.length > 1) {
-    const p = Skia.Path.Make();
+    const p = Skia.PathBuilder.Make();
     p.moveTo(la.pts[0].x, la.pts[0].y);
     for (const q of la.pts) p.lineTo(q.x, q.y);
-    lassoPath = p;
+    lassoPath = p.detach();
   }
   const selPage = sel ? pages[sel.page] : null;
   const selPic = sel && selPage ? selectionPicture(noteId, selPage, sel) : null;
@@ -1194,9 +1218,6 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
                     <Circle cx={sel.box.x + sel.box.w + 4 / z} cy={sel.box.y + sel.box.h + 4 / z} r={4.5 / z} color="#ffffff" />
                   </Group>
                 ) : null}
-                {live && live.page === i && live.path ? (
-                  <Path path={live.path} color={live.color} opacity={live.hl ? HL_ALPHA : 1} blendMode={live.hl && !darkPaperOf(p) ? 'multiply' : 'srcOver'} />
-                ) : null}
                 {lassoPath && la?.page === i ? (
                   <Path path={lassoPath} style="stroke" strokeWidth={1.5 / z} color={th.accent}>
                     <DashPathEffect intervals={[7 / z, 5 / z]} />
@@ -1206,6 +1227,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
               </Group>
             );
           })}
+          <LiveInk ctl={liveCtl} />
         </Canvas>
       ) : null}
 

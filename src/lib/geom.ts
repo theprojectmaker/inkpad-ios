@@ -29,23 +29,32 @@ export function pack(pts: Pt[]): number[] {
   return out;
 }
 
-// ---------- input filter ----------
+// ---------- ink ----------
+//
+// A stroke is drawn as the union of round "capsules": a circle at every
+// sample point plus the tangent band joining neighbouring circles. Unlike a
+// left/right outline it can never fold over itself, so tight curves, slow
+// handwriting and pressure changes stay clean (no blots), and every sample is
+// final as soon as it's made — the live stroke can grow piece by piece.
+//
+// Pipeline (all causal, so the live stroke and the saved stroke match):
+//   filtered input points -> Catmull-Rom spline every ~1pt -> width with a
+//   rate limit (it can only change gradually along the line) -> capsules.
 
 /**
- * One Euro filter: strong smoothing when the pen moves slowly (kills hand
- * jitter in small writing), almost none when it moves fast (no lag on quick
- * strokes). Values in page points, time in seconds.
+ * One Euro filter: steadies slow, small movements (hand jitter) and lets
+ * fast movement through without lag. Page points in, seconds for time.
  */
 export class OneEuro {
   private x: number | null = null;
   private dx = 0;
   private t = 0;
-  constructor(public minCutoff = 8, public beta = 0.04, public dCutoff = 1.2) {}
+  constructor(public minCutoff = 12, public beta = 0.06, public dCutoff = 1.2) {}
   private static alpha(cutoff: number, dt: number) { const tau = 1 / (2 * Math.PI * cutoff); return 1 / (1 + tau / dt); }
   filter(v: number, tSec: number): number {
     if (!Number.isFinite(v)) return this.x ?? 0;
     if (this.x == null) { this.x = v; this.t = tSec; return v; }
-    const dt = clamp(tSec - this.t, 0.001, 0.1);
+    const dt = clamp(tSec - this.t, 0.002, 0.05);
     this.t = tSec;
     const dv = (v - this.x) / dt;
     this.dx += OneEuro.alpha(this.dCutoff, dt) * (dv - this.dx);
@@ -55,25 +64,15 @@ export class OneEuro {
   }
 }
 
-/** Smoothing setting (0..1) -> filter strength. */
-export const euroFor = (smoothing: number) => new OneEuro(14 - 11 * clamp(smoothing, 0, 1), 0.05);
+/** Smoothing setting (0..1) -> filter. Low = raw and crisp, high = very steady. */
+export const euroFor = (smoothing: number) => new OneEuro(26 - 20 * clamp(smoothing, 0, 1), 0.08);
 
-// ---------- outline ----------
+/** Apple Pencil force (0..1 of max) -> pressure 0..1. Typical writing lands mid-range. */
+export const pressureFromForce = (force: number) => clamp(Math.pow(clamp((force - 0.015) * 2.6, 0, 1), 0.8), 0, 1);
 
 export type PenType = 'fountain' | 'ball';
-
-function dedupe(pts: Pt[], minGap: number): Pt[] {
-  const out: Pt[] = [];
-  for (const q of pts) {
-    const last = out[out.length - 1];
-    if (!last || Math.hypot(q.x - last.x, q.y - last.y) >= minGap) out.push({ ...q });
-    else last.p = Math.max(last.p, q.p);
-  }
-  // Always keep the true end so the stroke reaches where the pen lifted.
-  const end = pts[pts.length - 1];
-  if (end && out.length > 1) out[out.length - 1] = { ...end };
-  return out;
-}
+export type InkMode = 'fountain' | 'ball' | 'finger' | 'even';
+export type Sample = { x: number; y: number; r: number };
 
 export function polyLen(pts: { x: number; y: number }[]) {
   let L = 0;
@@ -81,123 +80,179 @@ export function polyLen(pts: { x: number; y: number }[]) {
   return L;
 }
 
-function circle(cx: number, cy: number, r: number) {
-  r = Math.max(0.2, fin(r, 1));
-  return `M${f2(cx - r)} ${f2(cy)}A${f2(r)} ${f2(r)} 0 1 0 ${f2(cx + r)} ${f2(cy)}A${f2(r)} ${f2(r)} 0 1 0 ${f2(cx - r)} ${f2(cy)}Z`;
-}
+export const inkMode = (s: { kind: 'pen' | 'hl'; pr?: 1; pen?: 'ball' }): InkMode =>
+  s.kind === 'hl' ? 'even' : s.pen === 'ball' ? 'ball' : s.pr ? 'fountain' : 'finger';
 
-// Catmull-Rom through the input points, resampled every `step` points, so
-// curves come out round instead of as a chain of little straight pieces.
-// Each output point keeps `sp`: how far apart the raw samples were (speed).
-type SP = Pt & { sp: number };
-function spline(pts: Pt[], step: number): SP[] {
-  const n = pts.length;
-  const out: SP[] = [{ ...pts[0], sp: n > 1 ? Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) : 0 }];
-  for (let i = 0; i < n - 1; i++) {
-    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+/** Builds a stroke's samples as points arrive. */
+export class InkBuilder {
+  readonly pts: Pt[] = [];
+  readonly samples: Sample[] = [];
+  private done = 0;           // input segments already turned into samples
+  private w = 0;              // current width (rate limited)
+  private dist = 0;           // length drawn so far
+  private finished = false;
+  constructor(readonly base: number, readonly mode: InkMode) {}
+
+  private target(p: number, gap: number) {
+    const b = this.base;
+    switch (this.mode) {
+      case 'fountain': return b * (0.5 + 0.95 * Math.pow(clamp(p, 0, 1), 0.9));
+      case 'ball': return b * (0.86 + 0.24 * clamp(p, 0, 1));
+      case 'finger': return b * clamp(1.06 - (gap / Math.max(1, b)) * 0.018, 0.8, 1.06);
+      default: return b;
+    }
+  }
+
+  // Soft entry so strokes start fine, like a real nib touching down (a smooth multiplier).
+  private entry(dist: number) {
+    if (this.mode !== 'finger' && this.mode !== 'fountain') return 1;
+    const ramp = this.base * (this.mode === 'finger' ? 3 : 1.6);
+    return 0.55 + 0.45 * Math.min(1, dist / Math.max(0.01, ramp));
+  }
+
+  // Width may only change a little per point of travel: no sudden blobs.
+  private step(x: number, y: number, p: number, gap: number, out: Sample[], st: { w: number; dist: number }) {
+    const last = out.length ? out[out.length - 1] : this.samples[this.samples.length - 1];
+    const d = last ? Math.hypot(x - last.x, y - last.y) : 0;
+    st.dist += d;
+    const tw = this.target(p, gap);
+    if (this.mode === 'even') st.w = tw;
+    else {
+      const k = Math.max(0.06, this.base * 0.11) * Math.max(d, 0.25);
+      st.w += clamp(tw - st.w, -k, k);
+    }
+    out.push({ x, y, r: Math.max(0.16, (st.w * this.entry(st.dist)) / 2) });
+  }
+
+  // Spline samples for input segment i (pts[i] -> pts[i+1]), excluding pts[i].
+  private segment(i: number, out: Sample[], st: { w: number; dist: number }) {
+    const P = this.pts, n = P.length;
+    const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n - 1, i + 2)];
     const seg = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-    const m = Math.max(1, Math.ceil(seg / step));
+    const spacing = clamp(this.base * 0.35, 0.5, 1.6);
+    const m = Math.max(1, Math.ceil(seg / spacing));
     for (let k = 1; k <= m; k++) {
       const t = k / m, t2 = t * t, t3 = t2 * t;
       const cr = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
-      out.push({ x: cr(p0.x, p1.x, p2.x, p3.x), y: cr(p0.y, p1.y, p2.y, p3.y), p: p1.p + (p2.p - p1.p) * t, sp: seg });
+      this.step(cr(p0.x, p1.x, p2.x, p3.x), cr(p0.y, p1.y, p2.y, p3.y), p1.p + (p2.p - p1.p) * t, seg, out, st);
     }
   }
-  return out;
+
+  add(q: Pt): boolean {
+    if (this.finished || !Number.isFinite(q.x) || !Number.isFinite(q.y)) return false;
+    const p = { x: q.x, y: q.y, p: Number.isFinite(q.p) ? clamp(q.p, 0, 1) : 0.5 };
+    const last = this.pts[this.pts.length - 1];
+    if (last && Math.hypot(p.x - last.x, p.y - last.y) < Math.max(0.2, this.base * 0.08)) { last.p = Math.max(last.p, p.p); return false; }
+    this.pts.push(p);
+    if (this.pts.length === 1) {
+      this.w = this.target(p.p, 0);
+      this.samples.push({ x: p.x, y: p.y, r: Math.max(0.16, (this.w * this.entry(0)) / 2) });
+      return true;
+    }
+    // A segment is final once the point after it is known (Catmull-Rom needs it).
+    let grew = false;
+    while (this.done < this.pts.length - 2) {
+      const st = { w: this.w, dist: this.dist };
+      this.segment(this.done, this.samples, st);
+      this.w = st.w; this.dist = st.dist;
+      this.done++;
+      grew = true;
+    }
+    return grew;
+  }
+
+  /** Samples for the not-yet-final end of the stroke (redrawn every frame). */
+  tail(): Sample[] {
+    const out: Sample[] = [];
+    const st = { w: this.w, dist: this.dist };
+    for (let i = this.done; i < this.pts.length - 1; i++) this.segment(i, out, st);
+    return out;
+  }
+
+  finish(): Sample[] {
+    if (!this.finished) {
+      const t = this.tail();
+      this.samples.push(...t);
+      this.done = Math.max(0, this.pts.length - 1);
+      this.finished = true;
+      // Finger strokes lift off with a short taper (the pencil's own pressure does this).
+      if (this.mode === 'finger' && this.samples.length > 4) {
+        const L = this.dist, len = Math.min(L * 0.2, this.base * 5);
+        let d = 0;
+        for (let i = this.samples.length - 1; i > 0 && d < len; i--) {
+          const s = this.samples[i];
+          s.r *= 0.5 + 0.5 * (d / Math.max(0.01, len));
+          d += Math.hypot(s.x - this.samples[i - 1].x, s.y - this.samples[i - 1].y);
+        }
+      }
+    }
+    return this.samples;
+  }
 }
 
-const easeOut = (t: number) => 1 - (1 - t) * (1 - t);
-
-/** Width at each spline point. */
-function widths(sp: SP[], base: number, mode: 'fountain' | 'ball' | 'finger' | 'even', openEnd = false): number[] {
-  const n = sp.length;
-  const w = new Array<number>(n);
-  for (let i = 0; i < n; i++) {
-    const p = clamp(sp[i].p, 0, 1);
-    let k = 1;
-    if (mode === 'fountain') k = 0.22 + 1.55 * Math.pow(p, 0.85);             // pressure drives the line
-    else if (mode === 'ball') k = 0.78 + 0.42 * p;                             // gentle, like a ballpoint
-    else if (mode === 'finger') k = clamp(1.18 - (sp[i].sp / Math.max(1, base)) * 0.045, 0.62, 1.18);  // faster = thinner
-    w[i] = base * k;
-  }
-  if (mode === 'even') return w;
-  // Moving average so the edge never wobbles.
-  const r = 4;
-  const sm = new Array<number>(n);
-  for (let i = 0; i < n; i++) {
-    let s = 0, c = 0;
-    for (let j = Math.max(0, i - r); j <= Math.min(n - 1, i + r); j++) { s += w[j]; c++; }
-    sm[i] = s / c;
-  }
-  // Tapers: pressure already thins pencil ends, so fingers get the stronger taper.
-  const L = polyLen(sp);
-  const startT = Math.min(L * 0.22, base * (mode === 'finger' ? 5 : 2.2));
-  const endT = Math.min(L * 0.25, base * (mode === 'finger' ? 7 : 2.5));
-  const floor = mode === 'ball' ? 0.7 : 0.18;
-  let d = 0;
-  for (let i = 0; i < n && d < startT; i++) {
-    if (i) d += Math.hypot(sp[i].x - sp[i - 1].x, sp[i].y - sp[i - 1].y);
-    sm[i] *= floor + (1 - floor) * easeOut(clamp(d / Math.max(0.01, startT), 0, 1));
-  }
-  d = 0;
-  for (let i = n - 1; i >= 0 && d < endT && !openEnd; i--) {
-    if (i < n - 1) d += Math.hypot(sp[i].x - sp[i + 1].x, sp[i].y - sp[i + 1].y);
-    sm[i] *= floor + (1 - floor) * easeOut(clamp(d / Math.max(0.01, endT), 0, 1));
-  }
-  return sm.map((v) => Math.max(0.22, fin(v, base)));
+export function buildSamples(pts: Pt[], base: number, mode: InkMode): Sample[] {
+  const b = new InkBuilder(clamp(base, 0.2, 200), mode);
+  for (const q of pts) b.add(q);
+  return b.finish();
 }
 
 /**
- * The filled outline of a stroke as an SVG path string (Skia draws it on
- * screen; pdf-lib draws the same string into the exported PDF).
- * `fast` = coarser resampling for the live stroke while the pen is down.
+ * Capsule geometry for samples[from..]: calls circle() and quad() so the
+ * same shapes can go into an SkPath (screen) or an SVG string (PDF).
+ * Every shape is clockwise, so a non-zero fill gives their clean union.
  */
-export function outlinePath(pts0: Pt[], base: number, opts: { pressure: boolean; taper: boolean; even?: boolean; pen?: PenType; fast?: boolean; openEnd?: boolean }): string {
-  const clean = pts0.filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
-  base = clamp(base, 0.2, 200);
-  if (!clean.length) return '';
-  const mode = opts.even ? 'even' : !opts.pressure ? (opts.pen === 'ball' ? 'ball' : 'finger') : opts.pen === 'ball' ? 'ball' : 'fountain';
-  const L = polyLen(clean);
-  if (clean.length < 2 || L < base * 0.35) {
-    const c = clean[0];
-    const k = mode === 'fountain' ? clamp(0.3 + 1.4 * c.p, 0.45, 1.8) : 1;
-    return circle(c.x, c.y, base * 0.5 * k);
+export function capsules(s: Sample[], from: number, circle: (x: number, y: number, r: number) => void, quad: (q: number[]) => void, prev?: Sample) {
+  const n = s.length;
+  for (let i = from; i < n; i++) {
+    const c = s[i];
+    const a = i > 0 ? s[i - 1] : prev;
+    const b = i < n - 1 ? s[i + 1] : undefined;
+    // Interior circles are only needed where the line turns or changes width.
+    let needCircle = !a || !b;
+    if (!needCircle && a && b) {
+      const ax = c.x - a.x, ay = c.y - a.y, bx = b.x - c.x, by = b.y - c.y;
+      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+      const cos = la && lb ? (ax * bx + ay * by) / (la * lb) : 0;
+      needCircle = cos < 0.996 || Math.abs(b.r - a.r) > c.r * 0.04;
+    }
+    if (needCircle) circle(c.x, c.y, c.r);
+    if (a) {
+      const dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
+      if (d > Math.abs(c.r - a.r) + 1e-3) {
+        const ux = dx / d, uy = dy / d, nx = -uy, ny = ux;
+        const k = (a.r - c.r) / d, h = Math.sqrt(Math.max(0, 1 - k * k));
+        const v1x = k * ux + h * nx, v1y = k * uy + h * ny, v2x = k * ux - h * nx, v2y = k * uy - h * ny;
+        const q = [a.x + a.r * v1x, a.y + a.r * v1y, c.x + c.r * v1x, c.y + c.r * v1y, c.x + c.r * v2x, c.y + c.r * v2y, a.x + a.r * v2x, a.y + a.r * v2y];
+        // Make it clockwise (positive area in y-down coordinates).
+        let area = 0;
+        for (let j = 0; j < 8; j += 2) { const k2 = (j + 2) % 8; area += q[j] * q[k2 + 1] - q[k2] * q[j + 1]; }
+        if (area < 0) quad([q[6], q[7], q[4], q[5], q[2], q[3], q[0], q[1]]); else quad(q);
+      }
+    }
   }
-  const pts = dedupe(clean, Math.max(0.3, base * 0.2));
-  if (pts.length < 2) return circle(pts[0].x, pts[0].y, base * 0.5);
-  let step = clamp(base * (opts.fast ? 0.45 : 0.28), 0.35, 2.5);
-  if (L / step > 2400) step = L / 2400;
-  const sp = spline(pts, step);
-  const w = widths(sp, base, mode, opts.openEnd);
-  const n = sp.length;
-  const left: { x: number; y: number }[] = [], right: { x: number; y: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const a = sp[Math.max(0, i - 2)], b = sp[Math.min(n - 1, i + 2)];
-    let dx = b.x - a.x, dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len; dy /= len;
-    const h = w[i] / 2;
-    left.push({ x: sp[i].x - dy * h, y: sp[i].y + dx * h });
-    right.push({ x: sp[i].x + dy * h, y: sp[i].y - dx * h });
-  }
-  const curve = (a: { x: number; y: number }[]) => {
-    let s = '';
-    for (let i = 1; i < a.length - 1; i++) s += `Q${f2(a[i].x)} ${f2(a[i].y)} ${f2((a[i].x + a[i + 1].x) / 2)} ${f2((a[i].y + a[i + 1].y) / 2)}`;
-    return s + `L${f2(a[a.length - 1].x)} ${f2(a[a.length - 1].y)}`;
-  };
-  const back = right.slice().reverse();
-  const re = w[n - 1] / 2, rs = w[0] / 2;
-  let d = `M${f2(left[0].x)} ${f2(left[0].y)}` + curve(left);
-  d += `A${f2(re)} ${f2(re)} 0 0 1 ${f2(back[0].x)} ${f2(back[0].y)}`;
-  d += curve(back);
-  d += `A${f2(rs)} ${f2(rs)} 0 0 1 ${f2(left[0].x)} ${f2(left[0].y)}Z`;
+}
+
+/** SVG path of a sample list (for the PDF exporter, and cached on screen). */
+export function samplesSvg(s: Sample[]): string {
+  let d = '';
+  capsules(s, 0,
+    (x, y, r) => { d += `M${f2(x - r)} ${f2(y)}A${f2(r)} ${f2(r)} 0 1 1 ${f2(x + r)} ${f2(y)}A${f2(r)} ${f2(r)} 0 1 1 ${f2(x - r)} ${f2(y)}Z`; },
+    (q) => { d += `M${f2(q[0])} ${f2(q[1])}L${f2(q[2])} ${f2(q[3])}L${f2(q[4])} ${f2(q[5])}L${f2(q[6])} ${f2(q[7])}Z`; });
   return d;
 }
 
+export function strokeSamples(s: Stroke): Sample[] {
+  return buildSamples(unpack(s.pts), s.w, inkMode(s));
+}
+
 export function strokePath(s: Stroke): string {
-  const pts = unpack(s.pts);
-  if (s.kind === 'hl') return outlinePath(pts, s.w, { pressure: false, taper: false, even: true });
-  return outlinePath(pts, s.w, { pressure: !!s.pr, taper: !s.pr, pen: s.pen });
+  return samplesSvg(strokeSamples(s));
+}
+
+/** Kept for callers that draw from raw points (shape previews, tests). */
+export function outlinePath(pts: Pt[], base: number, opts: { pressure: boolean; even?: boolean; pen?: PenType }): string {
+  const mode: InkMode = opts.even ? 'even' : opts.pen === 'ball' ? 'ball' : opts.pressure ? 'fountain' : 'finger';
+  return samplesSvg(buildSamples(pts, base, mode));
 }
 
 // ---------- boxes / hit tests ----------

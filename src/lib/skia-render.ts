@@ -16,9 +16,21 @@ const pathCache = new WeakMap<Stroke, SkPath | null>();
 export function skPath(s: Stroke): SkPath | null {
   if (pathCache.has(s)) return pathCache.get(s)!;
   let p: SkPath | null = null;
-  try { const d = strokePath(s); p = d ? Skia.Path.MakeFromSVGString(d) : null; } catch { p = null; }
+  try {
+    const d = strokePath(s);
+    p = d ? Skia.Path.MakeFromSVGString(d) : null;
+  } catch { p = null; }
   pathCache.set(s, p);
   return p;
+}
+
+/** The saved stroke's merged outline as SVG (what goes into exported PDFs). */
+export function strokeSvg(s: Stroke): string {
+  // Merge the overlapping round pieces into one clean outline, so PDF viewers
+  // (which smooth each piece separately) show no hairline seams.
+  const p = skPath(s);
+  try { const m = p ? Skia.Path.Simplify(p) : null; if (m) return m.toSVGString(); } catch {}
+  return strokePath(s);
 }
 
 export function livePath(d: string): SkPath | null {

@@ -72,3 +72,41 @@ test('paper marks', () => {
   assert.ok(paperMarks('lined', 'white', 612, 792).length > 20);
   for (const g of paperSvg('dotted', 'dark', 612, 792)) assert.ok(!/NaN/.test(g.d));
 });
+
+import { buildSamples, capsules, InkBuilder } from '../src/lib/geom';
+
+test('live stroke equals the saved stroke (no jump on lift)', () => {
+  const pts = Array.from({ length: 80 }, (_, i) => ({ x: i * 2.3, y: Math.sin(i / 6) * 30, p: 0.3 + 0.4 * Math.abs(Math.sin(i / 9)) }));
+  for (const mode of ['fountain', 'ball', 'even'] as const) {
+    const b = new InkBuilder(2, mode);
+    for (const q of pts) b.add(q);
+    const live = [...b.samples, ...b.tail()].map((s) => [s.x, s.y, s.r].map((v) => v.toFixed(4)).join());
+    const full = buildSamples(pts, 2, mode).map((s) => [s.x, s.y, s.r].map((v) => v.toFixed(4)).join());
+    assert.deepEqual(live, full, mode);
+  }
+});
+
+test('pressure spikes cannot make blobs (width is rate limited)', () => {
+  const pts = Array.from({ length: 120 }, (_, i) => ({ x: i * 1.5, y: 0, p: i % 2 ? 1 : 0 }));
+  const s = buildSamples(pts, 3, 'fountain');
+  for (let i = 1; i < s.length; i++) {
+    const d = Math.hypot(s[i].x - s[i - 1].x, s[i].y - s[i - 1].y);
+    assert.ok(Math.abs(s[i].r - s[i - 1].r) <= 0.4 * Math.max(d, 0.25) + 0.02, `jump at ${i}`);
+  }
+  const rs = s.map((q) => q.r);
+  assert.ok(Math.max(...rs) - Math.min(...rs.slice(10)) < 1.2, 'stays even');
+});
+
+test('capsule shapes are all clockwise and finite', () => {
+  const pts = Array.from({ length: 60 }, (_, i) => { const a = i / 8; return { x: Math.cos(a) * (5 + i), y: Math.sin(a) * (5 + i), p: 0.5 }; });
+  const s = buildSamples(pts, 2.5, 'fountain');
+  let quads = 0;
+  capsules(s, 0, (x, y, r) => { assert.ok(Number.isFinite(x + y + r) && r > 0); }, (q) => {
+    quads++;
+    assert.ok(q.every(Number.isFinite));
+    let area = 0;
+    for (let j = 0; j < 8; j += 2) { const k = (j + 2) % 8; area += q[j] * q[k + 1] - q[k] * q[j + 1]; }
+    assert.ok(area >= -1e-6, 'clockwise');
+  });
+  assert.ok(quads > 20);
+});
