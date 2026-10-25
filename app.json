@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Inkpad",
+    "slug": "inkpad",
+    "version": "1.0.0",
+    "orientation": "default",
+    "scheme": "inkpad",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.solyapps.notes",
+      "supportsTablet": true,
+      "requireFullScreen": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "web": {
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Inkpad opens the photos you pick so you can add them to a note.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Inkpad uses the microphone only while you tap Record, to save audio with your notes."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "fa46b175-bd32-4365-ab6c-dfc3354db0e5"
+      }
+    },
+    "owner": "solomonsasson",
+    "runtimeVersion": "exposdk:57.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/fa46b175-bd32-4365-ab6c-dfc3354db0e5"
+    }
+  }
+}
