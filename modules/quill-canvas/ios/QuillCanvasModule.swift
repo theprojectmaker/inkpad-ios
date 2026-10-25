@@ -5,7 +5,7 @@ public final class QuillCanvasModule: Module {
     Name("QuillCanvas")
 
     View(QuillCanvasView.self) {
-      Events("onDrawingChange")
+      Events("onDrawingChange", "onPageChange")
 
       Prop("pages") { (view: QuillCanvasView, pages: [PageSpec]) in
         view.setPages(pages)
@@ -17,6 +17,10 @@ public final class QuillCanvasModule: Module {
 
       Prop("legacy") { (view: QuillCanvasView, legacy: [LegacyStroke]) in
         view.legacy = legacy
+      }
+
+      Prop("textsPath") { (view: QuillCanvasView, path: String) in
+        view.textsPath = path
       }
 
       Prop("tool") { (view: QuillCanvasView, tool: ToolSpec) in
@@ -57,6 +61,22 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("exportPdf") { (view: QuillCanvasView, path: String) throws in
         try view.exportPdf(path)
+      }.runOnQueue(.main)
+
+      AsyncFunction("scrollToPage") { (view: QuillCanvasView, index: Int) in
+        view.scrollToPage(index)
+      }.runOnQueue(.main)
+
+      AsyncFunction("pageThumb") { (view: QuillCanvasView, index: Int, path: String, width: Double) -> Bool in
+        return view.pageThumb(index, path: path, width: width)
+      }.runOnQueue(.main)
+
+      AsyncFunction("deletePage") { (view: QuillCanvasView, index: Int) in
+        view.deletePage(index)
+      }.runOnQueue(.main)
+
+      AsyncFunction("endTextEdit") { (view: QuillCanvasView) in
+        view.commitEdit()
       }.runOnQueue(.main)
 
       AsyncFunction("snapshot") { (view: QuillCanvasView, path: String, width: Double) -> Bool in

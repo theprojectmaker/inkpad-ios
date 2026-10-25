@@ -1,13 +1,15 @@
-// Editor: a slim top bar, Quill's own tool row, and the PencilKit canvas
-// (Apple's ink, eraser, lasso and ruler; no Apple tool palette).
+// Editor, laid out like Notability: back / pages / title on the left, the
+// tools in the middle, undo / redo / more on the right; a thin strip below
+// with the tool's options; an optional page sidebar; the PencilKit canvas.
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
-import { BarToggle, currentTool, OptionsPill, PenTray } from '@/components/ink-bar';
-import { IconButton, PromptSheet, useToast } from '@/components/ui';
+import { currentTool, ToolButtons, ToolStrip } from '@/components/ink-bar';
+import { PageSidebar } from '@/components/page-sidebar';
+import { ConfirmSheet, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
@@ -18,6 +20,7 @@ import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
 
 const DRAWING = 'drawing.pkd';
+const TEXTS = 'texts.json';
 /** Absolute file path for the native side (fsx gives file:// uris). */
 const absPath = (path: string) => decodeURIComponent(fsx.uri(path).replace(/^file:\/\//, ''));
 
@@ -65,10 +68,15 @@ export default function Editor() {
   const [busy, setBusy] = useState(false);
   const [ruler, setRuler] = useState(false);
   const { s, set } = useSettings();
-  const [optsOpen, setOptsOpen] = useState(true);
   const { width } = useWindowDimensions();
-  useEffect(() => { setOptsOpen(true); }, [s.inkKind]);   // a new tool shows its colours and sizes
-  const tool = useMemo(() => currentTool(s.inkKind ?? 'pen', s.inkSize ?? 1, s.penColor, s.hlColor), [s.inkKind, s.inkSize, s.penColor, s.hlColor]);
+  const tool = useMemo(() => currentTool(s), [s]);
+  const [menu, setMenu] = useState(false);
+  const [sidebar, setSidebar] = useState(false);
+  const [page, setPage] = useState({ page: 0, count: 1 });
+  const [ver, setVer] = useState(0);            // bumps when ink changes (page thumbnails redraw)
+  const [delPage, setDelPage] = useState<number | null>(null);
+  // Leaving the text tool finishes the text being typed.
+  useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
   const meta = lib.lib.notes.find((n) => n.id === id);
 
   useEffect(() => {
@@ -101,6 +109,7 @@ export default function Editor() {
 
   const onChange = useCallback((e: { nativeEvent: CanvasState }) => {
     setSt(e.nativeEvent);
+    setVer((v) => v + 1);
     if (thumbTimer.current) clearTimeout(thumbTimer.current);
     thumbTimer.current = setTimeout(makeThumb, 2500);
   }, [makeThumb]);
@@ -138,37 +147,65 @@ export default function Editor() {
     } finally { setBusy(false); }
   };
 
+  const removePage = async (i: number) => {
+    if (!doc || doc.pages.length < 2) return;
+    await canvas.current?.deletePage(i);
+    const next = { ...doc, pages: doc.pages.filter((_, k) => k !== i) };
+    setDoc(next);
+    await saveDoc(next);
+    lib.updateNote(id, { pages: next.pages.length, updated: Date.now() });
+    setVer((v) => v + 1);
+    toast(`Page ${i + 1} deleted`);
+  };
+
+  const narrow = width < 900;
   return (
     <View style={{ flex: 1, backgroundColor: t.bar, paddingTop: ins.top }}>
-      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: t.line, zIndex: 2 }}>
+      <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }}>
         <IconButton name="chevron.left" label="Back to notes" onPress={back} />
-        <Pressable onPress={() => setRenaming(true)} style={{ maxWidth: Math.max(80, width / 2 - 200), paddingHorizontal: 6, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
+        <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => setSidebar((v) => !v)} />
+        <Pressable onPress={() => setRenaming(true)} style={{ maxWidth: narrow ? Math.max(70, width / 2 - 250) : 260, paddingHorizontal: 6, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
           <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
-        <BarToggle icon="ruler" label={ruler ? 'Hide ruler' : 'Show ruler'} on={ruler} onPress={() => setRuler((v) => !v)} />
-        <BarToggle icon="hand.draw" label={s.fingerDraws ? 'Fingers draw' : 'Fingers scroll'} on={!!s.fingerDraws} onPress={() => set({ fingerDraws: !s.fingerDraws })} />
-        <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 6 }} />
         <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
         <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
-        <IconButton name="doc.badge.plus" label="Add page" onPress={addPage} />
-        <IconButton name="square.and.arrow.up" label="Share as PDF" disabled={busy} onPress={share} />
-        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' }}>
-          <PenTray onToggleOptions={() => setOptsOpen((v) => !v)} />
+        <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <ToolButtons />
         </View>
       </View>
-      <View style={{ flex: 1 }}>
-      {doc ? (
-        <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} ruler={ruler} drawingPath={absPath(notePath(id, DRAWING))} legacy={legacy} onDrawingChange={onChange} />
-      ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
-        {optsOpen ? (
-          <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 0, right: 0, alignItems: 'center' }}>
-            <OptionsPill />
-          </View>
+      <ToolStrip />
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        {sidebar && doc ? (
+          <PageSidebar noteId={id} pages={doc.pages} current={page.page} ver={ver} canvas={canvas} absPath={absPath}
+            onJump={(i) => canvas.current?.scrollToPage(i)} onDelete={(i) => { if (doc.pages.length > 1) setDelPage(i); else toast("A note needs at least one page."); }} onAdd={addPage} />
         ) : null}
+        <View style={{ flex: 1 }}>
+          {doc ? (
+            <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} ruler={ruler}
+              drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
+              onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
+          ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
+          {page.count > 1 ? (
+            <View pointerEvents="none" style={{ position: 'absolute', right: 14, bottom: 14, backgroundColor: 'rgba(20,22,28,0.72)', borderRadius: 12, paddingHorizontal: 10, height: 24, justifyContent: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{page.page + 1} / {page.count}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
-      <PromptSheet visible={renaming} title="Rename note" initial={meta?.title ?? ''} onCancel={() => { setRenaming(false); canvas.current?.focus(); }}
-        onSubmit={(v) => { if (v.trim()) lib.updateNote(id, { title: v.trim() }); setRenaming(false); canvas.current?.focus(); }} />
+
+      <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
+        { label: 'Add a page', icon: 'doc.badge.plus', onPress: addPage },
+        { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
+        { label: ruler ? 'Hide the ruler' : 'Show the ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
+        { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },
+        { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
+      ]} />
+      <ConfirmSheet visible={delPage != null} title={`Delete page ${(delPage ?? 0) + 1}?`} message="Its writing is deleted too." onCancel={() => setDelPage(null)}
+        onConfirm={() => { const i = delPage; setDelPage(null); if (i != null) removePage(i); }} />
+      <PromptSheet visible={renaming} title="Rename note" initial={meta?.title ?? ''} onCancel={() => setRenaming(false)}
+        onSubmit={(v) => { if (v.trim()) lib.updateNote(id, { title: v.trim() }); setRenaming(false); }} />
     </View>
   );
 }

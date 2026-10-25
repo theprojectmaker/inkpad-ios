@@ -18,9 +18,13 @@ export type CanvasHandle = {
   fitWidth(): Promise<void>;
   exportPdf(path: string): Promise<void>;
   snapshot(path: string, width: number): Promise<boolean>;
+  scrollToPage(index: number): Promise<void>;
+  pageThumb(index: number, path: string, width: number): Promise<boolean>;
+  deletePage(index: number): Promise<void>;
+  endTextEdit(): Promise<void>;
 };
 
-export type ToolKind = 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso';
+export type ToolKind = 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text';
 export type CanvasTool = { kind: ToolKind; color: string; width: number };
 
 type Props = ViewProps & {
@@ -29,6 +33,8 @@ type Props = ViewProps & {
   fingerDraws?: boolean;
   ruler?: boolean;
   drawingPath: string;
+  textsPath: string;
+  onPageChange?: (e: { nativeEvent: { page: number; count: number } }) => void;
   legacy?: LegacyStroke[];
   onDrawingChange?: (e: { nativeEvent: CanvasState }) => void;
 };

@@ -1,123 +1,64 @@
-// Quill's own tools for the PencilKit canvas (instead of Apple's palette).
-// PenTray: little drawn pens standing in the top bar, each tipped with its
-// colour; the picked one sits up. OptionsPill: floats under the bar with the
-// colours and three sizes (shown as real strokes) for the current tool.
-import { Pressable, View } from 'react-native';
+// Quill's tools for the PencilKit canvas, laid out like Notability:
+// ToolButtons sit in the middle of the top bar (line icons, the pen and
+// highlighter show their colour underneath), and ToolStrip is a thin row under
+// the bar with the current tool's options: pen style, colours and sizes.
+import { Pressable, Text, View } from 'react-native';
 
 import type { CanvasTool } from '@/components/quill-canvas';
 import { Icon } from '@/components/ui';
-import { type InkTool, useSettings, useTheme } from '@/lib/settings';
+import { type InkTool, type PenStyle, useSettings, useTheme } from '@/lib/settings';
 
-export const TOOLS: { id: InkTool; label: string }[] = [
-  { id: 'pen', label: 'Pen' },
-  { id: 'fountain', label: 'Fountain pen' },
+export const TOOLS: { id: InkTool; icon: string; label: string }[] = [
+  { id: 'pen', icon: 'pencil.tip', label: 'Pen' },
+  { id: 'marker', icon: 'highlighter', label: 'Highlighter' },
+  { id: 'eraser', icon: 'eraser', label: 'Eraser' },
+  { id: 'lasso', icon: 'lasso', label: 'Lasso' },
+  { id: 'text', icon: 'textformat', label: 'Text' },
+];
+
+const PEN_STYLES: { id: PenStyle; label: string }[] = [
+  { id: 'pen', label: 'Ballpoint' },
+  { id: 'fountain', label: 'Fountain' },
   { id: 'pencil', label: 'Pencil' },
-  { id: 'marker', label: 'Highlighter' },
-  { id: 'eraser', label: 'Eraser' },
-  { id: 'lasso', label: 'Lasso' },
 ];
 
 export const PEN_COLORS = ['#111111', '#1E5EFF', '#E5322D', '#0AA35B', '#F28C18', '#8E44EC'];
 export const HL_COLORS = ['#FFE14D', '#7CF27C', '#6FD3FF', '#FF8FD0', '#FFB45C', '#C9B6FF'];
 
-const WIDTHS: Record<InkTool, [number, number, number]> = {
+const WIDTHS = {
   pen: [1.5, 2.6, 4.5],
   fountain: [2, 4, 7],
   pencil: [1.5, 3, 6],
   marker: [8, 15, 26],
   eraser: [8, 20, 40],
-  lasso: [1, 1, 1],
-};
+  text: [14, 18, 26],
+} as const;
 
 /** The tool the canvas should use for the current settings. */
-export function currentTool(kind: InkTool, size: number, penColor: string, hlColor: string): CanvasTool {
-  const w = WIDTHS[kind][Math.max(0, Math.min(2, size))];
-  return { kind, color: kind === 'marker' ? hlColor : penColor, width: w };
+export function currentTool(s: { inkKind?: InkTool; penStyle?: PenStyle; inkSize?: number; textSizeIdx?: number; penColor: string; hlColor: string }): CanvasTool {
+  const kind = s.inkKind ?? 'pen';
+  const i = Math.max(0, Math.min(2, s.inkSize ?? 1));
+  if (kind === 'pen') { const st = s.penStyle ?? 'pen'; return { kind: st, color: s.penColor, width: WIDTHS[st][i] }; }
+  if (kind === 'marker') return { kind: 'marker', color: s.hlColor, width: WIDTHS.marker[i] };
+  if (kind === 'eraser') return { kind: 'eraser', color: '#000000', width: WIDTHS.eraser[i] };
+  if (kind === 'text') return { kind: 'text', color: s.penColor, width: WIDTHS.text[Math.max(0, Math.min(2, s.textSizeIdx ?? 1))] };
+  return { kind: 'lasso', color: '#000000', width: 1 };
 }
 
-// ---------- pen drawings ----------
-
-const tri = (w: number, h: number, color: string) => (
-  <View style={{ width: 0, height: 0, borderLeftWidth: w / 2, borderRightWidth: w / 2, borderBottomWidth: h, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: color }} />
-);
-
-function PenArt({ kind, color, dark }: { kind: InkTool; color: string; dark: boolean }) {
-  const body = dark ? '#3A3D45' : '#FFFFFF';
-  const edge = dark ? '#4A4E57' : '#D5D8DE';
-  const B = (h: number, c = body, w = 16) => <View style={{ width: w, height: h, backgroundColor: c, borderLeftWidth: 1, borderRightWidth: 1, borderColor: edge }} />;
-  switch (kind) {
-    case 'pen':
-      return (
-        <View style={{ alignItems: 'center' }}>
-          {tri(4, 5, color)}
-          {tri(16, 13, dark ? '#8B8F98' : '#C9CDD4')}
-          <View style={{ width: 16, height: 5, backgroundColor: color }} />
-          {B(40)}
-        </View>
-      );
-    case 'fountain':
-      return (
-        <View style={{ alignItems: 'center' }}>
-          <View style={{ alignItems: 'center' }}>
-            {tri(14, 16, '#D4AF4F')}
-            <View style={{ position: 'absolute', top: 5, width: 1, height: 11, backgroundColor: '#8A6A1E' }} />
-          </View>
-          <View style={{ width: 16, height: 4, backgroundColor: '#B8902F' }} />
-          {B(42, color)}
-        </View>
-      );
-    case 'pencil':
-      return (
-        <View style={{ alignItems: 'center' }}>
-          {tri(5, 5, color)}
-          {tri(16, 12, '#EBCB94')}
-          {B(42, color)}
-        </View>
-      );
-    case 'marker':
-      return (
-        <View style={{ alignItems: 'center' }}>
-          <View style={{ width: 12, height: 8, backgroundColor: color, borderTopLeftRadius: 2, borderTopRightRadius: 6, transform: [{ skewX: '-12deg' }] }} />
-          <View style={{ width: 18, height: 8, backgroundColor: dark ? '#6C707A' : '#B9BDC5' }} />
-          <View style={{ width: 20, height: 9, backgroundColor: color }} />
-          {B(38, body, 20)}
-        </View>
-      );
-    case 'eraser':
-      return (
-        <View style={{ alignItems: 'center' }}>
-          <View style={{ width: 20, height: 18, backgroundColor: '#F4A7B4', borderTopLeftRadius: 5, borderTopRightRadius: 5 }} />
-          <View style={{ width: 20, height: 6, backgroundColor: dark ? '#8B8F98' : '#C9CDD4' }} />
-          {B(36, body, 20)}
-        </View>
-      );
-    default:
-      return null;
-  }
-}
-
-/** The tools as pens standing in the bar. Tapping the current one shows/hides its options. */
-export function PenTray({ onToggleOptions }: { onToggleOptions: () => void }) {
+export function ToolButtons() {
   const t = useTheme();
   const { s, set } = useSettings();
   const kind = s.inkKind ?? 'pen';
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 52, overflow: 'hidden', gap: 2 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       {TOOLS.map((x) => {
         const on = x.id === kind;
-        const color = x.id === 'marker' ? s.hlColor : s.penColor;
+        const under = x.id === 'pen' ? s.penColor : x.id === 'marker' ? s.hlColor : null;
         return (
-          <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => (on ? onToggleOptions() : set({ inkKind: x.id }))}
-            style={{ width: 44, height: 52, alignItems: 'center', justifyContent: x.id === 'lasso' ? 'center' : 'flex-start' }}>
-            {x.id === 'lasso' ? (
-              <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.accent + '22' : 'transparent' }}>
-                <Icon name="lasso" size={21} color={on ? t.accent : t.sub} />
-              </View>
-            ) : (
-              <View style={{ marginTop: on ? 4 : 16 }}>
-                <PenArt kind={x.id} color={color} dark={t.dark} />
-              </View>
-            )}
+          <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => set({ inkKind: x.id })}
+            style={({ pressed }) => ({ width: 44, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.accent + (t.dark ? '33' : '18') : pressed ? t.chip : 'transparent' })}>
+            <Icon name={x.icon} size={20} color={on ? t.accent : t.text} />
+            {under ? <View style={{ position: 'absolute', bottom: 5, width: 16, height: 3, borderRadius: 2, backgroundColor: under }} /> : null}
           </Pressable>
         );
       })}
@@ -125,54 +66,80 @@ export function PenTray({ onToggleOptions }: { onToggleOptions: () => void }) {
   );
 }
 
-/** Colours and sizes for the current tool, floating under the bar. */
-export function OptionsPill() {
+const Sep = () => {
+  const t = useTheme();
+  return <View style={{ width: 1, height: 20, backgroundColor: t.line, marginHorizontal: 10 }} />;
+};
+
+export function ToolStrip() {
   const t = useTheme();
   const { s, set } = useSettings();
   const kind = s.inkKind ?? 'pen';
-  if (kind === 'lasso') return null;
   const hl = kind === 'marker';
-  const colors = hl ? HL_COLORS : PEN_COLORS;
-  const color = hl ? s.hlColor : s.penColor;
-  const size = s.inkSize ?? 1;
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', height: 46, paddingHorizontal: 10, borderRadius: 23, backgroundColor: t.elev,
-      shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, borderWidth: t.dark ? 1 : 0, borderColor: t.line }}>
-      {kind !== 'eraser' ? colors.map((c) => {
-        const on = c.toUpperCase() === color.toUpperCase();
-        return (
-          <Pressable key={c} accessibilityLabel={`Colour ${c}`} onPress={() => set(hl ? { hlColor: c } : { penColor: c })}
-            style={{ width: 34, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-            <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: on ? c : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-              <View style={{ width: on ? 18 : 22, height: on ? 18 : 22, borderRadius: 11, backgroundColor: c }} />
-            </View>
-          </Pressable>
-        );
-      }) : null}
-      {kind !== 'eraser' ? <View style={{ width: 1, height: 24, backgroundColor: t.line, marginHorizontal: 8 }} /> : null}
-      {[0, 1, 2].map((i) => {
-        const on = size === i;
-        const w = WIDTHS[kind][i];
-        return (
-          <Pressable key={i} accessibilityLabel={['Thin', 'Medium', 'Thick'][i]} onPress={() => set({ inkSize: i })}
-            style={{ width: 46, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.chip : 'transparent' }}>
-            {kind === 'eraser'
-              ? <View style={{ width: [8, 14, 22][i], height: [8, 14, 22][i], borderRadius: 11, borderWidth: 1.5, borderColor: on ? t.text : t.faint }} />
-              : <View style={{ width: 26, height: Math.max(1.5, Math.min(14, hl ? w * 0.5 : w * 1.2)), borderRadius: 7, backgroundColor: hl ? color : on ? color : t.faint, opacity: hl && !on ? 0.5 : 1 }} />}
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
+  const tool = currentTool(s);
 
-/** Small round toggle used in the top bar (ruler, finger drawing). */
-export function BarToggle({ icon, label, on, onPress }: { icon: string; label: string; on: boolean; onPress: () => void }) {
-  const t = useTheme();
+  const colors = (hl ? HL_COLORS : PEN_COLORS).map((c) => {
+    const on = c.toUpperCase() === (hl ? s.hlColor : s.penColor).toUpperCase();
+    return (
+      <Pressable key={c} accessibilityLabel={`Colour ${c}`} onPress={() => set(hl ? { hlColor: c } : { penColor: c })}
+        style={{ width: 30, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: on ? c : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: on ? 16 : 20, height: on ? 16 : 20, borderRadius: 10, backgroundColor: c, borderWidth: c === '#FFFFFF' ? 1 : 0, borderColor: t.line }} />
+        </View>
+      </Pressable>
+    );
+  });
+
+  const sizeIdx = kind === 'text' ? s.textSizeIdx ?? 1 : s.inkSize ?? 1;
+  const sizes = [0, 1, 2].map((i) => {
+    const on = sizeIdx === i;
+    let mark;
+    if (kind === 'eraser') mark = <View style={{ width: [8, 14, 22][i], height: [8, 14, 22][i], borderRadius: 11, borderWidth: 1.5, borderColor: on ? t.text : t.faint }} />;
+    else if (kind === 'text') mark = <Text style={{ color: on ? t.text : t.faint, fontSize: [13, 17, 22][i], fontWeight: '600' }}>Aa</Text>;
+    else {
+      const w = (hl ? WIDTHS.marker : WIDTHS[s.penStyle ?? 'pen'])[i];
+      mark = <View style={{ width: 24, height: Math.max(1.5, Math.min(12, hl ? w * 0.45 : w * 1.1)), borderRadius: 6, backgroundColor: tool.color, opacity: on ? 1 : 0.35 }} />;
+    }
+    return (
+      <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => set(kind === 'text' ? { textSizeIdx: i } : { inkSize: i })}
+        style={{ width: 42, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.chip : 'transparent' }}>
+        {mark}
+      </Pressable>
+    );
+  });
+
+  let body;
+  if (kind === 'lasso') {
+    body = <Text style={{ color: t.sub, fontSize: 13 }}>Circle ink to move, resize or delete it</Text>;
+  } else {
+    body = (
+      <>
+        {kind === 'pen' ? (
+          <>
+            <View style={{ flexDirection: 'row', backgroundColor: t.chip, borderRadius: 9, padding: 2 }}>
+              {PEN_STYLES.map((p) => {
+                const on = (s.penStyle ?? 'pen') === p.id;
+                return (
+                  <Pressable key={p.id} onPress={() => set({ penStyle: p.id })}
+                    style={{ paddingHorizontal: 11, height: 28, borderRadius: 7, justifyContent: 'center', backgroundColor: on ? t.elev : 'transparent' }}>
+                    <Text style={{ color: on ? t.text : t.sub, fontSize: 13, fontWeight: on ? '700' : '500' }}>{p.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Sep />
+          </>
+        ) : null}
+        {kind !== 'eraser' ? <>{colors}<Sep /></> : null}
+        {sizes}
+        {kind === 'text' ? <><Sep /><Text style={{ color: t.sub, fontSize: 13 }}>Tap the page to type · drag text to move it</Text></> : null}
+      </>
+    );
+  }
+
   return (
-    <Pressable accessibilityLabel={label} onPress={onPress}
-      style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.accent + '22' : 'transparent' }}>
-      <Icon name={icon} size={19} color={on ? t.accent : t.sub} />
-    </Pressable>
+    <View style={{ height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: t.line, backgroundColor: t.bar }}>
+      {body}
+    </View>
   );
 }

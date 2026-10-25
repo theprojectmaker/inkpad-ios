@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, Image, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmSheet, Icon, MenuSheet, PromptSheet, useToast } from '@/components/ui';
@@ -93,102 +93,132 @@ export default function LibraryScreen() {
   };
 
   // ----- layout -----
-  const pad = width >= 700 ? 32 : 16;
-  const gapX = 20;
-  const cols = Math.max(2, Math.floor((width - pad * 2 + gapX) / (190 + gapX)));
-  const cardW = (width - pad * 2 - (cols - 1) * gapX) / cols;
+  const wide = width >= 900;
+  const sideW = wide ? 240 : 0;
+  const mainW = width - sideW;
+  const pad = mainW >= 700 ? 28 : 16;
+  const gapX = 22;
+  const cols = Math.max(2, Math.floor((mainW - pad * 2 + gapX) / (150 + gapX)));
+  const cardW = (mainW - pad * 2 - (cols - 1) * gapX) / cols;
+  const title = filter.kind === 'all' ? 'All Notes' : filter.kind === 'fav' ? 'Favorites' : folderOf(filter.id)?.name ?? 'Subject';
 
   const chip = (label: string, on: boolean, onPress: () => void, color?: string, onLongPress?: () => void) => (
     <Pressable key={label + (color ?? '')} onPress={onPress} onLongPress={onLongPress} delayLongPress={350}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 7, height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: on ? t.text : t.chip }}>
-      {color ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color }} /> : null}
-      <Text style={{ color: on ? t.bg : t.text, fontSize: 14, fontWeight: '600' }}>{label}</Text>
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 7, height: 32, paddingHorizontal: 13, borderRadius: 16, backgroundColor: on ? t.accent : t.chip }}>
+      {color ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: on ? '#fff' : color }} /> : null}
+      <Text style={{ color: on ? '#fff' : t.text, fontSize: 14, fontWeight: '600' }}>{label}</Text>
     </Pressable>
   );
 
-  // A sheet of paper (used until the note has a real thumbnail).
-  const paperMock = (h: number) => (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      {Array.from({ length: Math.floor(h / 13) - 3 }, (_, i) => (
-        <View key={i} style={{ position: 'absolute', left: 0, right: 0, top: 30 + i * 13, height: 1, backgroundColor: '#E3E9F3' }} />
-      ))}
-      <View style={{ position: 'absolute', top: 0, bottom: 0, left: cardW * 0.14, width: 1, backgroundColor: '#F6C9C9' }} />
-    </View>
+  const sideRow = (label: string, on: boolean, onPress: () => void, opts: { icon?: string; color?: string; count: number; onLongPress?: () => void }) => (
+    <Pressable key={label + (opts.color ?? '')} onPress={onPress} onLongPress={opts.onLongPress} delayLongPress={350}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 11, height: 40, paddingHorizontal: 12, borderRadius: 10, backgroundColor: on ? t.accent : pressed ? t.chip : 'transparent' })}>
+      {opts.color ? <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: on ? '#fff' : opts.color, marginHorizontal: 3 }} />
+        : <Icon name={opts.icon ?? 'doc'} size={18} color={on ? '#fff' : t.sub} />}
+      <Text numberOfLines={1} style={{ flex: 1, color: on ? '#fff' : t.text, fontSize: 15, fontWeight: on ? '700' : '500' }}>{label}</Text>
+      <Text style={{ color: on ? '#ffffffcc' : t.faint, fontSize: 13 }}>{opts.count}</Text>
+    </Pressable>
   );
+
+  // A sheet of lined paper, to scale (until the note has a real thumbnail).
+  const paperMock = () => {
+    const k = cardW / 612;
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        {Array.from({ length: Math.floor((792 - 84 - 24) / 28) }, (_, i) => (
+          <View key={i} style={{ position: 'absolute', left: 0, right: 0, top: (84 + i * 28) * k, height: StyleSheet.hairlineWidth, backgroundColor: '#C7D3E6' }} />
+        ))}
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 72 * k, width: StyleSheet.hairlineWidth, backgroundColor: '#F1A9A9' }} />
+      </View>
+    );
+  };
 
   const card = ({ item: n }: { item: NoteMeta }) => {
     const thumb = n.thumb ? fsx.uri(notePath(n.id, n.thumb)) : '';
     const f = folderOf(n.folderId);
-    const h = cardW * 1.29;
+    const h = cardW * (792 / 612);
     return (
       <Pressable onPress={() => open(n.id)} onLongPress={() => { setTarget(n); setSheet('note'); }} delayLongPress={350}
-        style={({ pressed }) => ({ width: cardW, transform: [{ scale: pressed ? 0.97 : 1 }] })}>
-        <View style={{ width: cardW, height: h, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: t.dark ? 0.4 : 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 }}>
-          <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden', borderWidth: t.dark ? 0 : 1, borderColor: '#ECEDEF' }}>
+        style={({ pressed }) => ({ width: cardW, opacity: pressed ? 0.75 : 1 })}>
+        <View style={{ width: cardW, height: h, borderRadius: 8, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: t.dark ? 0.35 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+          <View style={{ flex: 1, borderRadius: 8, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: '#D9DCE1' }}>
             {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
               : n.kind === 'pdf' ? (
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAFB' }}>
-                  <Icon name="doc.richtext" size={30} color="#B8BCC4" />
-                  <Text style={{ color: '#9A9EA6', fontSize: 12, marginTop: 6, fontWeight: '600' }}>PDF</Text>
+                  <Icon name="doc.richtext" size={28} color="#B8BCC4" />
                 </View>
-              ) : paperMock(h)}
+              ) : paperMock()}
           </View>
-          {n.pages > 1 ? (
-            <View style={{ position: 'absolute', right: 8, bottom: 8, backgroundColor: 'rgba(20,22,28,0.72)', borderRadius: 9, paddingHorizontal: 7, height: 18, justifyContent: 'center' }}>
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{n.pages} pages</Text>
-            </View>
-          ) : null}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 }}>
-          {n.fav ? <Icon name="star.fill" size={12} color="#F5A524" /> : null}
-          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 15, fontWeight: '600' }}>{n.title}</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-          {f ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: f.color }} /> : null}
-          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12 }}>{f ? f.name + ' · ' : ''}{fmtDate(n.updated)}</Text>
+        <Text numberOfLines={1} style={{ marginTop: 9, color: t.text, fontSize: 14, fontWeight: '600', textAlign: 'center' }}>{n.fav ? '★ ' : ''}{n.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 2 }}>
+          {f ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: f.color }} /> : null}
+          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12 }}>{fmtDate(n.updated)}{n.pages > 1 ? ` · ${n.pages} pages` : ''}</Text>
         </View>
       </Pressable>
     );
   };
 
   const target2 = target ? lib.lib.notes.find((n) => n.id === target.id) ?? null : null;
+  const count = (fid: string) => lib.lib.notes.filter((n) => n.folderId === fid).length;
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: ins.top }}>
-      <View style={{ paddingHorizontal: pad, paddingTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <Text style={{ flex: 1, color: t.text, fontSize: 32, fontWeight: '800', letterSpacing: -0.8 }}>Notes</Text>
-        <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
-          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: 16, borderRadius: 20, backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
-          <Icon name="plus" size={17} color="#fff" />
-          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>New</Text>
-        </Pressable>
-      </View>
-      <View style={{ paddingHorizontal: pad, marginTop: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.chip }}>
-          <Icon name="magnifyingglass" size={16} color={t.faint} />
-          <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={t.faint} style={{ flex: 1, color: t.text, fontSize: 16, height: 40 }} />
-        </View>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 42, marginTop: 10 }} contentContainerStyle={{ paddingHorizontal: pad, gap: 8, alignItems: 'center' }}>
-        {chip('All', filter.kind === 'all', () => setFilter({ kind: 'all' }))}
-        {chip('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }))}
-        {lib.lib.folders.map((f) => chip(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }), f.color, () => { setFolderTarget(f.id); setSheet('folder'); }))}
-        {chip('+ Subject', false, () => setSheet('newFolder'))}
-      </ScrollView>
-
-      {notes.length ? (
-        <FlatList key={cols} data={notes} keyExtractor={(n) => n.id} numColumns={cols} renderItem={card}
-          columnWrapperStyle={{ gap: gapX }} contentContainerStyle={{ padding: pad, paddingBottom: 60, gap: 24 }} />
-      ) : (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 40 }}>
-          <Text style={{ color: t.sub, fontSize: 17 }}>{q ? 'No notes match.' : 'No notes yet.'}</Text>
-          {!q ? (
-            <Pressable onPress={() => newNote('lined')} style={{ height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: t.accent, justifyContent: 'center' }}>
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Start a note</Text>
+    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: t.bg }}>
+      {wide ? (
+        <View style={{ width: sideW, backgroundColor: t.side, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: t.line, paddingTop: ins.top + 14 }}>
+          <Text style={{ color: t.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.6, paddingHorizontal: 20, marginBottom: 12 }}>Quill</Text>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 10, gap: 2, paddingBottom: 30 }}>
+            {sideRow('All Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'tray.full', count: lib.lib.notes.length })}
+            {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: lib.lib.notes.filter((n) => n.fav).length })}
+            <Text style={{ color: t.faint, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 22, marginBottom: 6, paddingHorizontal: 12 }}>SUBJECTS</Text>
+            {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
+              { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
+            <Pressable onPress={() => setSheet('newFolder')} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, height: 40, paddingHorizontal: 12 }}>
+              <Icon name="plus" size={16} color={t.accent} />
+              <Text style={{ color: t.accent, fontSize: 15, fontWeight: '600' }}>New subject</Text>
             </Pressable>
-          ) : null}
+          </ScrollView>
         </View>
-      )}
+      ) : null}
+
+      <View style={{ flex: 1, paddingTop: ins.top }}>
+        <View style={{ paddingHorizontal: pad, paddingTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 }}>{wide ? title : 'Quill'}</Text>
+          <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 15, borderRadius: 19, backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
+            <Icon name="plus" size={16} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>New</Text>
+          </Pressable>
+        </View>
+        <View style={{ paddingHorizontal: pad, marginTop: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.chip }}>
+            <Icon name="magnifyingglass" size={15} color={t.faint} />
+            <TextInput value={q} onChangeText={setQ} placeholder="Search notes" placeholderTextColor={t.faint} style={{ flex: 1, color: t.text, fontSize: 15, height: 38 }} />
+          </View>
+        </View>
+        {!wide ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 44, marginTop: 8 }} contentContainerStyle={{ paddingHorizontal: pad, gap: 8, alignItems: 'center' }}>
+            {chip('All', filter.kind === 'all', () => setFilter({ kind: 'all' }))}
+            {chip('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }))}
+            {lib.lib.folders.map((f) => chip(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }), f.color, () => { setFolderTarget(f.id); setSheet('folder'); }))}
+            {chip('+ Subject', false, () => setSheet('newFolder'))}
+          </ScrollView>
+        ) : null}
+
+        {notes.length ? (
+          <FlatList key={cols} data={notes} keyExtractor={(n) => n.id} numColumns={cols} renderItem={card}
+            columnWrapperStyle={{ gap: gapX }} contentContainerStyle={{ padding: pad, paddingTop: 18, paddingBottom: 60, gap: 26 }} />
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 40 }}>
+            <Text style={{ color: t.sub, fontSize: 17 }}>{q ? 'No notes match.' : 'No notes here yet.'}</Text>
+            {!q ? (
+              <Pressable onPress={() => newNote('lined')} style={{ height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: t.accent, justifyContent: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Start a note</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        )}
+      </View>
 
       <MenuSheet visible={sheet === 'new'} onClose={() => setSheet(null)} title="New" items={[
         { label: 'Lined note', icon: 'line.3.horizontal', onPress: () => newNote('lined') },

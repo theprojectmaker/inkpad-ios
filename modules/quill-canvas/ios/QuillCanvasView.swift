@@ -18,9 +18,35 @@ struct LegacyStroke: Record {
   @Field var hl: Bool = false
 }
 
-final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
+/// A typed text box, in canvas coordinates.
+struct TextBox: Codable {
+  var id: String
+  var x: Double
+  var y: Double
+  var w: Double
+  var text: String
+  var size: Double
+  var color: String
+}
+
+final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
   let canvas = PKCanvasView()
   private let pageHost = UIView()          // page backgrounds, in canvas coordinates
+  let textHost = UIView()                  // typed text, above the ink, same coordinates
+  var texts: [TextBox] = []
+  var labels: [String: UILabel] = [:]
+  var textsPath: String?
+  var textMode = false
+  var textColor = "#111111"
+  var textSize: Double = 18
+  var editor: UITextView?
+  var editingId: String?
+  var dragId: String?
+  var dragStart: CGPoint = .zero
+  private var lastPage = -1
+  let onPageChange = EventDispatcher()
+  lazy var tapGR = UITapGestureRecognizer(target: self, action: #selector(onTextTap(_:)))
+  lazy var panGR = UIPanGestureRecognizer(target: self, action: #selector(onTextPan(_:)))
   private var pageViews: [PageTileView] = []
   private(set) var specs: [PageSpec] = []
   private(set) var frames: [CGRect] = []
@@ -58,6 +84,17 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
     pageHost.isUserInteractionEnabled = false
     pageHost.layer.anchorPoint = .zero
     canvas.insertSubview(pageHost, at: 0)
+
+    textHost.layer.anchorPoint = .zero
+    textHost.isUserInteractionEnabled = false
+    canvas.addSubview(textHost)
+    tapGR.isEnabled = false
+    tapGR.delegate = self
+    canvas.addGestureRecognizer(tapGR)
+    panGR.isEnabled = false
+    panGR.delegate = self
+    panGR.maximumNumberOfTouches = 1
+    textHost.addGestureRecognizer(panGR)
   }
 
   // MARK: - Layout and zoom
@@ -65,6 +102,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
   override func layoutSubviews() {
     super.layoutSubviews()
     canvas.frame = bounds
+    if canvas.subviews.last !== textHost { canvas.bringSubviewToFront(textHost) }
     if bounds.width > 1 && abs(bounds.width - lastWidth) > 0.5 {
       lastWidth = bounds.width
       fitWidth()
@@ -91,6 +129,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
     let z = canvas.zoomScale
     pageHost.transform = CGAffineTransform(scaleX: z, y: z)
     pageHost.layer.position = .zero
+    textHost.transform = CGAffineTransform(scaleX: z, y: z)
+    textHost.layer.position = .zero
     let size = CGSize(width: contentW * z, height: contentH * z)
     if canvas.contentSize != size { canvas.contentSize = size }
     let padX = max(0, (bounds.width - size.width) / 2)
@@ -99,6 +139,37 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
   }
 
   func scrollViewDidZoom(_ scrollView: UIScrollView) { applyZoom() }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) { reportPage() }
+
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === panGR { return panStartsOnBox() }
+    return super.gestureRecognizerShouldBegin(gestureRecognizer)
+  }
+
+  /// Which page is in the middle of the screen.
+  func currentPage() -> Int {
+    let z = max(0.01, canvas.zoomScale)
+    let mid = (canvas.contentOffset.y + canvas.bounds.height * 0.4) / z
+    for (i, f) in frames.enumerated() where mid < f.maxY + gap / 2 { return i }
+    return max(0, frames.count - 1)
+  }
+
+  private func reportPage() {
+    guard !frames.isEmpty else { return }
+    let i = currentPage()
+    if i == lastPage { return }
+    lastPage = i
+    onPageChange(["page": i, "count": frames.count])
+  }
+
+  func scrollToPage(_ i: Int) {
+    guard i >= 0, i < frames.count else { return }
+    let z = canvas.zoomScale
+    let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
+    let y = min(maxY, frames[i].minY * z - 16)
+    canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
+  }
 
   // MARK: - Pages
 
@@ -131,6 +202,10 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
     }
     pageHost.transform = .identity
     pageHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+    textHost.transform = .identity
+    textHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+    lastPage = -1
+    DispatchQueue.main.async { [weak self] in self?.reportPage() }
     if bounds.width > 1 {
       if fitted { canvas.minimumZoomScale = fitScale() * 0.5; canvas.maximumZoomScale = fitScale() * 6; applyZoom() } else { fitWidth() }
     }
@@ -150,6 +225,10 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
       scheduleSave()
     }
     legacy = []
+    if let tp = textsPath, let data = FileManager.default.contents(atPath: tp), let boxes = try? JSONDecoder().decode([TextBox].self, from: data) {
+      texts = boxes
+      renderTexts()
+    }
   }
 
   func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
@@ -209,6 +288,12 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
   func setTool(_ t: ToolSpec) {
     let color = UIColor(hex: t.color)
     let w = CGFloat(t.width)
+    setTextMode(t.kind == "text")
+    if t.kind == "text" {
+      textColor = t.color
+      textSize = t.width
+      return
+    }
     switch t.kind {
     case "eraser":
       canvas.tool = PKEraserTool(.bitmap, width: max(4, w))
@@ -255,31 +340,13 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate {
         ctx.beginPage(withBounds: r, pageInfo: [:])
         PageArt.draw(p, in: ctx.cgContext)
         if i < images.count { images[i].draw(in: r) }
+        if i < frames.count { drawTexts(onPage: frames[i], in: ctx.cgContext) }
       }
     }
   }
 
   /// A small picture of the first page for the library.
-  func snapshot(_ path: String, width: Double) -> Bool {
-    guard let p = specs.first, let f = frames.first else { return false }
-    let k = CGFloat(width) / CGFloat(p.w)
-    let size = CGSize(width: CGFloat(p.w) * k, height: CGFloat(p.h) * k)
-    var ink: UIImage?
-    UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-      ink = canvas.drawing.image(from: f, scale: k * 2)
-    }
-    let fmt = UIGraphicsImageRendererFormat()
-    fmt.scale = 2
-    let img = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
-      ctx.cgContext.scaleBy(x: k, y: k)
-      PageArt.draw(p, in: ctx.cgContext)
-      ink?.draw(in: CGRect(x: 0, y: 0, width: p.w, height: p.h))
-    }
-    guard let data = img.jpegData(compressionQuality: 0.8) else { return false }
-    let url = URL(fileURLWithPath: path)
-    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    return (try? data.write(to: url, options: .atomic)) != nil
-  }
+  func snapshot(_ path: String, width: Double) -> Bool { pageThumb(0, path: path, width: width) }
 
   // MARK: - Ink from the old app
 
