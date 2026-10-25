@@ -3,11 +3,12 @@
 // Data only ever crosses the bridge in chunks: files come in as base64
 // pieces (one in flight at a time) and the exported PDF is pulled back out
 // piece by piece, so neither side ever holds one giant string.
-const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174';
-const PDFLIB = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+// pdf.js and pdf-lib are embedded in the app (no CDN), so PDFs work offline.
+import { PDFJS_SRC, PDFJS_WORKER_SRC, PDFLIB_SRC } from './vendor/pdf-libs';
 
 export const ENGINE_HTML = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<script src="${PDFJS}/pdf.min.js"></script><script src="${PDFLIB}"></script></head><body><script>
+<script>${PDFJS_SRC}</script><script>${PDFLIB_SRC}</script>
+<script id="pdfworker" type="text/plain">${PDFJS_WORKER_SRC}</script></head><body><script>
 (function(){
 const post = (m) => {
   const s = JSON.stringify(m);
@@ -15,8 +16,8 @@ const post = (m) => {
   else parent.postMessage({ __inkpad: 1, s: s }, '*');
 };
 const fail = (req, e) => post({ type: 'res', req: req, ok: false, error: String((e && e.message) || e) });
-if (!window.pdfjsLib || !window.PDFLib) { post({ type: 'fatal', error: 'offline' }); return; }
-pdfjsLib.GlobalWorkerOptions.workerSrc = '${PDFJS}/pdf.worker.min.js';
+if (!window.pdfjsLib || !window.PDFLib) { post({ type: 'fatal', error: 'PDF tools failed to start' }); return; }
+pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([document.getElementById('pdfworker').textContent], { type: 'text/javascript' }));
 const blobs = {}, strs = {}, docs = {}, outs = {};
 const NE = window.NE = {};
 NE.blobBegin = (id, n) => { blobs[id] = { buf: new Uint8Array(n), at: 0 }; post({ type: 'ack', id: id }); };
@@ -47,6 +48,23 @@ NE.open = async (req, docId, blobId) => {
     const pw = e && e.name === 'PasswordException';
     fail(req, pw ? 'This PDF is password-protected. Remove the password and try again.' : "That PDF couldn't be opened. It may be damaged.");
   }
+};
+// Renders just a rectangle of a page (page points, as displayed) at a given scale:
+// the sharp tile shown when you zoom in.
+NE.region = async (req, docId, index, scale, x, y, w, h) => {
+  try {
+    const doc = docs[docId]; if (!doc) throw new Error('not open');
+    const page = await doc.getPage(index + 1);
+    const vp = page.getViewport({ scale: scale });
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w * scale)); cv.height = Math.max(1, Math.round(h * scale));
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, -x * scale, -y * scale] }).promise;
+    const url = cv.toDataURL('image/jpeg', 0.88);
+    cv.width = 0; cv.height = 0; page.cleanup();
+    post({ type: 'res', req: req, ok: true, data: { b64: url.slice(url.indexOf(',') + 1) } });
+  } catch (e) { fail(req, e); }
 };
 NE.text = async (req, docId, max) => {
   try {

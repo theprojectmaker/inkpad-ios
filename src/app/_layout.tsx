@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ShareReceiver } from '@/components/share-receiver';
 import { ToastProvider } from '@/components/ui';
 import { LibraryProvider } from '@/lib/library';
 import { EngineHost } from '@/lib/pdf-engine';
@@ -15,6 +16,7 @@ function Shell() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={t.dark ? 'light' : 'dark'} />
       <ToastProvider>
+        <ShareReceiver />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg }, animation: 'fade', gestureEnabled: false }} />
       </ToastProvider>
       <EngineHost />

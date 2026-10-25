@@ -54,7 +54,7 @@ class Engine {
     let m: any;
     try { m = JSON.parse(raw); } catch { return; }
     if (m.type === 'ready') { this.dead = null; this.readyWait.resolve(); }
-    else if (m.type === 'fatal') { this.dead = "Couldn't load the PDF tools. Check the internet connection and try again."; this.readyWait.reject(new Error(this.dead)); }
+    else if (m.type === 'fatal') { this.dead = "The PDF tools couldn't start. Close and reopen the app."; this.readyWait.reject(new Error(this.dead)); }
     else if (m.type === 'ack') { const a = this.acks.get(m.id); if (a) { this.acks.delete(m.id); a(); } }
     else if (m.type === 'progress') this.reqs.get(m.req)?.onProgress?.(m.done, m.total);
     else if (m.type === 'res') {
@@ -67,7 +67,7 @@ class Engine {
 
   private async ready() {
     if (!this.inject) throw new Error('The PDF engine is not running.');
-    const t = new Promise<void>((_, rej) => setTimeout(() => rej(new Error(this.dead ?? "The PDF tools didn't load. Check the internet connection.")), 25000));
+    const t = new Promise<void>((_, rej) => setTimeout(() => rej(new Error(this.dead ?? "The PDF tools didn't start in time. Try again.")), 25000));
     await Promise.race([this.readyWait.p, t]);
   }
 
@@ -150,6 +150,16 @@ class Engine {
       await this.ready();
       await this.ensureOpen(key, path);
       return this.call<{ b64: string; w: number; h: number }>((req) => `NE.render(${req},${JSON.stringify(key)},${index | 0},${Math.round(maxPx)},0.86)`);
+    });
+  }
+
+  /** JPEG of a rectangle of a page (page points) rendered at `scale` px per point. */
+  region(key: string, path: string, index: number, scale: number, r: { x: number; y: number; w: number; h: number }) {
+    return this.job(async () => {
+      await this.ready();
+      await this.ensureOpen(key, path);
+      const n = (v: number) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : 0);
+      return this.call<{ b64: string }>((req) => `NE.region(${req},${JSON.stringify(key)},${index | 0},${n(scale)},${n(r.x)},${n(r.y)},${n(r.w)},${n(r.h)})`);
     });
   }
 

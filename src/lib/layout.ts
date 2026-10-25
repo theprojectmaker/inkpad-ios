@@ -28,6 +28,19 @@ export function clampView(v: View, L: DocLayout, W: number, H: number): View {
   return { z, tx: Number.isFinite(tx) ? tx : 0, ty: Number.isFinite(ty) ? ty : TOP };
 }
 
+// Past an edge (or a zoom limit) the page follows with resistance and springs
+// back on release, instead of stopping dead.
+const rubber = (v: number, lo: number, hi: number, k = 0.32) => (v < lo ? lo - (lo - v) * k : v > hi ? hi + (v - hi) * k : v);
+export function softClampView(v: View, L: DocLayout, W: number, H: number): View {
+  const z0 = fitZoom(L, W), zmin = z0 * 0.45, zmax = z0 * 6;
+  const z = v.z < zmin ? zmin * Math.pow(v.z / zmin, 0.3) : v.z > zmax ? zmax * Math.pow(v.z / zmax, 0.3) : v.z;
+  const cw = L.w * z, ch = L.h * z;
+  const [xl, xh] = cw <= W - 24 ? [(W - cw) / 2, (W - cw) / 2] : [W - cw - 24, 24];
+  const [yl, yh] = ch + TOP * 2 <= H ? [TOP, TOP] : [H - ch - 120, TOP];
+  const tx = rubber(v.tx, xl, xh), ty = rubber(v.ty, yl, yh);
+  return { z: Number.isFinite(z) ? z : z0, tx: Number.isFinite(tx) ? tx : 0, ty: Number.isFinite(ty) ? ty : TOP };
+}
+
 export function pageAt(L: DocLayout, pages: Page[], docY: number): number {
   for (let i = 0; i < pages.length; i++) if (docY < L.tops[i] + pages[i].h + GAP / 2) return i;
   return Math.max(0, pages.length - 1);

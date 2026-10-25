@@ -7,7 +7,7 @@
     "start": "expo start",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "tsx --test tests/ink.test.ts",
+    "test": "tsx --test tests/ink.test.ts tests/pf.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,12 +23,14 @@
     "expo-image-picker": "~57.0.20",
     "expo-linking": "~57.0.13",
     "expo-router": "~57.0.28",
+    "expo-share-intent": "^8.0.1",
     "expo-sharing": "~57.0.23",
     "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
     "expo-updates": "~57.0.26",
+    "perfect-freehand": "^1.2.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",

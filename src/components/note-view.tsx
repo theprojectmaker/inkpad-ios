@@ -17,16 +17,18 @@ import { clipboard } from '@/lib/clip';
 import { exportNotePdf, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import {
-  type Box, clamp, euroFor, InkBuilder, type InkMode, type OneEuro, pressureFromForce, eraseSplit, fin, imageBox, inBox, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
+  type Box, clamp, pressureFromForce, eraseSplit, unpack, fin, imageBox, inBox, pack, pointInPoly, type Pt, recognizeShape, strokeBox, strokeHit,
   strokeHitSwept, strokeInLasso, unionBox, xfImage, xfStroke, xfText, type Xf,
 } from '@/lib/geom';
-import { clampView, fitZoom, GAP, layoutDoc, pageAt, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
+import { clampView, fitZoom, GAP, layoutDoc, pageAt, softClampView, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
 import { useLibrary } from '@/lib/library';
 import { docText, type ImageItem, type NoteDoc, type Page, paperPage, type Recording, type Stroke, type TextItem, uid } from '@/lib/model';
-import { imagePages, loadDoc, notePath, pdfPages, saveDoc, saveImage } from '@/lib/noteio';
+import { imagePages, loadDoc, notePath, pdfKey, pdfPages, saveDoc, saveImage } from '@/lib/noteio';
+import { engine } from '@/lib/pdf-engine';
 import { useSettings, useTheme } from '@/lib/settings';
 import { BG_TIERS, bestBg, bgImages, HL_ALPHA, inkPicture, itemImages, livePath, paperPicture, renderPageImage, type Replay, selectionPicture, textBounds } from '@/lib/skia-render';
-import { emptyPicture, growLive, liveFrame, type LiveStroke, newLive, resetLive, restartLive } from './live-ink';
+import { type InkStyle } from '@/lib/ink';
+import { emptyPicture, liveFrame, type LiveStroke } from './live-ink';
 import { useToast } from './ui';
 
 export type Tool = 'pen' | 'hl' | 'eraser' | 'lasso' | 'text' | 'hand';
@@ -60,8 +62,8 @@ type Drawer = {
   touch: string; page: number; pencil: boolean; t0: number;
   hold: ReturnType<typeof setTimeout> | null; anchor: { x: number; y: number }; snapped: boolean;
   rt?: [string, number] | null;
-  fx: OneEuro; fy: OneEuro; fp: number;
-  ink: InkBuilder; live: LiveStroke;
+  fp: number;
+  pts: Pt[]; live: LiveStroke;
   lastRaw?: { x: number; y: number; t: number };
 };
 type Mode = 'idle' | 'pending' | 'draw' | 'nav' | 'ignore';
@@ -126,6 +128,12 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   const selRef = useRef<Sel | null>(null);
   const dragRef = useRef<{ kind: 'move' | 'scale'; sx: number; sy: number; xf: Xf } | null>(null);
   const [editing, setEditingState] = useState<Editing | null>(null);
+  const [navigating, setNavigating] = useState(false);
+  const navigatingRef = useRef(false);
+  const zoomBadgeRef = useRef(false);
+  // A sharp render of just the visible part of the current PDF page, made after zooming in.
+  const [tile, setTile] = useState<{ pageId: string; x: number; y: number; w: number; h: number; img: ReturnType<typeof Skia.Image.MakeImageFromEncoded> } | null>(null);
+  const tileGen = useRef(0);
   const editingRef = useRef<Editing | null>(null);
   const [imgVer, setImgVer] = useState(0);
   const cursor = useRef<{ page: number; x: number; y: number; r: number } | null>(null);
@@ -162,8 +170,8 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   // React catches up ~10x a second to load newly visible pages and overlays.
   const viewTf = useSharedValue<Transforms3d>([{ translateX: 0 }, { translateY: TOP }, { scale: 1 }]);
   const viewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const setView = useCallback((v: ViewT, settle = false) => {
-    const c = clampView(v, LRef.current, sizeRef.current.w, sizeRef.current.h);
+  const setView = useCallback((v: ViewT, settle = false, soft = false) => {
+    const c = (soft ? softClampView : clampView)(v, LRef.current, sizeRef.current.w, sizeRef.current.h);
     viewRef.current = c;
     viewTf.value = [{ translateX: c.tx }, { translateY: c.ty }, { scale: c.z }];
     if (settle) {
@@ -171,7 +179,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       setViewState(c);
       setSettledZ(c.z);
     } else if (!viewTimer.current) {
-      viewTimer.current = setTimeout(() => { viewTimer.current = null; setViewState(viewRef.current); }, 90);
+      viewTimer.current = setTimeout(() => { viewTimer.current = null; setViewState(viewRef.current); }, 220);
     }
   }, [viewTf]);
 
@@ -435,7 +443,13 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
             const pieces = eraseSplit(part, x, y, r);
             if (!pieces) { next.push(part); continue; }
             changed = true;
-            for (const pc of pieces) next.push({ ...part, id: uid('s'), pts: pack(pc) });
+            const p0 = unpack(part.pts);
+            const same = (a?: Pt, b?: Pt) => !!a && !!b && Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
+            for (const pc of pieces) {
+              // Ends made by the eraser stay full width (no taper): the rest of the ink looks unchanged.
+              const c0 = same(pc[0], p0[0]) ? part.c0 : 1, c1 = same(pc[pc.length - 1], p0[p0.length - 1]) ? part.c1 : 1;
+              next.push({ ...part, id: uid('s'), pts: pack(pc), ...(c0 ? { c0: 1 as const } : { c0: undefined }), ...(c1 ? { c1: 1 as const } : { c1: undefined }) });
+            }
           }
           parts = next;
         }
@@ -450,21 +464,20 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   const liveGen = useRef(0);
   const drawLive = (l: LiveStroke | null) => { livePic.value = l ? liveFrame(l) : emptyPicture(); };
 
-  const modeFor = (pencil: boolean, hl: boolean, snapped = false): InkMode =>
-    hl ? 'even' : SRef.current.penType === 'ball' ? 'ball' : pencil && SRef.current.pressure && !snapped ? 'fountain' : 'finger';
+  const styleFor = (pencil: boolean, hl: boolean, snapped = false): InkStyle =>
+    hl ? 'hl' : SRef.current.penType === 'ball' ? 'ball' : pencil && SRef.current.pressure && !snapped ? 'fountain' : 'finger';
 
   const addPoint = (dr: Drawer, sx: number, sy: number, force: number, ts?: number) => {
     const q = toPage(dr.page, sx, sy);
     if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) return;
     const tSec = (Number.isFinite(ts) ? (ts as number) : Date.now()) / 1000;
-    // Velocity-adaptive smoothing: steady when slow, no lag when fast.
-    const x = dr.fx.filter(q.x, tSec), y = dr.fy.filter(q.y, tSec);
-    // Pressure is smoothed too, so a twitchy force reading never makes a blob.
+    // Raw positions: perfect-freehand's streamline does the smoothing, the same way live and saved.
+    // Pressure is smoothed a little so a twitchy force reading never makes a blob.
     const raw = dr.pencil && SRef.current.pressure ? pressureFromForce(force) : 0.5;
-    dr.fp = dr.ink.pts.length ? dr.fp + (raw - dr.fp) * 0.3 : raw;
-    dr.ink.add({ x, y, p: dr.fp });
-    growLive(dr.live);
-    dr.live.tip = { x: q.x, y: q.y };
+    dr.fp = dr.pts.length ? dr.fp + (raw - dr.fp) * 0.35 : raw;
+    const lastP = dr.pts[dr.pts.length - 1];
+    if (lastP && Math.hypot(q.x - lastP.x, q.y - lastP.y) < 0.15) { lastP.p = Math.max(lastP.p, dr.fp); return; }
+    dr.pts.push({ x: q.x, y: q.y, p: dr.fp });
     // Predict where the nib will be one frame from now and draw up to there:
     // hides most of the touch-to-screen delay. Replaced by real points next move.
     const lr = dr.lastRaw;
@@ -473,7 +486,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       const dt = tSec - lr.t;
       if (dt > 0.002 && dt < 0.05) {
         let vx = (q.x - lr.x) / dt, vy = (q.y - lr.y) / dt;
-        const lead = 0.018, cap = dr.ink.base * 3 + 6;
+        const lead = 0.018, cap = dr.live.base * 3 + 6;
         let px = vx * lead, py = vy * lead;
         const m = Math.hypot(px, py);
         if (m > cap) { px *= cap / m; py *= cap / m; }
@@ -484,10 +497,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
 
   // The pencil was recognised late: redo the stroke with pressure.
   const rebuildInk = (dr: Drawer) => {
-    const nb = new InkBuilder(dr.ink.base, modeFor(dr.pencil, toolRef.current === 'hl'));
-    for (const p of dr.ink.pts) nb.add(p);
-    dr.ink = nb;
-    restartLive(dr.live, nb);
+    dr.live.style = styleFor(dr.pencil, toolRef.current === 'hl');
   };
 
   const armHold = (dr: Drawer) => {
@@ -495,14 +505,14 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     if (!SRef.current.holdToShape || dr.snapped) return;
     dr.hold = setTimeout(() => {
       const cur = drawer.current;
-      if (cur !== dr || dr.snapped || dr.ink.pts.length < 6) return;
-      const shape = recognizeShape(dr.ink.pts);
+      if (cur !== dr || dr.snapped || dr.pts.length < 6) return;
+      const shape = recognizeShape(dr.pts);
       if (!shape) return;
       dr.snapped = true;
-      const nb = new InkBuilder(dr.ink.base, modeFor(dr.pencil, toolRef.current === 'hl', true));
-      for (const p of shape.pts) nb.add(p);
-      dr.ink = nb;
-      resetLive(dr.live, nb);
+      dr.pts = shape.pts;
+      dr.live.pts = shape.pts;
+      dr.live.pred = null;
+      dr.live.style = styleFor(dr.pencil, toolRef.current === 'hl', true);
       try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
       drawLive(dr.live);
     }, HOLD_MS);
@@ -514,10 +524,10 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const gen = ++liveGen.current;
     // Keep the live stroke up until the saved one has drawn, so nothing flickers.
     const clearLive = (ms: number) => setTimeout(() => { if (liveGen.current === gen) drawLive(null); }, ms);
-    if (cancel || !dr.ink.pts.length) { clearLive(0); force(); return; }
+    if (cancel || !dr.pts.length) { clearLive(0); force(); return; }
     const t = toolRef.current;
     const hl = t === 'hl';
-    let pts = dr.ink.pts;
+    let pts = dr.pts;
     // Highlighter swipes that are nearly straight become perfectly straight.
     if (hl && SRef.current.hlStraight && !dr.snapped) {
       const shape = recognizeShape(pts);
@@ -529,6 +539,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       ...(dr.pencil && SRef.current.pressure && !hl && !dr.snapped ? { pr: 1 as const } : {}),
       ...(dr.rt ? { rt: dr.rt } : {}),
       ...(!hl && SRef.current.penType === 'ball' ? { pen: 'ball' as const } : {}),
+      sm: Math.round(SRef.current.smoothing * 100) / 100,
     };
     if (st.pts.length < 3) { clearLive(0); force(); return; }
     setPage(dr.page, (p) => ({ ...p, strokes: [...p.strokes, st] }));
@@ -543,14 +554,16 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     if (tl === 'pen' || tl === 'hl') {
       const hl = tl === 'hl';
       const S0 = SRef.current;
-      const ink = new InkBuilder(hl ? S0.hlWidth : S0.penWidth, modeFor(t.pencil, hl));
       const v = viewRef.current;
       const pg = docRef.current!.pages[page];
       const dark = pg.bg.kind === 'paper' && pg.bg.color === 'dark';
-      const live = newLive(ink, hl ? S0.hlColor : S0.penColor, hl, !dark,
-        { tx: v.tx + LRef.current.xs[page] * v.z, ty: v.ty + LRef.current.tops[page] * v.z, z: v.z });
-      const dr: Drawer = { touch: t.id, page, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false,
-        fx: euroFor(S0.smoothing), fy: euroFor(S0.smoothing), fp: 0.5, ink, live };
+      const pts: Pt[] = [];
+      const live: LiveStroke = {
+        pts, base: hl ? S0.hlWidth : S0.penWidth, style: styleFor(t.pencil, hl), smoothing: S0.smoothing,
+        color: hl ? S0.hlColor : S0.penColor, multiply: !dark, pred: null,
+        tf: { tx: v.tx + LRef.current.xs[page] * v.z, ty: v.ty + LRef.current.tops[page] * v.z, z: v.z },
+      };
+      const dr: Drawer = { touch: t.id, page, pencil: t.pencil, t0: Date.now(), hold: null, anchor: { x: t.sx, y: t.sy }, snapped: false, fp: 0.5, pts, live };
       ++liveGen.current;
       try { dr.rt = stampRef.current?.() ?? null; } catch { dr.rt = null; }
       addPoint(dr, t.sx, t.sy, (t as any).force ?? 0, (t as any).ts0);
@@ -660,7 +673,8 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       // End exactly where the pen lifted (the smoothed points lag a little behind).
       if (!cancel && !dr.snapped) {
         const q = toPage(dr.page, t.x, t.y);
-        if (Number.isFinite(q.x) && Number.isFinite(q.y)) dr.ink.add({ x: q.x, y: q.y, p: dr.pencil ? dr.fp * 0.7 : dr.fp });
+        if (Number.isFinite(q.x) && Number.isFinite(q.y)) dr.pts.push({ x: q.x, y: q.y, p: dr.fp });
+        dr.live.pred = null;
       }
       finishStroke(dr, cancel);
       return;
@@ -720,15 +734,15 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
     const cx = pts.reduce((a, t) => a + t.x, 0) / pts.length, cy = pts.reduce((a, t) => a + t.y, 0) / pts.length;
     let z = nv.v.z;
     if (pts.length > 1 && nv.dist > 10) z = nv.v.z * (Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / nv.dist);
-    const z0 = fitZoom(LRef.current, sizeRef.current.w);
-    z = clamp(z, z0 * 0.45, z0 * 6);
+    if (!Number.isFinite(z) || z <= 0) z = nv.v.z;
     // Keep the doc point under the fingers' centre fixed.
     const dx = (nv.cx - nv.v.tx) / nv.v.z, dy = (nv.cy - nv.v.ty) / nv.v.z;
     nv.moved = Math.max(nv.moved, Math.hypot(cx - nv.cx, cy - nv.cy));
     nv.samples.push({ x: cx, y: cy, t: Date.now() });
     if (nv.samples.length > 6) nv.samples.shift();
-    setView({ z, tx: cx - dx * z, ty: cy - dy * z });
-    if (pts.length > 1) { if (badgeTimer.current) clearTimeout(badgeTimer.current); setZoomBadge(true); }
+    setView({ z, tx: cx - dx * z, ty: cy - dy * z }, false, true);
+    if (!navigatingRef.current) { navigatingRef.current = true; setNavigating(true); }
+    if (pts.length > 1 && !zoomBadgeRef.current) { if (badgeTimer.current) clearTimeout(badgeTimer.current); zoomBadgeRef.current = true; setZoomBadge(true); }
   };
 
   const navEnd = () => {
@@ -741,9 +755,30 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       if (nv.maxN === 2) doUndo(); else doRedo();
       return;
     }
-    setView(viewRef.current, true);
+    navigatingRef.current = false; setNavigating(false);
     if (badgeTimer.current) clearTimeout(badgeTimer.current);
-    badgeTimer.current = setTimeout(() => setZoomBadge(false), 1600);
+    badgeTimer.current = setTimeout(() => { zoomBadgeRef.current = false; setZoomBadge(false); }, 1600);
+    // Pulled past an edge or a zoom limit: spring back.
+    const cur = viewRef.current;
+    const target = clampView(cur, LRef.current, sizeRef.current.w, sizeRef.current.h);
+    if (Math.abs(target.z - cur.z) > 1e-3 || Math.abs(target.tx - cur.tx) > 0.5 || Math.abs(target.ty - cur.ty) > 0.5) {
+      // Spring about the fingers' last centre so zooming back stays put under them.
+      const last = nv.samples[nv.samples.length - 1];
+      const fx = last?.x ?? sizeRef.current.w / 2, fy = last?.y ?? sizeRef.current.h / 2;
+      const dxp = (fx - cur.tx) / cur.z, dyp = (fy - cur.ty) / cur.z;
+      const zEnd = target.z;
+      const end = clampView({ z: zEnd, tx: fx - dxp * zEnd, ty: fy - dyp * zEnd }, LRef.current, sizeRef.current.w, sizeRef.current.h);
+      const t0 = Date.now(), dur = 240;
+      const step = () => {
+        const k = Math.min(1, (Date.now() - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        const v = { z: cur.z + (end.z - cur.z) * e, tx: cur.tx + (end.tx - cur.tx) * e, ty: cur.ty + (end.ty - cur.ty) * e };
+        if (k < 1) { setView(v, false, true); momentum.current = requestAnimationFrame(step); }
+        else { momentum.current = null; setView(end, true); }
+      };
+      momentum.current = requestAnimationFrame(step);
+      return;
+    }
+    setView(viewRef.current, true);
     const sm = nv.samples.filter((s) => now - s.t < 90);
     if (sm.length >= 2) {
       const a = sm[0], b = sm[sm.length - 1];
@@ -1175,6 +1210,35 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   };
   useImperativeHandle(handleRef, () => api);
 
+  // After the view settles, re-render the visible part of a zoomed-in PDF page at screen sharpness.
+  useEffect(() => {
+    const gen = ++tileGen.current;
+    const d = docRef.current;
+    if (!d || !size.w || navigating) return;
+    const timer = setTimeout(async () => {
+      const v = viewRef.current;
+      const i = currentPage();
+      const p = d.pages[i];
+      if (!p || p.bg.kind !== 'pdf') { setTile(null); return; }
+      const scale = v.z * PixelRatio.get();
+      if (p.w * scale <= BG_TIERS[1] * 1.08) { setTile(null); return; }   // the page image is sharp enough
+      const a = toPage(i, 0, 0), b = toPage(i, sizeRef.current.w, sizeRef.current.h);
+      const x = clamp(a.x, 0, p.w), y = clamp(a.y, 0, p.h), w = clamp(b.x, 0, p.w) - x, h = clamp(b.y, 0, p.h) - y;
+      if (w < 4 || h < 4) return;
+      let s = scale;
+      const maxPx = 3.2e6;
+      if (w * h * s * s > maxPx) s = Math.sqrt(maxPx / (w * h));
+      try {
+        const r = await engine.region(pdfKey(noteId, p.bg.file), notePath(noteId, p.bg.file), p.bg.index, s, { x, y, w, h });
+        if (gen !== tileGen.current) return;
+        const img = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBase64(r.b64));
+        if (img) setTile({ pageId: p.id, x, y, w, h, img });
+      } catch {}
+    }, 260);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, size.w, size.h, navigating, doc?.pages.length]);
+
   // Report state up to the toolbar.
   const curPage = doc ? currentPage() : 0;
   const lastState = useRef('');
@@ -1242,6 +1306,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
               <Group key={p.id} transform={[{ translateX: L.xs[i] }, { translateY: L.tops[i] }]}>
                 <Picture picture={paperPicture(p)} />
                 {bg ? <SkImageNode image={bg} x={0} y={0} width={p.w} height={p.h} fit="fill" /> : null}
+                {tile && tile.pageId === p.id && tile.img ? <SkImageNode image={tile.img} x={tile.x} y={tile.y} width={tile.w} height={tile.h} fit="fill" /> : null}
                 <Picture picture={inkPicture(noteId, p, sel?.page === i || editing?.page === i ? exclude : null, imgVer, replay)} />
                 {selPic && sel?.page === i ? (
                   <Group transform={dg ? [{ translateX: dg.xf.ox + dg.xf.dx }, { translateY: dg.xf.oy + dg.xf.dy }, { scale: dg.xf.s }, { translateX: -dg.xf.ox }, { translateY: -dg.xf.oy }] : []}>
@@ -1267,14 +1332,14 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
         </Canvas>
       ) : null}
 
-      {addBtn && addBtn.y < size.h + 40 && addBtn.y > -40 ? (
+      {!navigating && addBtn && addBtn.y < size.h + 40 && addBtn.y > -40 ? (
         <Pressable onPress={() => api.addPage(last)}
           style={({ pressed }) => ({ position: 'absolute', left: addBtn.x - 70, top: addBtn.y - 2, width: 140, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? th.chip : th.card, borderWidth: 1, borderColor: th.line })}>
           <Text style={{ color: th.sub, fontSize: 14, fontWeight: '600' }}>+ Add page</Text>
         </Pressable>
       ) : null}
 
-      {selScreen && sel ? (
+      {!navigating && selScreen && sel ? (
         <View style={{ position: 'absolute', left: clamp(selScreen.x + selScreen.w / 2 - 170, 8, Math.max(8, size.w - 348)), top: selScreen.y - 56 < 6 ? Math.min(size.h - 54, selScreen.y + selScreen.h + 14) : selScreen.y - 56,
           flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: th.elev, borderRadius: 14, paddingHorizontal: 6, height: 44, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, borderWidth: th.dark ? 1 : 0, borderColor: th.line }}>
           <SelBtn label="Copy" onPress={() => { copySel(); toast('Copied'); }} />

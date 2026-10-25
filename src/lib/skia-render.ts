@@ -4,7 +4,8 @@
 import { BlendMode, FilterMode, ImageFormat, MipmapMode, PaintStyle, Skia, type SkCanvas, type SkImage, type SkPaint, type SkParagraph, type SkPath, type SkPicture, StrokeCap, StrokeJoin } from '@shopify/react-native-skia';
 
 import { fsx } from './fsx';
-import { type Box, fin, strokeBands, textBox } from './geom';
+import { type Box, fin, textBox } from './geom';
+import { strokeSvg } from './ink';
 import type { ImageItem, Page, Stroke, TextItem } from './model';
 import { notePath, pdfKey, renderDir } from './noteio';
 import { paperMarks, paperOf } from './paper';
@@ -12,21 +13,14 @@ import { engine } from './pdf-engine';
 
 // ---------- strokes ----------
 
-// A stroke = a few centre-line polylines, each stroked at its width band.
-export type SkBand = { w: number; path: SkPath };
-const bandCache = new WeakMap<Stroke, SkBand[]>();
-export function skBands(s: Stroke): SkBand[] {
-  const hit = bandCache.get(s);
-  if (hit) return hit;
-  const out: SkBand[] = [];
-  try {
-    for (const b of strokeBands(s)) {
-      const path = Skia.Path.MakeFromSVGString(b.d);
-      if (path && b.w > 0) out.push({ w: b.w, path });
-    }
-  } catch {}
-  bandCache.set(s, out);
-  return out;
+// A stroke = one filled outline (perfect-freehand), cached per stroke object.
+const pathCache = new WeakMap<Stroke, SkPath | null>();
+export function skInk(s: Stroke): SkPath | null {
+  if (pathCache.has(s)) return pathCache.get(s)!;
+  let p: SkPath | null = null;
+  try { const d = strokeSvg(s); p = d ? Skia.Path.MakeFromSVGString(d) : null; } catch { p = null; }
+  pathCache.set(s, p);
+  return p;
 }
 
 export function inkPaint(color: string, width: number, alpha = 1, blend?: BlendMode): SkPaint {
@@ -43,7 +37,8 @@ export function inkPaint(color: string, width: number, alpha = 1, blend?: BlendM
 }
 
 export function drawStroke(c: SkCanvas, s: Stroke, alpha: number, blend?: BlendMode) {
-  for (const b of skBands(s)) c.drawPath(b.path, inkPaint(s.color, b.w, alpha, blend));
+  const p = skInk(s);
+  if (p) c.drawPath(p, paint(s.color, alpha, blend));
 }
 
 export function livePath(d: string): SkPath | null {

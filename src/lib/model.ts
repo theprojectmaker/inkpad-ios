@@ -14,6 +14,8 @@ export type Stroke = {
   pr?: 1;               // 1 = pressure values are real (Apple Pencil)
   pen?: 'ball';         // ballpoint (default is the fountain pen)
   rt?: [string, number]; // written during recording [recording id, ms into it] (for replay)
+  sm?: number;          // smoothing it was drawn with (0..1)
+  c0?: 1; c1?: 1;       // start / end were cut by the eraser (no taper there)
 };
 
 export type TextItem = {

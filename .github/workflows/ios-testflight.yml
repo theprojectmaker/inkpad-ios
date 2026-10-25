@@ -1,0 +1,59 @@
+# Builds the iOS app on a free GitHub macOS runner with `eas build --local`
+# (does NOT use the Expo plan's build quota) and sends it to TestFlight.
+# Run it from GitHub: Actions > "iOS build to TestFlight" > Run workflow.
+# Needs one repository secret: EXPO_TOKEN (expo.dev > Account settings > Access tokens).
+# Signing uses the certificates/profiles already stored on Expo (credentialsSource: remote).
+name: iOS build to TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: Send the build to TestFlight when it finishes
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_SKIP_AUTO_FINGERPRINT: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the token is set
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then echo "::error::Add the EXPO_TOKEN repository secret first"; exit 1; fi
+          npx --yes eas-cli@latest whoami
+
+      - name: Build the app on this Mac (eas build --local)
+        run: npx --yes eas-cli@latest build --platform ios --profile production --local --non-interactive --output "$RUNNER_TEMP/app.ipa"
+
+      - name: Keep the .ipa as a download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: ${{ runner.temp }}/app.ipa
+          retention-days: 7
+
+      - name: Send to TestFlight
+        if: ${{ inputs.submit }}
+        run: npx --yes eas-cli@latest submit --platform ios --profile production --path "$RUNNER_TEMP/app.ipa" --non-interactive --wait
