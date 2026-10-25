@@ -1,0 +1,126 @@
+// Page backgrounds: paper colour + ruling marks, a PDF page, or a photo.
+// The same drawing code is used on screen (tiled, so it stays sharp at any
+// zoom) and when writing the exported PDF.
+import ExpoModulesCore
+import UIKit
+
+struct MarkSpec: Record {
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var w: Double = 0
+  @Field var h: Double = 0
+  @Field var r: Double = 0          // > 0: a dot of this radius centred on (x, y)
+  @Field var color: String = "#C7D3E6"
+}
+
+struct PageSpec: Record {
+  @Field var id: String = ""
+  @Field var w: Double = 612
+  @Field var h: Double = 792
+  @Field var bg: String = "#FFFFFF"
+  @Field var kind: String = "paper"  // paper | pdf | image
+  @Field var file: String = ""       // absolute path of the PDF or image
+  @Field var index: Int = 0          // PDF page index (0-based)
+  @Field var marks: [MarkSpec] = []
+}
+
+extension UIColor {
+  convenience init(hex: String) {
+    var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+    if s.hasPrefix("#") { s.removeFirst() }
+    var v: UInt64 = 0
+    Scanner(string: s).scanHexInt64(&v)
+    if s.count == 8 {
+      self.init(red: CGFloat((v >> 24) & 255) / 255, green: CGFloat((v >> 16) & 255) / 255, blue: CGFloat((v >> 8) & 255) / 255, alpha: CGFloat(v & 255) / 255)
+    } else {
+      self.init(red: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: 1)
+    }
+  }
+}
+
+/// Open PDFs and images, shared between the screen and the exporter.
+final class ArtCache {
+  static let shared = ArtCache()
+  private let lock = NSLock()
+  private var pdfs: [String: CGPDFDocument] = [:]
+  private var images: [String: UIImage] = [:]
+
+  func pdf(_ path: String) -> CGPDFDocument? {
+    lock.lock(); defer { lock.unlock() }
+    if let d = pdfs[path] { return d }
+    guard let d = CGPDFDocument(URL(fileURLWithPath: path) as CFURL) else { return nil }
+    pdfs[path] = d
+    return d
+  }
+
+  func image(_ path: String) -> UIImage? {
+    lock.lock(); defer { lock.unlock() }
+    if let i = images[path] { return i }
+    guard let i = UIImage(contentsOfFile: path) else { return nil }
+    if images.count > 12 { images.removeAll() }
+    images[path] = i
+    return i
+  }
+}
+
+enum PageArt {
+  /// Draws the page background into `ctx`, page origin at (0, 0), UIKit coordinates (y down).
+  static func draw(_ p: PageSpec, in ctx: CGContext) {
+    let r = CGRect(x: 0, y: 0, width: p.w, height: p.h)
+    ctx.setFillColor(UIColor(hex: p.bg).cgColor)
+    ctx.fill(r)
+    if p.kind == "pdf", let doc = ArtCache.shared.pdf(p.file), let page = doc.page(at: p.index + 1) {
+      ctx.saveGState()
+      ctx.setFillColor(UIColor.white.cgColor)
+      ctx.fill(r)
+      ctx.translateBy(x: 0, y: r.height)
+      ctx.scaleBy(x: 1, y: -1)
+      ctx.concatenate(page.getDrawingTransform(.cropBox, rect: r, rotate: 0, preserveAspectRatio: true))
+      ctx.drawPDFPage(page)
+      ctx.restoreGState()
+    } else if p.kind == "image", let img = ArtCache.shared.image(p.file) {
+      UIGraphicsPushContext(ctx)
+      img.draw(in: r)
+      UIGraphicsPopContext()
+    }
+    for m in p.marks {
+      ctx.setFillColor(UIColor(hex: m.color).cgColor)
+      if m.r > 0 {
+        ctx.fillEllipse(in: CGRect(x: m.x - m.r, y: m.y - m.r, width: m.r * 2, height: m.r * 2))
+      } else {
+        ctx.fill(CGRect(x: m.x, y: m.y, width: m.w, height: m.h))
+      }
+    }
+  }
+}
+
+/// Tiles fade in by default; draw them straight away instead.
+final class FastTiledLayer: CATiledLayer {
+  override class func fadeDuration() -> CFTimeInterval { 0 }
+}
+
+/// One page background on screen. Tiled, so PDF text and ruling are redrawn sharp when zoomed.
+final class PageTileView: UIView {
+  override class var layerClass: AnyClass { FastTiledLayer.self }
+  let spec: PageSpec
+
+  init(spec: PageSpec) {
+    self.spec = spec
+    super.init(frame: CGRect(x: 0, y: 0, width: spec.w, height: spec.h))
+    isUserInteractionEnabled = false
+    isOpaque = true
+    backgroundColor = UIColor(hex: spec.bg)
+    if let tl = layer as? CATiledLayer {
+      tl.levelsOfDetail = 4
+      tl.levelsOfDetailBias = 4
+      tl.tileSize = CGSize(width: 512, height: 512)
+    }
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func draw(_ rect: CGRect) {
+    guard let ctx = UIGraphicsGetCurrentContext() else { return }
+    PageArt.draw(spec, in: ctx)
+  }
+}

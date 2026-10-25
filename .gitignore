@@ -6,6 +6,6 @@ web-build/
 public/canvaskit.wasm
 .claude/
 .secrets/
-ios/
-android/
+/ios/
+/android/
 *.ipa
