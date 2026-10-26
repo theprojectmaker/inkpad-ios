@@ -44,6 +44,9 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   var dragId: String?
   var dragStart: CGPoint = .zero
   private var lastPage = -1
+  /// Where the user last scrolled to. An undo/redo (ours or Apple's 3-finger
+  /// gesture) must never move the page, so we put the view back here.
+  private var stableOffset: CGPoint?
   let onPageChange = EventDispatcher()
   lazy var tapGR = UITapGestureRecognizer(target: self, action: #selector(onTextTap(_:)))
   lazy var panGR = UIPanGestureRecognizer(target: self, action: #selector(onTextPan(_:)))
@@ -122,6 +125,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     if !fitted {
       fitted = true
       canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+      stableOffset = canvas.contentOffset
     }
   }
 
@@ -140,7 +144,28 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   func scrollViewDidZoom(_ scrollView: UIScrollView) { applyZoom() }
 
-  func scrollViewDidScroll(_ scrollView: UIScrollView) { reportPage() }
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if scrollView === canvas && (canvas.isTracking || canvas.isDecelerating || canvas.isZooming || canvas.isZoomBouncing) {
+      stableOffset = canvas.contentOffset
+    }
+    reportPage()
+  }
+
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    if scrollView === canvas { stableOffset = canvas.contentOffset }
+  }
+
+  func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+    if scrollView === canvas { stableOffset = canvas.contentOffset }
+  }
+
+  /// Puts the view back where the user had it if something other than the user moved it.
+  func holdScroll() {
+    applyZoom()
+    guard let off = stableOffset, !canvas.isTracking, !canvas.isDecelerating, !canvas.isZooming else { return }
+    let d = abs(canvas.contentOffset.y - off.y) + abs(canvas.contentOffset.x - off.x)
+    if d > 2 { canvas.setContentOffset(off, animated: false) }
+  }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer === panGR { return panStartsOnBox() }
@@ -168,6 +193,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     let z = canvas.zoomScale
     let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
     let y = min(maxY, frames[i].minY * z - 16)
+    stableOffset = CGPoint(x: canvas.contentOffset.x, y: y)
     canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
   }
 
@@ -235,6 +261,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     guard loaded else { return }
     dirty = true
     scheduleSave()
+    holdScroll()
+    DispatchQueue.main.async { [weak self] in self?.holdScroll() }
   }
 
   private func scheduleSave() {
@@ -306,6 +334,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     case "fountain":
       if #available(iOS 17.0, *) { canvas.tool = PKInkingTool(.fountainPen, color: color, width: w) }
       else { canvas.tool = PKInkingTool(.pen, color: color, width: w) }
+    case "felt":
+      canvas.tool = PKInkingTool(.pen, color: color, width: w)
     case "monoline":
       if #available(iOS 17.0, *) { canvas.tool = PKInkingTool(.monoline, color: color, width: w) }
       else { canvas.tool = PKInkingTool(.pen, color: color, width: w) }
@@ -317,8 +347,15 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   func setFingerDraws(_ on: Bool) { canvas.drawingPolicy = on ? .anyInput : .pencilOnly }
   func setRuler(_ on: Bool) { canvas.isRulerActive = on }
 
-  func undo() { canvas.undoManager?.undo(); emitState() }
-  func redo() { canvas.undoManager?.redo(); emitState() }
+  func undo() { keepingScroll { canvas.undoManager?.undo() } }
+  func redo() { keepingScroll { canvas.undoManager?.redo() } }
+
+  private func keepingScroll(_ action: () -> Void) {
+    if stableOffset == nil { stableOffset = canvas.contentOffset }
+    action()
+    holdScroll()
+    DispatchQueue.main.async { [weak self] in self?.holdScroll(); self?.emitState() }
+  }
 
   // MARK: - Export
 

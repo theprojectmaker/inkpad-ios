@@ -182,6 +182,24 @@ extension QuillCanvasView {
     return (try? data.write(to: url, options: .atomic)) != nil
   }
 
+  /// Makes room for a new page of height `h` right after page `i`: ink and text below it move down.
+  func insertPageSpace(after i: Int, height h: Double) {
+    guard i >= 0, i < frames.count else { return }
+    commitEdit()
+    let below = frames[i].maxY + 14
+    let shift = CGFloat(h) + 28
+    var strokes: [PKStroke] = []
+    for var s in canvas.drawing.strokes {
+      if s.renderBounds.midY >= below { s.transform = s.transform.concatenating(CGAffineTransform(translationX: 0, y: shift)) }
+      strokes.append(s)
+    }
+    canvas.drawing = PKDrawing(strokes: strokes)
+    texts = texts.map { b in var n = b; if CGFloat(b.y) >= below { n.y += Double(shift) }; return n }
+    renderTexts()
+    saveTexts()
+    saveNow(sync: true)
+  }
+
   /// Removes page `i`'s ink and text and moves everything below it up. The app then drops the page.
   func deletePage(_ i: Int) {
     guard i >= 0, i < frames.count else { return }

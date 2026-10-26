@@ -1,8 +1,27 @@
 import ExpoModulesCore
+import VisionKit
 
 public final class QuillCanvasModule: Module {
+  private var scan: ScanSession?
+
   public func definition() -> ModuleDefinition {
     Name("QuillCanvas")
+
+    // Apple's document camera; resolves with the scanned page images (empty if cancelled).
+    AsyncFunction("scanDocument") { (promise: Promise) in
+      guard VNDocumentCameraViewController.isSupported else { promise.reject("E_SCAN", "This iPad can't scan documents."); return }
+      guard let vc = self.appContext?.utilities?.currentViewController() else { promise.reject("E_SCAN", "Couldn't open the camera."); return }
+      let session = ScanSession(promise: promise) { [weak self] in self?.scan = nil }
+      self.scan = session
+      let cam = VNDocumentCameraViewController()
+      cam.delegate = session
+      vc.present(cam, animated: true)
+    }.runOnQueue(.main)
+
+    // The AI's clean copy (HTML) as Letter-size PDF pages; returns the page count.
+    AsyncFunction("htmlToPdf") { (html: String, path: String) throws -> Int in
+      return try PrintHTML.pdf(html, to: path)
+    }.runOnQueue(.main)
 
     View(QuillCanvasView.self) {
       Events("onDrawingChange", "onPageChange")
@@ -73,6 +92,10 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("deletePage") { (view: QuillCanvasView, index: Int) in
         view.deletePage(index)
+      }.runOnQueue(.main)
+
+      AsyncFunction("insertPageSpace") { (view: QuillCanvasView, after: Int, height: Double) in
+        view.insertPageSpace(after: after, height: height)
       }.runOnQueue(.main)
 
       AsyncFunction("endTextEdit") { (view: QuillCanvasView) in

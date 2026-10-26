@@ -33,7 +33,7 @@ export type Settings = {
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
 };
 export type InkTool = 'pen' | 'marker' | 'eraser' | 'lasso' | 'text';
-export type PenStyle = 'pen' | 'fountain' | 'pencil';
+export type PenStyle = 'pen' | 'felt' | 'fountain' | 'pencil';
 
 const DEFAULTS: Settings = {
   theme: 'system', view: 'grid', sort: 'updated',

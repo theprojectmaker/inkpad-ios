@@ -22,9 +22,10 @@ export type CanvasHandle = {
   pageThumb(index: number, path: string, width: number): Promise<boolean>;
   deletePage(index: number): Promise<void>;
   endTextEdit(): Promise<void>;
+  insertPageSpace(after: number, height: number): Promise<void>;
 };
 
-export type ToolKind = 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text';
+export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text';
 export type CanvasTool = { kind: ToolKind; color: string; width: number };
 
 type Props = ViewProps & {

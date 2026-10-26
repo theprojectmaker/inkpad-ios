@@ -9,7 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
 import { currentTool, ToolButtons, ToolStrip } from '@/components/ink-bar';
 import { PageSidebar } from '@/components/page-sidebar';
-import { ConfirmSheet, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
+import { StudyPanel } from '@/components/study-panel';
+import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
@@ -72,6 +73,7 @@ export default function Editor() {
   const tool = useMemo(() => currentTool(s), [s]);
   const [menu, setMenu] = useState(false);
   const [sidebar, setSidebar] = useState(false);
+  const [study, setStudy] = useState(false);
   const [page, setPage] = useState({ page: 0, count: 1 });
   const [ver, setVer] = useState(0);            // bumps when ink changes (page thumbnails redraw)
   const [delPage, setDelPage] = useState<number | null>(null);
@@ -120,18 +122,22 @@ export default function Editor() {
     if (router.canGoBack()) router.back(); else router.replace('/');
   };
 
-  const addPage = async () => {
+  /** A blank page like the one it follows, added at the end or right after page `after`. */
+  const addPage = async (after?: number) => {
     if (!doc) return;
-    const last = doc.pages[doc.pages.length - 1];
+    const last = doc.pages[after ?? doc.pages.length - 1];
     const size = last && last.bg.kind === 'paper' ? { w: last.w, h: last.h } : pageSizeOf(doc.paper.size);
     const style = last?.bg.kind === 'paper' ? last.bg.style : doc.paper.style;
     const color = last?.bg.kind === 'paper' ? last.bg.color : doc.paper.color;
     const p: Page = paperPage(style, color, { w: size.w, h: size.h });
-    const next = { ...doc, pages: [...doc.pages, p] };
+    const at = after == null || after >= doc.pages.length - 1 ? doc.pages.length : after + 1;
+    if (at < doc.pages.length) await canvas.current?.insertPageSpace(at - 1, p.h);
+    const next = { ...doc, pages: [...doc.pages.slice(0, at), p, ...doc.pages.slice(at)] };
     setDoc(next);
     await saveDoc(next);
     lib.updateNote(id, { pages: next.pages.length, updated: Date.now() });
-    toast(`Page ${next.pages.length} added at the end`);
+    setVer((v) => v + 1);
+    toast(at === next.pages.length - 1 ? `Page ${at + 1} added at the end` : `New page ${at + 1} inserted`);
   };
 
   const share = async () => {
@@ -168,6 +174,11 @@ export default function Editor() {
           <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
+        <Pressable onPress={() => setStudy((v) => !v)} accessibilityLabel="Study with AI"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 11, borderRadius: 17, marginRight: 4, backgroundColor: study ? t.accent : t.accent + '1A' }}>
+          <Icon name="sparkles" size={15} color={study ? '#fff' : t.accent} />
+          {!narrow ? <Text style={{ color: study ? '#fff' : t.accent, fontSize: 14, fontWeight: '700' }}>Study</Text> : null}
+        </Pressable>
         <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
         <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
         <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
@@ -179,7 +190,7 @@ export default function Editor() {
       <View style={{ flex: 1, flexDirection: 'row' }}>
         {sidebar && doc ? (
           <PageSidebar noteId={id} pages={doc.pages} current={page.page} ver={ver} canvas={canvas} absPath={absPath}
-            onJump={(i) => canvas.current?.scrollToPage(i)} onDelete={(i) => { if (doc.pages.length > 1) setDelPage(i); else toast("A note needs at least one page."); }} onAdd={addPage} />
+            onJump={(i) => canvas.current?.scrollToPage(i)} onDelete={(i) => { if (doc.pages.length > 1) setDelPage(i); else toast("A note needs at least one page."); }} onAdd={() => addPage()} />
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
@@ -193,10 +204,12 @@ export default function Editor() {
             </View>
           ) : null}
         </View>
+        {study && doc ? <StudyPanel noteId={id} page={page.page} pageCount={doc.pages.length} canvas={canvas} absPath={absPath} onClose={() => setStudy(false)} /> : null}
       </View>
 
       <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
-        { label: 'Add a page', icon: 'doc.badge.plus', onPress: addPage },
+        { label: 'Insert a page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
+        { label: 'Add a page at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPage() },
         { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
         { label: ruler ? 'Hide the ruler' : 'Show the ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
         { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },

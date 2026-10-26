@@ -24,7 +24,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Quill opens the photos you pick so you can add them to a note.",
-          "cameraPermission": false
+          "cameraPermission": "Quill uses the camera to scan your paper notes and worksheets into clean typed copies."
         }
       ],
       [

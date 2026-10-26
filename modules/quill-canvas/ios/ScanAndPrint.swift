@@ -1,0 +1,80 @@
+// Paper to iPad: Apple's document camera (finds the page edges, flattens and
+// cleans the photo), and HTML -> PDF for the clean typed copy the AI writes.
+import ExpoModulesCore
+import UIKit
+import VisionKit
+
+final class ScanSession: NSObject, VNDocumentCameraViewControllerDelegate {
+  private let promise: Promise
+  private let onDone: () -> Void
+
+  init(promise: Promise, onDone: @escaping () -> Void) {
+    self.promise = promise
+    self.onDone = onDone
+  }
+
+  func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
+    var paths: [String] = []
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("quill-scans", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let stamp = Int(Date().timeIntervalSince1970 * 1000)
+    for i in 0..<scan.pageCount {
+      let img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: 2000)
+      let url = dir.appendingPathComponent("scan_\(stamp)_\(i).jpg")
+      if let data = img.jpegData(compressionQuality: 0.85), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
+    }
+    controller.dismiss(animated: true) { [self] in
+      promise.resolve(paths)
+      onDone()
+    }
+  }
+
+  func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+    controller.dismiss(animated: true) { [self] in
+      promise.resolve([String]())
+      onDone()
+    }
+  }
+
+  func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
+    controller.dismiss(animated: true) { [self] in
+      promise.reject("E_SCAN", error.localizedDescription)
+      onDone()
+    }
+  }
+
+  static func downscale(_ img: UIImage, maxSide: CGFloat) -> UIImage {
+    let big = max(img.size.width, img.size.height)
+    if big <= maxSide { return img }
+    let k = maxSide / big
+    let size = CGSize(width: img.size.width * k, height: img.size.height * k)
+    let fmt = UIGraphicsImageRendererFormat()
+    fmt.scale = 1
+    return UIGraphicsImageRenderer(size: size, format: fmt).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+  }
+}
+
+enum PrintHTML {
+  /// Lays the HTML out on Letter pages (0.75 in margins) and writes a PDF. Returns the page count.
+  static func pdf(_ html: String, to path: String) throws -> Int {
+    let fmt = UIMarkupTextPrintFormatter(markupText: html)
+    let renderer = UIPrintPageRenderer()
+    renderer.addPrintFormatter(fmt, startingAtPageAt: 0)
+    let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+    renderer.setValue(NSValue(cgRect: page), forKey: "paperRect")
+    renderer.setValue(NSValue(cgRect: page.insetBy(dx: 54, dy: 54)), forKey: "printableRect")
+    let data = NSMutableData()
+    UIGraphicsBeginPDFContextToData(data, page, nil)
+    renderer.prepare(forDrawingPages: NSRange(location: 0, length: renderer.numberOfPages))
+    let n = renderer.numberOfPages
+    for i in 0..<n {
+      UIGraphicsBeginPDFPage()
+      renderer.drawPage(at: i, in: UIGraphicsGetPDFContextBounds())
+    }
+    UIGraphicsEndPDFContext()
+    let url = URL(fileURLWithPath: path)
+    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try data.write(to: url, options: .atomic)
+    return n
+  }
+}

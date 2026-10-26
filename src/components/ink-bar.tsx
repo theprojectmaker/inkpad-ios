@@ -18,6 +18,7 @@ export const TOOLS: { id: InkTool; icon: string; label: string }[] = [
 
 const PEN_STYLES: { id: PenStyle; label: string }[] = [
   { id: 'pen', label: 'Ballpoint' },
+  { id: 'felt', label: 'Felt' },
   { id: 'fountain', label: 'Fountain' },
   { id: 'pencil', label: 'Pencil' },
 ];
@@ -26,7 +27,8 @@ export const PEN_COLORS = ['#111111', '#1E5EFF', '#E5322D', '#0AA35B', '#F28C18'
 export const HL_COLORS = ['#FFE14D', '#7CF27C', '#6FD3FF', '#FF8FD0', '#FFB45C', '#C9B6FF'];
 
 const WIDTHS = {
-  pen: [1.5, 2.6, 4.5],
+  pen: [1.4, 2.2, 3.6],
+  felt: [1.5, 2.6, 4.5],
   fountain: [2, 4, 7],
   pencil: [1.5, 3, 6],
   marker: [8, 15, 26],
@@ -38,7 +40,11 @@ const WIDTHS = {
 export function currentTool(s: { inkKind?: InkTool; penStyle?: PenStyle; inkSize?: number; textSizeIdx?: number; penColor: string; hlColor: string }): CanvasTool {
   const kind = s.inkKind ?? 'pen';
   const i = Math.max(0, Math.min(2, s.inkSize ?? 1));
-  if (kind === 'pen') { const st = s.penStyle ?? 'pen'; return { kind: st, color: s.penColor, width: WIDTHS[st][i] }; }
+  if (kind === 'pen') {
+    // Ballpoint = Apple's smooth even 'monoline' ink; Felt = Apple's pressure pen.
+    const st = s.penStyle ?? 'pen';
+    return { kind: st === 'pen' ? 'monoline' : st, color: s.penColor, width: WIDTHS[st][i] };
+  }
   if (kind === 'marker') return { kind: 'marker', color: s.hlColor, width: WIDTHS.marker[i] };
   if (kind === 'eraser') return { kind: 'eraser', color: '#000000', width: WIDTHS.eraser[i] };
   if (kind === 'text') return { kind: 'text', color: s.penColor, width: WIDTHS.text[Math.max(0, Math.min(2, s.textSizeIdx ?? 1))] };

@@ -12,6 +12,7 @@ import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages } from '@/lib/noteio';
+import { canScan, scanToCleanCopy } from '@/lib/scan';
 import { useTheme } from '@/lib/settings';
 
 type Filter = { kind: 'all' } | { kind: 'fav' } | { kind: 'folder'; id: string };
@@ -77,6 +78,18 @@ export default function LibraryScreen() {
     const r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf'], copyToCacheDirectory: true });
     if (r.canceled || !r.assets?.[0]) return;
     await importPdfUri(r.assets[0].uri, r.assets[0].name ?? 'PDF');
+  };
+
+  // Paper notes or a worksheet -> a clean typed copy you can write on.
+  const scanClean = async () => {
+    try {
+      const r = await scanToCleanCopy((m) => busy(m));
+      if (!r) return;
+      await importPdfUri(r.pdfUri, r.title);
+    } catch (e) {
+      busy(null);
+      toast(String((e as Error)?.message ?? e));
+    }
   };
 
   const importPhotos = async () => {
@@ -224,6 +237,7 @@ export default function LibraryScreen() {
         { label: 'Lined note', icon: 'line.3.horizontal', onPress: () => newNote('lined') },
         { label: 'Blank note', icon: 'square', onPress: () => newNote('blank') },
         { label: 'Grid note', icon: 'grid', onPress: () => newNote('grid') },
+        ...(canScan() ? [{ label: 'Scan paper → clean copy', icon: 'doc.viewfinder', onPress: scanClean }] : []),
         { label: 'Import a PDF', icon: 'doc.richtext', onPress: importPdf },
         { label: 'Import photos', icon: 'photo', onPress: importPhotos },
       ]} />
