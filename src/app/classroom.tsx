@@ -6,7 +6,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmSheet, Icon, IconButton, useToast } from '@/components/ui';
-import { type Assignment, cached, type ClassroomData, connect, connectedEmail, disconnect, fetchAssignments, isConfigured, openAssignment, type Status } from '@/lib/classroom';
+import { type Assignment, cached, type ClassroomData, connect, connectedEmail, disconnect, fetchAssignments, isConfigured, openAssignment, openWebsite, type Status } from '@/lib/classroom';
 import { useLibrary } from '@/lib/library';
 import { FOLDER_COLORS } from '@/lib/model';
 import { useTheme } from '@/lib/settings';
@@ -124,6 +124,14 @@ export default function ClassroomScreen() {
             <Text style={{ color: t.danger, fontSize: 14, textAlign: 'center', maxWidth: 420 }}>Classroom isn't switched on yet: the Google sign-in for Quill still needs its one-time setup.</Text>
           )}
           {err ? <Text style={{ color: t.danger, fontSize: 14, textAlign: 'center', maxWidth: 420 }}>{err}</Text> : null}
+          <View style={{ height: 1, width: 260, backgroundColor: t.line, marginTop: 14 }} />
+          <Text style={{ color: t.sub, fontSize: 14, textAlign: 'center', maxWidth: 420, lineHeight: 20 }}>
+            Google says "Access blocked"? Some schools don't let apps connect. This works with any account:
+          </Text>
+          <Pressable onPress={() => openWebsite('todo')} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingHorizontal: 20, borderRadius: 22, backgroundColor: t.chip, opacity: pressed ? 0.8 : 1 })}>
+            <Icon name="safari" size={16} color={t.accent} />
+            <Text style={{ color: t.accent, fontSize: 15, fontWeight: '700' }}>Open my assignments on Classroom</Text>
+          </Pressable>
         </View>
       </View>
     );

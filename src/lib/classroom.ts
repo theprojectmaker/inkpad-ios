@@ -121,5 +121,12 @@ export async function cached(): Promise<ClassroomData | null> {
   try { const s = await fsx.readText(CACHE); return s ? JSON.parse(s) : null; } catch { return null; }
 }
 
+/** Works with any account (even when a school blocks outside apps): Classroom's
+ * own website, straight to your assignments list, signed in the normal way. */
+export const openWebsite = (which: Status = 'todo') => WebBrowser.openBrowserAsync(
+  `https://classroom.google.com/a/${which === 'done' ? 'turned-in' : which === 'missing' ? 'missing' : 'not-turned-in'}/all`,
+  { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET, dismissButtonStyle: 'done' },
+);
+
 /** Opens the assignment in Google's own page (in-app Safari sheet) to read or turn it in. */
 export const openAssignment = (a: Assignment) => WebBrowser.openBrowserAsync(a.link, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET });
