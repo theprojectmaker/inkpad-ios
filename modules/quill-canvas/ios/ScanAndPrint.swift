@@ -1,5 +1,6 @@
 // Paper to iPad: Apple's document camera (finds the page edges, flattens and
 // cleans the photo), and HTML -> PDF for the clean typed copy the AI writes.
+import CoreImage
 import ExpoModulesCore
 import UIKit
 import VisionKit
@@ -7,10 +8,36 @@ import VisionKit
 final class ScanSession: NSObject, VNDocumentCameraViewControllerDelegate {
   private let promise: Promise
   private let onDone: () -> Void
+  private let enhance: Bool
+  private static let ci = CIContext()
 
-  init(promise: Promise, onDone: @escaping () -> Void) {
+  init(promise: Promise, enhance: Bool, onDone: @escaping () -> Void) {
     self.promise = promise
+    self.enhance = enhance
     self.onDone = onDone
+  }
+
+  /// Makes a scan look like a clean original: white paper, dark crisp ink, no shadows.
+  /// Only the picture is cleaned up; nothing on the page is changed or retyped.
+  static func cleanUp(_ img: UIImage) -> UIImage {
+    guard var image = CIImage(image: img) else { return img }
+    if let f = CIFilter(name: "CIDocumentEnhancer") {
+      f.setValue(image, forKey: kCIInputImageKey)
+      f.setValue(1.0, forKey: "inputAmount")
+      if let o = f.outputImage { image = o }
+    } else if let f = CIFilter(name: "CIColorControls") {
+      f.setValue(image, forKey: kCIInputImageKey)
+      f.setValue(1.25, forKey: kCIInputContrastKey)
+      f.setValue(0.06, forKey: kCIInputBrightnessKey)
+      if let o = f.outputImage { image = o }
+    }
+    if let f = CIFilter(name: "CISharpenLuminance") {
+      f.setValue(image, forKey: kCIInputImageKey)
+      f.setValue(0.45, forKey: kCIInputSharpnessKey)
+      if let o = f.outputImage { image = o }
+    }
+    guard let cg = ci.createCGImage(image, from: image.extent) else { return img }
+    return UIImage(cgImage: cg, scale: 1, orientation: img.imageOrientation)
   }
 
   func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
@@ -19,9 +46,10 @@ final class ScanSession: NSObject, VNDocumentCameraViewControllerDelegate {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let stamp = Int(Date().timeIntervalSince1970 * 1000)
     for i in 0..<scan.pageCount {
-      let img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: 2000)
+      var img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: enhance ? 2400 : 2000)
+      if enhance { img = ScanSession.cleanUp(img) }
       let url = dir.appendingPathComponent("scan_\(stamp)_\(i).jpg")
-      if let data = img.jpegData(compressionQuality: 0.85), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
+      if let data = img.jpegData(compressionQuality: enhance ? 0.9 : 0.85), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
     }
     controller.dismiss(animated: true) { [self] in
       promise.resolve(paths)

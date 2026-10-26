@@ -7,12 +7,12 @@ import { useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ConfirmSheet, Icon, MenuSheet, PromptSheet, useToast } from '@/components/ui';
+import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages } from '@/lib/noteio';
-import { canScan, scanToCleanCopy } from '@/lib/scan';
+import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { useTheme } from '@/lib/settings';
 
 type Filter = { kind: 'all' } | { kind: 'fav' } | { kind: 'folder'; id: string };
@@ -81,6 +81,20 @@ export default function LibraryScreen() {
   };
 
   // Paper notes or a worksheet -> a clean typed copy you can write on.
+  // Paper -> the same pages, cleaned up (whiter paper, crisper ink), ready to write on.
+  const scanPaper = async () => {
+    try {
+      const uris = await scanEnhanced();
+      if (!uris.length) return;
+      const id = uid('n');
+      busy('Adding your pages…');
+      const pages = await imagePages(id, uris);
+      await lib.createNote({ id, folderId: currentFolderId, kind: 'image', title: `Scan ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`, pages, paper: { style: 'blank', color: 'white' } });
+      busy(null);
+      open(id);
+    } catch (e) { busy(null); toast(String((e as Error)?.message ?? e)); }
+  };
+
   const scanClean = async () => {
     try {
       const r = await scanToCleanCopy((m) => busy(m));
@@ -129,7 +143,7 @@ export default function LibraryScreen() {
       {opts.color ? <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: on ? '#fff' : opts.color, marginHorizontal: 3 }} />
         : <Icon name={opts.icon ?? 'doc'} size={18} color={on ? '#fff' : t.sub} />}
       <Text numberOfLines={1} style={{ flex: 1, color: on ? '#fff' : t.text, fontSize: 15, fontWeight: on ? '700' : '500' }}>{label}</Text>
-      <Text style={{ color: on ? '#ffffffcc' : t.faint, fontSize: 13 }}>{opts.count}</Text>
+      {opts.count ? <Text style={{ color: on ? '#ffffffcc' : t.faint, fontSize: 13 }}>{opts.count}</Text> : null}
     </Pressable>
   );
 
@@ -183,6 +197,8 @@ export default function LibraryScreen() {
           <ScrollView contentContainerStyle={{ paddingHorizontal: 10, gap: 2, paddingBottom: 30 }}>
             {sideRow('All Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'tray.full', count: lib.lib.notes.length })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: lib.lib.notes.filter((n) => n.fav).length })}
+            {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap', count: 0 })}
+            {sideRow('Calculator', false, () => router.push('/calculator'), { icon: 'function', count: 0 })}
             <Text style={{ color: t.faint, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 22, marginBottom: 6, paddingHorizontal: 12 }}>SUBJECTS</Text>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
@@ -197,6 +213,8 @@ export default function LibraryScreen() {
       <View style={{ flex: 1, paddingTop: ins.top }}>
         <View style={{ paddingHorizontal: pad, paddingTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 }}>{wide ? title : 'Quill'}</Text>
+          {!wide ? <IconButton name="graduationcap" label="Classroom" onPress={() => router.push('/classroom')} /> : null}
+          {!wide ? <IconButton name="function" label="Calculator" onPress={() => router.push('/calculator')} /> : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 15, borderRadius: 19, backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
             <Icon name="plus" size={16} color="#fff" />
@@ -237,7 +255,10 @@ export default function LibraryScreen() {
         { label: 'Lined note', icon: 'line.3.horizontal', onPress: () => newNote('lined') },
         { label: 'Blank note', icon: 'square', onPress: () => newNote('blank') },
         { label: 'Grid note', icon: 'grid', onPress: () => newNote('grid') },
-        ...(canScan() ? [{ label: 'Scan paper → clean copy', icon: 'doc.viewfinder', onPress: scanClean }] : []),
+        ...(canScan() ? [
+          { label: 'Scan paper', icon: 'doc.viewfinder', onPress: scanPaper },
+          { label: 'Scan & retype with AI', icon: 'text.viewfinder', onPress: scanClean },
+        ] : []),
         { label: 'Import a PDF', icon: 'doc.richtext', onPress: importPdf },
         { label: 'Import photos', icon: 'photo', onPress: importPhotos },
       ]} />

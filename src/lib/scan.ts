@@ -7,13 +7,22 @@ import { Platform } from 'react-native';
 import { askAi, imageDataUrl } from './ai';
 import { fsx } from './fsx';
 
-type NativeScan = { scanDocument(): Promise<string[]>; htmlToPdf(html: string, path: string): Promise<number> };
+type NativeScan = { scanDocument(enhance: boolean): Promise<string[]>; htmlToPdf(html: string, path: string): Promise<number> };
 let Native: NativeScan | null = null;
 if (Platform.OS === 'ios') {
   try { Native = requireNativeModule<NativeScan>('QuillCanvas'); } catch { Native = null; }
 }
 
 export const canScan = () => !!Native;
+
+/**
+ * Scans paper pages and cleans up the pictures (white paper, crisp ink, no
+ * shadows) without changing anything on them. Returns file:// uris, empty if cancelled.
+ */
+export async function scanEnhanced(): Promise<string[]> {
+  if (!Native) throw new Error("Scanning works in the iPad app.");
+  return (await Native.scanDocument(true)).map((p) => "file://" + p);
+}
 
 const CSS = `
   body { font-family: -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 12pt; line-height: 1.5; color: #15171c; }
@@ -56,7 +65,7 @@ const stripTags = (h: string) => h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, '
  */
 export async function scanToCleanCopy(onStep: (msg: string) => void): Promise<{ pdfUri: string; title: string; text: string } | null> {
   if (!Native) throw new Error('Scanning works in the iPad app.');
-  const paths = await Native.scanDocument();
+  const paths = await Native.scanDocument(false);
   if (!paths.length) return null;
   const bodies: string[] = [];
   for (let i = 0; i < paths.length; i++) {

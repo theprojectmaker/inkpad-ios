@@ -8,10 +8,10 @@ public final class QuillCanvasModule: Module {
     Name("QuillCanvas")
 
     // Apple's document camera; resolves with the scanned page images (empty if cancelled).
-    AsyncFunction("scanDocument") { (promise: Promise) in
+    AsyncFunction("scanDocument") { (enhance: Bool, promise: Promise) in
       guard VNDocumentCameraViewController.isSupported else { promise.reject("E_SCAN", "This iPad can't scan documents."); return }
       guard let vc = self.appContext?.utilities?.currentViewController() else { promise.reject("E_SCAN", "Couldn't open the camera."); return }
-      let session = ScanSession(promise: promise) { [weak self] in self?.scan = nil }
+      let session = ScanSession(promise: promise, enhance: enhance) { [weak self] in self?.scan = nil }
       self.scan = session
       let cam = VNDocumentCameraViewController()
       cam.delegate = session

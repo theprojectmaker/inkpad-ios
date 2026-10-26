@@ -4,7 +4,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 
 const ENDPOINT = 'https://quill-study.pages.dev/api/ai';
 // Not a secret: just keeps random traffic off the endpoint.
-const APP_TOKEN = 'Nn6LJ_rM5O9z7VHjSwDdSIQv';
+export const APP_TOKEN = 'Nn6LJ_rM5O9z7VHjSwDdSIQv';
 
 export type AiTask = 'summary' | 'flashcards' | 'quiz' | 'explain' | 'ask' | 'clean';
 export type Flashcard = { q: string; a: string };

@@ -10,6 +10,7 @@ import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke
 import { currentTool, ToolButtons, ToolStrip } from '@/components/ink-bar';
 import { PageSidebar } from '@/components/page-sidebar';
 import { StudyPanel } from '@/components/study-panel';
+import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
@@ -74,6 +75,8 @@ export default function Editor() {
   const [menu, setMenu] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [study, setStudy] = useState(false);
+  const [calc, setCalc] = useState(false);       // Desmos beside the page (kept loaded once opened)
+  const [calcLoaded, setCalcLoaded] = useState(false);
   const [page, setPage] = useState({ page: 0, count: 1 });
   const [ver, setVer] = useState(0);            // bumps when ink changes (page thumbnails redraw)
   const [delPage, setDelPage] = useState<number | null>(null);
@@ -174,7 +177,8 @@ export default function Editor() {
           <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
-        <Pressable onPress={() => setStudy((v) => !v)} accessibilityLabel="Study with AI"
+        <IconButton name="function" label={calc ? 'Hide calculator' : 'Graphing calculator'} active={calc} onPress={() => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); }} />
+        <Pressable onPress={() => { setStudy((v) => !v); setCalc(false); }} accessibilityLabel="Study with AI"
           style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 11, borderRadius: 17, marginRight: 4, backgroundColor: study ? t.accent : t.accent + '1A' }}>
           <Icon name="sparkles" size={15} color={study ? '#fff' : t.accent} />
           {!narrow ? <Text style={{ color: study ? '#fff' : t.accent, fontSize: 14, fontWeight: '700' }}>Study</Text> : null}
@@ -204,6 +208,11 @@ export default function Editor() {
             </View>
           ) : null}
         </View>
+        {calcLoaded ? (
+          <View style={{ width: calc ? Math.min(460, width * 0.42) : 0, overflow: 'hidden', borderLeftWidth: calc ? 1 : 0, borderLeftColor: t.line }}>
+            <Desmos compact onClose={() => setCalc(false)} />
+          </View>
+        ) : null}
         {study && doc ? <StudyPanel noteId={id} page={page.page} pageCount={doc.pages.length} canvas={canvas} absPath={absPath} onClose={() => setStudy(false)} /> : null}
       </View>
 
