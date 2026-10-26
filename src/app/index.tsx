@@ -207,6 +207,7 @@ export default function LibraryScreen() {
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: lib.lib.notes.filter((n) => n.fav).length })}
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap', count: due.length })}
             {sideRow('Calculator', false, () => router.push('/calculator'), { icon: 'function', count: 0 })}
+            {sideRow('Clock', false, () => router.push('/clock'), { icon: 'clock', count: 0 })}
             <Text style={{ color: t.faint, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 22, marginBottom: 6, paddingHorizontal: 12 }}>SUBJECTS</Text>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
@@ -223,6 +224,7 @@ export default function LibraryScreen() {
           <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 }}>{wide ? title : 'Quill'}</Text>
           {!wide ? <IconButton name="graduationcap" label="Classroom" onPress={() => router.push('/classroom')} /> : null}
           {!wide ? <IconButton name="function" label="Calculator" onPress={() => router.push('/calculator')} /> : null}
+          {!wide ? <IconButton name="clock" label="Clock" onPress={() => router.push('/clock')} /> : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 15, borderRadius: 19, backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
             <Icon name="plus" size={16} color="#fff" />
