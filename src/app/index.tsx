@@ -2,12 +2,13 @@
 // Long-press a note for rename / favourite / move / duplicate / delete.
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
+import { type Assignment, cached, courseColor, dueLabel, keyOf } from '@/lib/classroom';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PaperStyle, uid } from '@/lib/model';
@@ -37,6 +38,13 @@ export default function LibraryScreen() {
   const [sheet, setSheet] = useState<null | 'new' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
+
+  // What's due next, from the last Classroom refresh (shown above the notes).
+  const [due, setDue] = useState<Assignment[]>([]);
+  useFocusEffect(useCallback(() => {
+    cached().then((d) => setDue((d?.items ?? []).filter((a) => a.status !== 'done' && a.due != null && a.due > Date.now() - 7 * 864e5)
+      .sort((a, b) => (a.due ?? 0) - (b.due ?? 0)).slice(0, 6))).catch(() => {});
+  }, []));
 
   const folderOf = (id: string | null) => lib.lib.folders.find((f) => f.id === id);
   const currentFolderId = filter.kind === 'folder' ? filter.id : null;
@@ -197,7 +205,7 @@ export default function LibraryScreen() {
           <ScrollView contentContainerStyle={{ paddingHorizontal: 10, gap: 2, paddingBottom: 30 }}>
             {sideRow('All Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'tray.full', count: lib.lib.notes.length })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: lib.lib.notes.filter((n) => n.fav).length })}
-            {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap', count: 0 })}
+            {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap', count: due.length })}
             {sideRow('Calculator', false, () => router.push('/calculator'), { icon: 'function', count: 0 })}
             <Text style={{ color: t.faint, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 22, marginBottom: 6, paddingHorizontal: 12 }}>SUBJECTS</Text>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
@@ -234,6 +242,25 @@ export default function LibraryScreen() {
             {lib.lib.folders.map((f) => chip(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }), f.color, () => { setFolderTarget(f.id); setSheet('folder'); }))}
             {chip('+ Subject', false, () => setSheet('newFolder'))}
           </ScrollView>
+        ) : null}
+
+        {due.length && filter.kind === 'all' && !q ? (
+          <View style={{ marginTop: 14 }}>
+            <Text style={{ color: t.faint, fontSize: 12, fontWeight: '800', letterSpacing: 0.8, paddingHorizontal: pad, marginBottom: 8 }}>DUE SOON</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: pad, gap: 10 }}>
+              {due.map((a) => (
+                <Pressable key={keyOf(a)} onPress={() => router.push(`/classroom?a=${encodeURIComponent(keyOf(a))}`)}
+                  style={({ pressed }) => ({ width: 220, flexDirection: 'row', borderRadius: 12, overflow: 'hidden', backgroundColor: pressed ? t.chip : t.card, borderWidth: 1, borderColor: t.line })}>
+                  <View style={{ width: 5, backgroundColor: courseColor(a.courseId) }} />
+                  <View style={{ flex: 1, paddingHorizontal: 11, paddingVertical: 9 }}>
+                    <Text numberOfLines={1} style={{ color: t.faint, fontSize: 11, fontWeight: '700' }}>{a.course.toUpperCase()}</Text>
+                    <Text numberOfLines={1} style={{ color: t.text, fontSize: 14.5, fontWeight: '600', marginTop: 1 }}>{a.title}</Text>
+                    <Text numberOfLines={1} style={{ color: a.status === 'missing' ? t.danger : t.sub, fontSize: 12.5, marginTop: 2 }}>{a.status === 'missing' ? 'Missing' : dueLabel(a.due)}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
         ) : null}
 
         {notes.length ? (

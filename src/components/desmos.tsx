@@ -1,4 +1,4 @@
-// The real Desmos calculators (graphing, scientific, geometry) inside Quill.
+// The real Desmos calculator (graphing + scientific) inside Quill.
 // A web view that only ever shows desmos.com; anything else is blocked.
 import { createElement, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
@@ -7,11 +7,10 @@ import { WebView } from 'react-native-webview';
 import { Icon, IconButton } from '@/components/ui';
 import { useTheme } from '@/lib/settings';
 
+// Just the two a student needs: graphing and a regular calculator.
 const MODES = [
-  { id: 'calculator', label: 'Graphing' },
-  { id: 'scientific', label: 'Scientific' },
-  { id: 'fourfunction', label: 'Basic' },
-  { id: 'geometry', label: 'Geometry' },
+  { id: 'calculator', label: 'Graph' },
+  { id: 'scientific', label: 'Calculator' },
 ] as const;
 type Mode = (typeof MODES)[number]['id'];
 
@@ -32,13 +31,11 @@ export function Desmos({ onClose, onBack, compact }: { onClose?: () => void; onB
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: t.line }}>
         {onBack ? <IconButton name="chevron.left" label="Back to notes" onPress={onBack} /> : null}
-        <Icon name="function" size={18} color={t.accent} />
-        {!compact ? <Text style={{ color: t.text, fontSize: 17, fontWeight: '800', marginRight: 4 }}>Calculator</Text> : null}
         <View style={{ flexDirection: 'row', backgroundColor: t.chip, borderRadius: 9, padding: 2, flexShrink: 1 }}>
           {MODES.map((m) => (
             <Pressable key={m.id} onPress={() => { setMode(m.id); setLoading(true); }}
-              style={{ paddingHorizontal: compact ? 8 : 12, height: 28, borderRadius: 7, justifyContent: 'center', backgroundColor: mode === m.id ? t.elev : 'transparent' }}>
-              <Text style={{ color: mode === m.id ? t.text : t.sub, fontSize: 12.5, fontWeight: '600' }}>{m.label}</Text>
+              style={{ paddingHorizontal: compact ? 14 : 20, height: 30, borderRadius: 7, justifyContent: 'center', backgroundColor: mode === m.id ? t.elev : 'transparent' }}>
+              <Text style={{ color: mode === m.id ? t.text : t.sub, fontSize: 14, fontWeight: '700' }}>{m.label}</Text>
             </Pressable>
           ))}
         </View>

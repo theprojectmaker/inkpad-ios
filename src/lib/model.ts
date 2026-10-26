@@ -81,7 +81,11 @@ export type NoteMeta = {
   text?: string;         // typed text, for search
   pdfText?: string;      // text inside imported PDFs, for search
   audio?: number;        // number of recordings
+  hw?: Homework;         // the Classroom assignment this note is for
 };
+
+/** A Classroom assignment a note was made for (so it can be handed in). */
+export type Homework = { key: string; courseId: string; id: string; course: string; title: string; link: string; due?: number };
 
 export type Folder = { id: string; name: string; color: string; created: number };
 

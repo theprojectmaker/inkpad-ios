@@ -1,6 +1,7 @@
 // Editor, laid out like Notability: back / pages / title on the left, the
 // tools in the middle, undo / redo / more on the right; a thin strip below
 // with the tool's options; an optional page sidebar; the PencilKit canvas.
+import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
@@ -12,12 +13,14 @@ import { PageSidebar } from '@/components/page-sidebar';
 import { StudyPanel } from '@/components/study-panel';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
+import { handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
 import { type NoteDoc, type Page, paperPage, pageSizeOf } from '@/lib/model';
-import { loadDoc, notePath, saveDoc } from '@/lib/noteio';
+import { imagePages, loadDoc, notePath, saveDoc } from '@/lib/noteio';
+import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
 
@@ -57,7 +60,7 @@ function legacyInk(doc: NoteDoc): LegacyStroke[] {
 }
 
 export default function Editor() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, handin } = useLocalSearchParams<{ id: string; handin?: string }>();
   const t = useTheme();
   const ins = useSafeAreaInsets();
   const lib = useLibrary();
@@ -125,6 +128,41 @@ export default function Editor() {
     if (router.canGoBack()) router.back(); else router.replace('/');
   };
 
+  /** Puts new pages right after page `after` (or at the end); ink below them moves down. */
+  const insertPages = async (add: Page[], after?: number) => {
+    if (!doc || !add.length) return;
+    let at = after == null || after >= doc.pages.length - 1 ? doc.pages.length : after + 1;
+    const first = at;
+    const list = [...doc.pages];
+    for (const p of add) {
+      if (at < list.length) await canvas.current?.insertPageSpace(at - 1, p.h);
+      list.splice(at, 0, p);
+      at++;
+    }
+    const next = { ...doc, pages: list };
+    setDoc(next);
+    await saveDoc(next);
+    lib.updateNote(id, { pages: next.pages.length, updated: Date.now() });
+    setVer((v) => v + 1);
+    return first;
+  };
+
+  /** Scanned paper or photos as new pages after the one you're on. */
+  const addPictures = async (from: 'scan' | 'photos') => {
+    try {
+      let uris: string[] = [];
+      if (from === 'scan') uris = await scanEnhanced();
+      else {
+        const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, quality: 1, selectionLimit: 20 });
+        if (!r.canceled) uris = r.assets.map((x) => x.uri);
+      }
+      if (!uris.length) return;
+      const first = await insertPages(await imagePages(id, uris), page.page);
+      toast(uris.length === 1 ? `Page ${(first ?? 0) + 1} added` : `${uris.length} pages added`);
+      if (first != null) setTimeout(() => canvas.current?.scrollToPage(first), 400);
+    } catch (e) { toast("Couldn't add that: " + String((e as Error)?.message ?? e)); }
+  };
+
   /** A blank page like the one it follows, added at the end or right after page `after`. */
   const addPage = async (after?: number) => {
     if (!doc) return;
@@ -156,6 +194,28 @@ export default function Editor() {
     } finally { setBusy(false); }
   };
 
+  /** The note as a PDF, into the share sheet: pick Classroom, the assignment, Turn in. */
+  const handIn = async () => {
+    if (busy || !meta?.hw) return;
+    setBusy(true);
+    try {
+      try { await canvas.current?.save(); } catch {}
+      const title = meta.hw.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Homework';
+      const path = `inkpad/out/${title}.pdf`;
+      await canvas.current?.exportPdf(absPath(path));
+      await sendToClassroom(path, title);
+      toast('Last step: tap Turn in on the assignment in Classroom.');
+    } catch (e) {
+      toast("Couldn't hand in: " + String((e as Error)?.message ?? e));
+    } finally { setBusy(false); }
+  };
+  // Came from the assignment page's "Hand in": start once the page has loaded.
+  const autoHandIn = useRef(false);
+  useEffect(() => {
+    if (handin === '1' && doc && meta?.hw && !autoHandIn.current) { autoHandIn.current = true; setTimeout(handIn, 900); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handin, doc, meta?.hw]);
+
   const removePage = async (i: number) => {
     if (!doc || doc.pages.length < 2) return;
     await canvas.current?.deletePage(i);
@@ -177,6 +237,13 @@ export default function Editor() {
           <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
+        {meta?.hw ? (
+          <Pressable onPress={handIn} accessibilityLabel="Hand in to Classroom"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 11, borderRadius: 17, marginRight: 4, backgroundColor: '#1E8E3E' }}>
+            <Icon name="paperplane.fill" size={14} color="#fff" />
+            {!narrow ? <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>Hand in</Text> : null}
+          </Pressable>
+        ) : null}
         <IconButton name="function" label={calc ? 'Hide calculator' : 'Graphing calculator'} active={calc} onPress={() => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); }} />
         <Pressable onPress={() => { setStudy((v) => !v); setCalc(false); }} accessibilityLabel="Study with AI"
           style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 11, borderRadius: 17, marginRight: 4, backgroundColor: study ? t.accent : t.accent + '1A' }}>
@@ -219,6 +286,12 @@ export default function Editor() {
       <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
         { label: 'Insert a page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
         { label: 'Add a page at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPage() },
+        ...(canScan() ? [{ label: 'Scan paper into this note', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
+        { label: 'Add photos as pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
+        ...(meta?.hw ? [
+          { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
+          { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
+        ] : []),
         { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
         { label: ruler ? 'Hide the ruler' : 'Show the ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
         { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },
