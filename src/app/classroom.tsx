@@ -33,7 +33,6 @@ export default function ClassroomScreen() {
   const [email, setEmail] = useState<string | null | undefined>(undefined);
   const [ready, setReady] = useState<boolean | null>(null);
   const [data, setData] = useState<ClassroomData | null>(null);
-  const [view, setView] = useState<'todo' | 'classes'>('todo');
   const [filter, setFilter] = useState<Status>('todo');
   const [course, setCourse] = useState<Course | null>(null);
   const [open, setOpen] = useState<Assignment | null>(null);
@@ -187,33 +186,6 @@ export default function ClassroomScreen() {
     );
   }
 
-  const row = (a: Assignment, showCourse = true) => {
-    const note = noteFor(a);
-    const c = courseColor(a.courseId);
-    return (
-      <Pressable onPress={() => setOpen(a)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14, borderRadius: 14, backgroundColor: pressed ? t.chip : t.card, borderWidth: 1, borderColor: t.line })}>
-        <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: c + '22' }}>
-          <Icon name={a.status === 'done' ? 'checkmark' : a.type === 'ASSIGNMENT' ? 'doc.text' : 'questionmark.circle'} size={18} color={c} />
-        </View>
-        <View style={{ flex: 1 }}>
-          {showCourse ? <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12, fontWeight: '700' }}>{a.course.toUpperCase()}</Text> : null}
-          <Text numberOfLines={2} style={{ color: t.text, fontSize: 16, fontWeight: '600', marginTop: showCourse ? 2 : 0 }}>{a.title}</Text>
-          <Text style={{ color: a.status === 'missing' ? t.danger : t.sub, fontSize: 13, marginTop: 3 }}>
-            {a.status === 'done' ? (a.grade != null && a.points ? `Graded ${a.grade}/${a.points}` : 'Turned in') : dueLabel(a.due)}
-            {a.status !== 'done' && a.points ? ` · ${a.points} pts` : ''}
-          </Text>
-        </View>
-        {note ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 24, borderRadius: 12, backgroundColor: t.accent + '1A' }}>
-            <Icon name="pencil" size={11} color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>Note</Text>
-          </View>
-        ) : null}
-        <Icon name="chevron.right" size={14} color={t.faint} />
-      </Pressable>
-    );
-  };
-
   const empty = (s: string) => !loading ? <Text style={{ color: t.sub, fontSize: 15, textAlign: 'center', marginTop: 60 }}>{s}</Text> : null;
   const refresh = <RefreshControl refreshing={loading} onRefresh={load} />;
 
@@ -309,64 +281,124 @@ export default function ClassroomScreen() {
         )}
       </ScrollView>
     );
-  } else if (view === 'classes') {
-    const cols = width >= 1000 ? 3 : width >= 640 ? 2 : 1;
-    const cardW = (Math.min(width, 1200) - 40 - (cols - 1) * 14) / cols;
-    body = (
-      <ScrollView refreshControl={refresh} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
-        {(data?.courses ?? []).map((c) => {
-          const due = (data?.items ?? []).filter((a) => a.courseId === c.id && a.status === 'todo').length;
-          const missing = (data?.items ?? []).filter((a) => a.courseId === c.id && a.status === 'missing').length;
-          return (
-            <Pressable key={c.id} onPress={() => setCourse(c)} style={({ pressed }) => ({ width: cardW, borderRadius: 16, overflow: 'hidden', backgroundColor: t.card, borderWidth: 1, borderColor: t.line, opacity: pressed ? 0.85 : 1 })}>
-              <View style={{ height: 92, backgroundColor: courseColor(c.id), padding: 14, justifyContent: 'flex-end' }}>
-                <Text numberOfLines={1} style={{ color: '#fff', fontSize: 19, fontWeight: '800' }}>{c.name}</Text>
-                {c.section ? <Text numberOfLines={1} style={{ color: '#ffffffd9', fontSize: 13, marginTop: 1 }}>{c.section}</Text> : null}
-              </View>
-              <View style={{ flexDirection: 'row', gap: 14, paddingHorizontal: 14, height: 44, alignItems: 'center' }}>
-                <Text style={{ color: t.sub, fontSize: 13.5, fontWeight: '600' }}>{due ? `${due} due` : 'Nothing due'}</Text>
-                {missing ? <Text style={{ color: t.danger, fontSize: 13.5, fontWeight: '600' }}>{missing} missing</Text> : null}
-              </View>
-            </Pressable>
-          );
-        })}
-        {!data?.courses.length ? <View style={{ width: '100%' }}>{empty(loading ? '' : 'No classes found.')}</View> : null}
-      </ScrollView>
-    );
   } else {
-    body = (
-      <>
-        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 20, paddingBottom: 10 }}>
-          {FILTERS.map((x) => {
-            const on = filter === x.id, n = lists[x.id].length;
-            return (
-              <Pressable key={x.id} onPress={() => setFilter(x.id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 13, borderRadius: 16, backgroundColor: on ? t.text : t.chip }}>
-                <Text style={{ color: on ? t.bg : t.text, fontSize: 14, fontWeight: '700' }}>{x.label}</Text>
-                <Text style={{ color: on ? t.bg : x.id === 'missing' && n ? t.danger : t.faint, fontSize: 13, fontWeight: '700', opacity: on ? 0.75 : 1 }}>{n}</Text>
-              </Pressable>
-            );
-          })}
+    // Home: a greeting, three numbers, your classes and one clean To do list.
+    const items = data?.items ?? [];
+    const wide = width >= 900;
+    const hour = new Date().getHours();
+    const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const endOfWeek = (() => { const d = new Date(); d.setHours(23, 59, 59, 999); d.setDate(d.getDate() + ((7 - d.getDay()) % 7)); return d.getTime(); })();
+    const thisWeek = lists.todo.filter((a) => a.due != null && a.due <= endOfWeek);
+    const stat = (id: Status, n: number, label: string, color: string) => {
+      const on = filter === id;
+      return (
+        <Pressable key={id} onPress={() => setFilter(id)} style={({ pressed }) => ({ flex: 1, minWidth: 150, padding: 18, borderRadius: 18, backgroundColor: on ? color : t.card, borderWidth: 1, borderColor: on ? color : t.line, opacity: pressed ? 0.85 : 1 })}>
+          <Text style={{ color: on ? '#fff' : color, fontSize: 34, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{n}</Text>
+          <Text style={{ color: on ? '#ffffffe6' : t.sub, fontSize: 15, fontWeight: '600', marginTop: 2 }}>{label}</Text>
+        </Pressable>
+      );
+    };
+    // To do in Classroom's groups: this week, next week, later, no due date.
+    const groupsOf = (list: Assignment[]) => {
+      if (filter !== 'todo') return [{ name: '', list }];
+      const nextWeek = endOfWeek + 7 * 864e5;
+      const g = [
+        { name: 'This week', list: list.filter((a) => a.due != null && a.due <= endOfWeek) },
+        { name: 'Next week', list: list.filter((a) => a.due != null && a.due > endOfWeek && a.due <= nextWeek) },
+        { name: 'Later', list: list.filter((a) => a.due != null && a.due > nextWeek) },
+        { name: 'No due date', list: list.filter((a) => a.due == null) },
+      ];
+      return g.filter((x) => x.list.length);
+    };
+    const todoRow = (a: Assignment) => {
+      const note = noteFor(a);
+      return (
+        <Pressable key={keyOf(a)} onPress={() => setOpen(a)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, backgroundColor: pressed ? t.chip : 'transparent' })}>
+          <View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: courseColor(a.courseId) }} />
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={2} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{a.title}</Text>
+            <Text numberOfLines={1} style={{ color: a.status === 'missing' ? t.danger : t.sub, fontSize: 13.5, marginTop: 3 }}>
+              {a.course} · {a.status === 'done' ? (a.grade != null && a.points ? `${a.grade}/${a.points}` : 'Turned in') : a.status === 'missing' ? `Missing · ${dueLabel(a.due)}` : dueLabel(a.due)}
+            </Text>
+          </View>
+          {note ? <Icon name="pencil.and.outline" size={15} color={t.accent} /> : null}
+          <Icon name="chevron.right" size={13} color={t.faint} />
+        </Pressable>
+      );
+    };
+    const todoPanel = (
+      <View style={{ flex: wide ? 0 : undefined, width: wide ? 420 : undefined, borderRadius: 20, borderWidth: 1, borderColor: t.line, backgroundColor: t.card, paddingVertical: 16, paddingHorizontal: 10, alignSelf: 'flex-start', ...(wide ? {} : { alignSelf: 'stretch' }) }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, marginBottom: 6 }}>
+          <Text style={{ flex: 1, color: t.text, fontSize: 21, fontWeight: '800' }}>{filter === 'todo' ? 'To do' : filter === 'missing' ? 'Missing' : 'Done'}</Text>
+          <Text style={{ color: t.faint, fontSize: 14, fontWeight: '600' }}>{lists[filter].length}</Text>
         </View>
-        <FlatList data={lists[filter]} keyExtractor={keyOf} refreshControl={refresh}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, gap: 10 }}
-          ListEmptyComponent={empty(filter === 'todo' ? 'Nothing due. Nice.' : filter === 'missing' ? 'No missing work.' : 'Nothing turned in yet.')}
-          renderItem={({ item }) => row(item)} />
-      </>
+        {groupsOf(lists[filter]).map((g) => (
+          <View key={g.name || 'all'}>
+            {g.name ? <Text style={{ color: t.faint, fontSize: 12.5, fontWeight: '800', letterSpacing: 0.6, paddingHorizontal: 12, marginTop: 12, marginBottom: 2 }}>{g.name.toUpperCase()}</Text> : null}
+            {g.list.map(todoRow)}
+          </View>
+        ))}
+        {!lists[filter].length ? <Text style={{ color: t.sub, fontSize: 15, textAlign: 'center', paddingVertical: 30 }}>{loading ? 'Loading…' : filter === 'todo' ? 'Nothing due. Nice work.' : filter === 'missing' ? 'No missing work.' : 'Nothing turned in yet.'}</Text> : null}
+      </View>
+    );
+    const classCard = (c: Course, w: number) => {
+      const mine = items.filter((a) => a.courseId === c.id);
+      const next = mine.filter((a) => a.status === 'todo' && a.due != null).sort((x, y) => (x.due ?? 0) - (y.due ?? 0))[0];
+      const missing = mine.filter((a) => a.status === 'missing').length;
+      const cc = courseColor(c.id);
+      return (
+        <Pressable key={c.id} onPress={() => setCourse(c)} style={({ pressed }) => ({ width: w, borderRadius: 18, overflow: 'hidden', backgroundColor: t.card, borderWidth: 1, borderColor: t.line, opacity: pressed ? 0.88 : 1 })}>
+          <View style={{ height: 112, backgroundColor: cc, padding: 16, justifyContent: 'flex-end', overflow: 'hidden' }}>
+            <View style={{ position: 'absolute', right: -30, top: -50, width: 150, height: 150, borderRadius: 75, backgroundColor: '#ffffff1C' }} />
+            <View style={{ position: 'absolute', right: 50, bottom: -70, width: 110, height: 110, borderRadius: 55, backgroundColor: '#ffffff12' }} />
+            <Text numberOfLines={1} style={{ color: '#fff', fontSize: 21, fontWeight: '700' }}>{c.name}</Text>
+            {c.section ? <Text numberOfLines={1} style={{ color: '#ffffffe0', fontSize: 14, marginTop: 1 }}>{c.section}</Text> : null}
+          </View>
+          <View style={{ paddingHorizontal: 16, paddingVertical: 13, gap: 3, minHeight: 64, justifyContent: 'center' }}>
+            {next ? (
+              <>
+                <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12.5, fontWeight: '700' }}>{dueLabel(next.due).toUpperCase()}</Text>
+                <Text numberOfLines={1} style={{ color: t.text, fontSize: 15, fontWeight: '600' }}>{next.title}</Text>
+              </>
+            ) : <Text style={{ color: t.sub, fontSize: 15 }}>All caught up</Text>}
+            {missing ? <Text style={{ color: t.danger, fontSize: 13, fontWeight: '700', marginTop: 2 }}>{missing} missing</Text> : null}
+          </View>
+        </Pressable>
+      );
+    };
+    const leftW = Math.min(width, 1180) - 48 - (wide ? 420 + 24 : 0);
+    const cols = wide ? (leftW > 620 ? 2 : 1) : width >= 640 ? 2 : 1;
+    const cardW = (leftW - (cols - 1) * 16) / cols;
+    body = (
+      <ScrollView refreshControl={refresh} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 60, maxWidth: 1180, width: '100%', alignSelf: 'center', gap: 22 }}>
+        <View>
+          <Text style={{ color: t.text, fontSize: 32, fontWeight: '800', letterSpacing: -0.6 }}>{hello}</Text>
+          <Text style={{ color: t.sub, fontSize: 16, marginTop: 4 }}>
+            {thisWeek.length ? `${thisWeek.length} due this week` : 'Nothing due this week'}{lists.missing.length ? ` · ${lists.missing.length} missing` : ''}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
+          {stat('todo', lists.todo.length, 'To do', '#1967D2')}
+          {stat('missing', lists.missing.length, 'Missing', '#D93025')}
+          {stat('done', lists.done.length, 'Turned in', '#137333')}
+        </View>
+        <View style={{ flexDirection: wide ? 'row' : 'column', gap: 24 }}>
+          <View style={{ width: wide ? leftW : undefined, gap: 12 }}>
+            <Text style={{ color: t.text, fontSize: 21, fontWeight: '800' }}>Your classes</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
+              {(data?.courses ?? []).map((c) => classCard(c, cardW))}
+            </View>
+            {!data?.courses.length ? <Text style={{ color: t.sub, fontSize: 15 }}>{loading ? 'Loading your classes…' : 'No classes found.'}</Text> : null}
+          </View>
+          {todoPanel}
+        </View>
+      </ScrollView>
     );
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: ins.top }}>
       {header}
-      {!course ? (
-        <View style={{ flexDirection: 'row', alignSelf: 'flex-start', marginLeft: 20, marginBottom: 12, backgroundColor: t.chip, borderRadius: 10, padding: 3 }}>
-          {(['todo', 'classes'] as const).map((v) => (
-            <Pressable key={v} onPress={() => setView(v)} style={{ paddingHorizontal: 18, height: 32, borderRadius: 8, justifyContent: 'center', backgroundColor: view === v ? t.elev : 'transparent' }}>
-              <Text style={{ color: view === v ? t.text : t.sub, fontSize: 14.5, fontWeight: '700' }}>{v === 'todo' ? 'To do' : 'Classes'}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
       {err ? <Text style={{ color: t.danger, fontSize: 14, paddingHorizontal: 20, paddingBottom: 8 }}>{err}</Text> : null}
       {body}
 
