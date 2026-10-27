@@ -14,7 +14,8 @@ import { StudyPanel } from '@/components/study-panel';
 import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
-import { handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
+import { handIn as sendToClassroom, openAssignment, openLink } from '@/lib/classroom';
+import { ensureGoogle, NOTES_SITE, saveToDrive } from '@/lib/drive';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
@@ -117,17 +118,52 @@ export default function Editor() {
     } catch {}
   }, [id, lib]);
 
+  const changed = useRef(false);          // written on since it was opened (or last saved to Drive)
   const onChange = useCallback((e: { nativeEvent: CanvasState }) => {
     setSt(e.nativeEvent);
+    changed.current = true;
     setVer((v) => v + 1);
     if (thumbTimer.current) clearTimeout(thumbTimer.current);
     thumbTimer.current = setTimeout(makeThumb, 2500);
   }, [makeThumb]);
 
+  /** The note as a PDF (named after the note), ready to share or upload. */
+  const makePdf = async () => {
+    try { await canvas.current?.save(); } catch {}
+    const title = (meta?.title || 'Note').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Note';
+    const path = `inkpad/out/${title}.pdf`;
+    await canvas.current?.exportPdf(absPath(path));
+    return { path, title };
+  };
+
+  const subject = () => lib.lib.folders.find((f) => f.id === meta?.folderId)?.name ?? 'Notes';
+
+  /** Saves (or updates) this note in Google Drive › Quill › subject. */
+  const uploadPdf = async (pdf: { path: string; title: string }) => {
+    const driveId = await saveToDrive(pdf.path, pdf.title, subject(), lib.meta(id)?.drive?.id);
+    lib.updateNote(id, { drive: { id: driveId, at: Date.now() } });
+    changed.current = false;
+  };
+  const saveDrive = async (quiet = false) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await ensureGoogle();
+      await uploadPdf(await makePdf());
+      if (!quiet) toast(`Saved to Google Drive › Quill › ${subject()}`);
+    } catch (e) {
+      if (String((e as Error)?.message) !== 'cancelled') toast("Couldn't save to Drive: " + String((e as Error)?.message ?? e));
+    } finally { setBusy(false); }
+  };
+
   const back = async () => {
     try { await canvas.current?.save(); } catch {}
     if (thumbTimer.current) { clearTimeout(thumbTimer.current); await makeThumb(); }
+    // Keep Drive up to date: the PDF is made here (it needs the page), the upload finishes in the background.
+    let pending: { path: string; title: string } | null = null;
+    if (changed.current && (s.driveSync || meta?.drive)) { try { pending = await makePdf(); } catch {} }
     if (router.canGoBack()) router.back(); else router.replace('/');
+    if (pending) uploadPdf(pending).catch(() => toast("Couldn't update the copy in Google Drive. It'll try again next time."));
   };
 
   /** Puts new pages right after page `after` (or at the end); ink below them moves down. */
@@ -293,12 +329,16 @@ export default function Editor() {
           { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
           { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
+        { label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
+        { label: 'Keep notes synced to Drive', icon: 'arrow.triangle.2.circlepath', checked: !!s.driveSync, onPress: () => set({ driveSync: !s.driveSync }) },
+        { label: 'My notes online', icon: 'globe', onPress: () => openLink(NOTES_SITE) },
         { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
         { label: ruler ? 'Hide the ruler' : 'Show the ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
         { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },
         { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />
       <HandInSheet pdf={handInPdf} onClose={() => setHandInPdf(null)}
+        onDrive={async () => { if (!handInPdf) return false; try { await ensureGoogle(); await uploadPdf(handInPdf); return true; } catch (e) { toast("Couldn't save to Drive: " + String((e as Error)?.message ?? e)); return false; } }}
         onSave={() => handInPdf && sendToClassroom(handInPdf.path, handInPdf.title).catch((e) => toast(String(e?.message ?? e)))}
         onOpen={() => meta?.hw && openAssignment(meta.hw)} />
       <ConfirmSheet visible={delPage != null} title={`Delete page ${(delPage ?? 0) + 1}?`} message="Its writing is deleted too." onCancel={() => setDelPage(null)}

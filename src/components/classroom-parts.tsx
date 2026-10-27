@@ -101,12 +101,23 @@ export function PreviewSheet({ m, onClose, onWrite }: { m: Material | null; onCl
  * so: 1) the PDF goes to Files (or straight to the Classroom app), 2) the
  * assignment opens on Google's own page right here to attach it and Turn in.
  */
-export function HandInSheet({ pdf, onClose, onSave, onOpen }: { pdf: { path: string; title: string } | null; onClose: () => void; onSave: () => void; onOpen: () => void }) {
+export function HandInSheet({ pdf, onClose, onSave, onDrive, onOpen }: {
+  pdf: { path: string; title: string } | null; onClose: () => void; onSave: () => void;
+  onDrive?: () => Promise<boolean>; onOpen: () => void;
+}) {
   const t = useTheme();
   const [step, setStep] = useState(1);
-  useEffect(() => { if (pdf) setStep(1); }, [pdf]);
+  const [via, setVia] = useState<'drive' | 'files'>('drive');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (pdf) { setStep(1); setVia('drive'); } }, [pdf]);
   if (!pdf) return null;
-  const card = (n: number, title: string, text: string, button: string, onPress: () => void) => {
+  const btn = (label: string, onPress: () => void, primary: boolean, icon?: string) => (
+    <Pressable onPress={onPress} disabled={saving} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 7, height: 42, paddingHorizontal: 18, borderRadius: 21, backgroundColor: primary ? '#1967D2' : t.chip, opacity: pressed || saving ? 0.7 : 1 })}>
+      {icon ? <Icon name={icon} size={14} color={primary ? '#fff' : t.text} /> : null}
+      <Text style={{ color: primary ? '#fff' : t.text, fontSize: 15, fontWeight: '700' }}>{label}</Text>
+    </Pressable>
+  );
+  const card = (n: number, title: string, text: string, buttons: React.ReactNode) => {
     const on = step === n, done = step > n;
     return (
       <View style={{ flexDirection: 'row', gap: 14, padding: 16, borderRadius: 14, borderWidth: 1, borderColor: on ? '#1967D2' : t.line, backgroundColor: t.card, opacity: on || done ? 1 : 0.55 }}>
@@ -116,12 +127,17 @@ export function HandInSheet({ pdf, onClose, onSave, onOpen }: { pdf: { path: str
         <View style={{ flex: 1, gap: 6 }}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>{title}</Text>
           <Text style={{ color: t.sub, fontSize: 14.5, lineHeight: 20 }}>{text}</Text>
-          <Pressable onPress={() => { onPress(); setStep(n + 1); }} style={({ pressed }) => ({ alignSelf: 'flex-start', marginTop: 6, height: 42, paddingHorizontal: 18, borderRadius: 21, justifyContent: 'center', backgroundColor: on ? '#1967D2' : t.chip, opacity: pressed ? 0.85 : 1 })}>
-            <Text style={{ color: on ? '#fff' : t.text, fontSize: 15, fontWeight: '700' }}>{button}</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>{buttons}</View>
         </View>
       </View>
     );
+  };
+  const toDrive = async () => {
+    if (!onDrive) return;
+    setSaving(true);
+    const ok = await onDrive();
+    setSaving(false);
+    if (ok) { setVia('drive'); setStep(2); }
   };
   return (
     <Modal visible animationType="slide" presentationStyle="formSheet" onRequestClose={onClose}>
@@ -133,8 +149,15 @@ export function HandInSheet({ pdf, onClose, onSave, onOpen }: { pdf: { path: str
           </Pressable>
         </View>
         <Text style={{ color: t.sub, fontSize: 15 }}>Your note is ready as “{pdf.title}.pdf”.</Text>
-        {card(1, 'Save the PDF', 'Pick “Save to Files”. Got the Classroom app? Pick Classroom instead, choose the assignment and tap Turn in, and you\'re done.', 'Save PDF', onSave)}
-        {card(2, 'Turn it in', 'The assignment opens on Google\'s page. Tap “Add or create” → File, choose the PDF, then tap Turn in.', 'Open the assignment', onOpen)}
+        {card(1, 'Save your work',
+          step > 1 && via === 'drive' ? 'Saved in Google Drive › Quill.' : 'Save it to your Google Drive (best), or to Files. Have the Classroom app? “Other” → Classroom turns it in straight away.',
+          <>
+            {onDrive ? btn(saving ? 'Saving…' : 'Save to Google Drive', toDrive, step === 1, 'icloud.and.arrow.up') : null}
+            {btn(onDrive ? 'Other' : 'Save PDF', () => { onSave(); setVia('files'); setStep(2); }, !onDrive && step === 1)}
+          </>)}
+        {card(2, 'Turn it in',
+          via === 'drive' ? 'On the assignment, tap “Add or create” → Google Drive → Quill, pick the note, then tap Turn in.' : 'On the assignment, tap “Add or create” → File, choose the PDF, then tap Turn in.',
+          btn('Open the assignment', () => { onOpen(); setStep(3); }, step === 2))}
         {step > 2 ? (
           <Pressable onPress={onClose} style={{ alignSelf: 'center', height: 44, paddingHorizontal: 26, borderRadius: 22, justifyContent: 'center', backgroundColor: '#137333', marginTop: 4 }}>
             <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Done</Text>

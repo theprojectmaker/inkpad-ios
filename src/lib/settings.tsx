@@ -31,6 +31,7 @@ export type Settings = {
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
+  driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
 };
 export type InkTool = 'pen' | 'marker' | 'eraser' | 'lasso' | 'text';
 export type PenStyle = 'pen' | 'felt' | 'fountain' | 'pencil';

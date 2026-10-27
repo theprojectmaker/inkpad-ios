@@ -78,7 +78,8 @@ export async function disconnect() {
   if (rt) fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rt)}`, { method: 'POST' }).catch(() => {});
 }
 
-async function token(): Promise<string> {
+/** A fresh Google access token (signs in again only when Google says so). */
+export async function token(): Promise<string> {
   if (access && access.exp - Date.now() > 60_000) return access.at;
   const rt = await kv.get('gc.rt');
   if (!rt) throw Object.assign(new Error('Connect your Google account.'), { relogin: true });

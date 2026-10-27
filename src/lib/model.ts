@@ -82,6 +82,7 @@ export type NoteMeta = {
   pdfText?: string;      // text inside imported PDFs, for search
   audio?: number;        // number of recordings
   hw?: Homework;         // the Classroom assignment this note is for
+  drive?: { id: string; at: number }; // its PDF in the Quill folder in Google Drive, and when it was saved
 };
 
 /** A Classroom assignment a note was made for (so it can be handed in). */
