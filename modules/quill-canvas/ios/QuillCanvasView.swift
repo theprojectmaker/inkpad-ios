@@ -31,8 +31,8 @@ struct TextBox: Codable {
 
 final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
   let canvas = PKCanvasView()
-  private let pageHost = UIView()          // page backgrounds, in canvas coordinates
-  let textHost = UIView()                  // typed text, above the ink, same coordinates
+  let pageHost = UIView()                  // page backgrounds, in canvas coordinates
+  let textHost = UIView()                  // typed text (under the ink except while typing), same coordinates
   var texts: [TextBox] = []
   var labels: [String: UILabel] = [:]
   var textsPath: String?
@@ -105,7 +105,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   override func layoutSubviews() {
     super.layoutSubviews()
     canvas.frame = bounds
-    if canvas.subviews.last !== textHost { canvas.bringSubviewToFront(textHost) }
+    placeTextHost()
     if bounds.width > 1 && abs(bounds.width - lastWidth) > 0.5 {
       lastWidth = bounds.width
       fitWidth()

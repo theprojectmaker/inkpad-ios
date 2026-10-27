@@ -13,6 +13,17 @@ extension QuillCanvasView {
     tapGR.isEnabled = on
     panGR.isEnabled = on
     if !on { commitEdit() }
+    placeTextHost()
+  }
+
+  /// Typed text sits above the ink only while you type. When you write, nothing covers
+  /// the ink layer, so iPadOS can draw the wet ink on its fastest path (no lag or stutter).
+  func placeTextHost() {
+    if textMode {
+      if canvas.subviews.last !== textHost { canvas.bringSubviewToFront(textHost) }
+    } else if let i = canvas.subviews.firstIndex(of: textHost), let p = canvas.subviews.firstIndex(of: pageHost), i != p + 1 {
+      canvas.insertSubview(textHost, aboveSubview: pageHost)
+    }
   }
 
   func box(at p: CGPoint) -> TextBox? {
