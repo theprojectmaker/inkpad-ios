@@ -24,7 +24,16 @@ export type Assignment = {
   id: string; courseId: string; course: string; title: string; description?: string;
   due?: number; points?: number; link: string; status: Status; grade?: number; type: string;
   materials?: Material[];
+  topicId?: string; posted?: number;
+  state?: string;          // Google's submission state (NEW, CREATED, TURNED_IN, RETURNED, RECLAIMED_BY_STUDENT)
+  yours?: Material[];      // files already attached to your work
 };
+export type Topic = { id: string; name: string };
+/** A teacher's post on the class Stream. */
+export type Post = { id: string; text: string; posted: number; materials: Material[]; link: string };
+/** Classwork that isn't an assignment (a handout, notes, slides). */
+export type ClassMaterial = { id: string; courseId: string; title: string; description?: string; topicId?: string; posted: number; materials: Material[]; link: string };
+export type CourseDetail = { topics: Topic[]; posts: Post[]; materials: ClassMaterial[] };
 export type Course = { id: string; name: string; section?: string; room?: string; link?: string };
 export type ClassroomData = { email: string; fetched: number; courses: Course[]; items: Assignment[] };
 
@@ -130,7 +139,8 @@ export async function fetchAssignments(): Promise<ClassroomData> {
         items.push({
           id: w.id, courseId: c.id, course: c.name, title: w.title || 'Untitled', description: w.description,
           due, points: w.maxPoints, link: s?.alternateLink || w.alternateLink, status, grade: s?.assignedGrade, type: w.workType || 'ASSIGNMENT',
-          materials: materialsOf(w.materials),
+          materials: materialsOf(w.materials), topicId: w.topicId, posted: Date.parse(w.creationTime) || undefined,
+          state: s?.state, yours: materialsOf(s?.assignmentSubmission?.attachments),
         });
       }
     } catch (e) { if ((e as any)?.relogin) throw e; }
@@ -138,6 +148,44 @@ export async function fetchAssignments(): Promise<ClassroomData> {
   const data: ClassroomData = { email, fetched: Date.now(), courses, items };
   fsx.writeText(CACHE, JSON.stringify(data)).catch(() => {});
   return data;
+}
+
+/** A class's Stream, topics and class materials (fetched when you open the class). */
+export async function fetchCourse(courseId: string): Promise<CourseDetail> {
+  const safe = async (path: string, key: string) => { try { return (await get(path))[key] ?? []; } catch (e) { if ((e as any)?.relogin) throw e; return []; } };
+  const [topics, posts, mats] = await Promise.all([
+    safe(`/courses/${courseId}/topics?pageSize=50`, 'topic'),
+    safe(`/courses/${courseId}/announcements?announcementStates=PUBLISHED&orderBy=updateTime%20desc&pageSize=30`, 'announcements'),
+    safe(`/courses/${courseId}/courseWorkMaterials?courseWorkMaterialStates=PUBLISHED&pageSize=60`, 'courseWorkMaterial'),
+  ]);
+  const d: CourseDetail = {
+    topics: topics.map((x: any) => ({ id: x.topicId, name: x.name })),
+    posts: posts.map((x: any) => ({ id: x.id, text: x.text || '', posted: Date.parse(x.creationTime) || 0, materials: materialsOf(x.materials), link: x.alternateLink })),
+    materials: mats.map((x: any) => ({ id: x.id, courseId, title: x.title || 'Material', description: x.description, topicId: x.topicId, posted: Date.parse(x.creationTime) || 0, materials: materialsOf(x.materials), link: x.alternateLink })),
+  };
+  fsx.writeText(`inkpad/classroom-${courseId}.json`, JSON.stringify(d)).catch(() => {});
+  return d;
+}
+
+export async function cachedCourse(courseId: string): Promise<CourseDetail | null> {
+  try { const s = await fsx.readText(`inkpad/classroom-${courseId}.json`); return s ? JSON.parse(s) : null; } catch { return null; }
+}
+
+const thumbs = new Map<string, Promise<{ uri: string; headers: Record<string, string> } | null>>();
+/** A preview picture of a Drive file (Google makes it; it needs the sign-in to load). */
+export function driveThumb(fileId: string) {
+  let p = thumbs.get(fileId);
+  if (!p) {
+    p = (async () => {
+      try {
+        const m = await (await call(`${DRIVE}/files/${fileId}?fields=thumbnailLink&supportsAllDrives=true`)).json();
+        if (!m.thumbnailLink) return null;
+        return { uri: String(m.thumbnailLink).replace(/=s\d+$/, '=s640'), headers: { authorization: `Bearer ${await token()}` } };
+      } catch { return null; }
+    })();
+    thumbs.set(fileId, p);
+  }
+  return p;
 }
 
 export async function cached(): Promise<ClassroomData | null> {

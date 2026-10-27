@@ -11,6 +11,7 @@ import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke
 import { currentTool, ToolButtons, ToolStrip } from '@/components/ink-bar';
 import { PageSidebar } from '@/components/page-sidebar';
 import { StudyPanel } from '@/components/study-panel';
+import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
@@ -83,6 +84,7 @@ export default function Editor() {
   const [page, setPage] = useState({ page: 0, count: 1 });
   const [ver, setVer] = useState(0);            // bumps when ink changes (page thumbnails redraw)
   const [delPage, setDelPage] = useState<number | null>(null);
+  const [handInPdf, setHandInPdf] = useState<{ path: string; title: string } | null>(null);
   // Leaving the text tool finishes the text being typed.
   useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
   const meta = lib.lib.notes.find((n) => n.id === id);
@@ -203,8 +205,7 @@ export default function Editor() {
       const title = meta.hw.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Homework';
       const path = `inkpad/out/${title}.pdf`;
       await canvas.current?.exportPdf(absPath(path));
-      await sendToClassroom(path, title);
-      toast('Last step: tap Turn in on the assignment in Classroom.');
+      setHandInPdf({ path, title });
     } catch (e) {
       toast("Couldn't hand in: " + String((e as Error)?.message ?? e));
     } finally { setBusy(false); }
@@ -297,6 +298,9 @@ export default function Editor() {
         { label: 'Draw with finger', icon: 'hand.draw', checked: !!s.fingerDraws, onPress: () => set({ fingerDraws: !s.fingerDraws }) },
         { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />
+      <HandInSheet pdf={handInPdf} onClose={() => setHandInPdf(null)}
+        onSave={() => handInPdf && sendToClassroom(handInPdf.path, handInPdf.title).catch((e) => toast(String(e?.message ?? e)))}
+        onOpen={() => meta?.hw && openAssignment(meta.hw)} />
       <ConfirmSheet visible={delPage != null} title={`Delete page ${(delPage ?? 0) + 1}?`} message="Its writing is deleted too." onCancel={() => setDelPage(null)}
         onConfirm={() => { const i = delPage; setDelPage(null); if (i != null) removePage(i); }} />
       <PromptSheet visible={renaming} title="Rename note" initial={meta?.title ?? ''} onCancel={() => setRenaming(false)}

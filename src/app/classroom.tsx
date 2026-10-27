@@ -1,14 +1,15 @@
-// Classroom, the simple version: To do (due / missing / done) and your classes.
-// Tap an assignment for its page: the teacher's instructions and worksheets,
-// "Write on the worksheet" (opens it as pages in Quill), and "Hand in".
+// Classroom inside Quill, minimal: To do (due / missing / done) and your classes.
+// A class has its Stream (teacher posts) and Classwork (by topic). An assignment's
+// page shows the teacher's files as previews, "Write on the worksheet" and Hand in.
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FileCard, ItemSheet, PreviewSheet } from '@/components/classroom-parts';
 import { ConfirmSheet, Icon, IconButton, useToast } from '@/components/ui';
 import {
-  type Assignment, cached, courseColor, dueLabel, type ClassroomData, connect, connectedEmail, type Course, disconnect, downloadMaterial, fetchAssignments,
+  type Assignment, cached, cachedCourse, type ClassMaterial, courseColor, type CourseDetail, fetchCourse, dueLabel, type ClassroomData, connect, connectedEmail, type Course, disconnect, downloadMaterial, fetchAssignments,
   homeworkOf, isConfigured, keyOf, type Material, openLink, openWebsite, type Status,
 } from '@/lib/classroom';
 import { useLibrary } from '@/lib/library';
@@ -21,8 +22,6 @@ const FILTERS: { id: Status; label: string }[] = [
   { id: 'missing', label: 'Missing' },
   { id: 'done', label: 'Done' },
 ];
-
-const MAT_ICON: Record<Material['kind'], string> = { drive: 'doc.richtext', link: 'link', video: 'play.rectangle', form: 'list.bullet.rectangle' };
 
 export default function ClassroomScreen() {
   const t = useTheme();
@@ -38,6 +37,20 @@ export default function ClassroomScreen() {
   const [filter, setFilter] = useState<Status>('todo');
   const [course, setCourse] = useState<Course | null>(null);
   const [open, setOpen] = useState<Assignment | null>(null);
+  const [openMat, setOpenMat] = useState<ClassMaterial | null>(null);
+  const [preview, setPreview] = useState<{ m: Material; a: Assignment | null } | null>(null);
+  const [tab, setTab] = useState<'stream' | 'classwork'>('stream');
+  const [detail, setDetail] = useState<CourseDetail | null>(null);
+
+  // A class's Stream / topics / materials: saved copy first, then fresh.
+  useEffect(() => {
+    if (!course) { setDetail(null); return; }
+    let live = true;
+    setTab('stream');
+    cachedCourse(course.id).then((d) => { if (live && d) setDetail(d); });
+    fetchCourse(course.id).then((d) => { if (live) setDetail(d); }).catch((e) => { if (live) setErr(String(e?.message ?? e)); });
+    return () => { live = false; };
+  }, [course]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [signOut, setSignOut] = useState(false);
@@ -96,7 +109,7 @@ export default function ClassroomScreen() {
   };
 
   /** The teacher's worksheet as pages to write on (linked to the assignment if it has no note yet). */
-  const openInQuill = async (a: Assignment, m: Material) => {
+  const openInQuill = async (a: Assignment | null, m: Material) => {
     try {
       busy(`Opening ${m.title}…`);
       const f = await downloadMaterial(m);
@@ -105,11 +118,12 @@ export default function ClassroomScreen() {
       let pages;
       if (f.kind === 'pdf') ({ pages, text } = await pdfPages(id, f.uri, (s) => busy(s)));
       else pages = await imagePages(id, [f.uri]);
-      const linked = !noteFor(a);
-      await lib.createNote({ id, folderId: folderFor(a.course), kind: f.kind, title: linked ? a.title : f.title, pages, paper: { style: 'blank', color: 'white' } });
-      lib.updateNote(id, { ...(text ? { pdfText: text } : {}), ...(linked ? { hw: homeworkOf(a) } : {}) });
+      const linked = !!a && !noteFor(a);
+      const cls = a?.course ?? course?.name;
+      await lib.createNote({ id, folderId: cls ? folderFor(cls) : null, kind: f.kind, title: linked ? a!.title : f.title, pages, paper: { style: 'blank', color: 'white' } });
+      lib.updateNote(id, { ...(text ? { pdfText: text } : {}), ...(linked ? { hw: homeworkOf(a!) } : {}) });
       busy(null);
-      setOpen(null);
+      setOpen(null); setOpenMat(null); setPreview(null);
       router.push(`/note/${id}`);
     } catch (e: any) {
       busy(null);
@@ -205,18 +219,95 @@ export default function ClassroomScreen() {
 
   let body;
   if (course) {
-    const items = (data?.items ?? []).filter((a) => a.courseId === course.id).sort((a, b) => (b.due ?? 0) - (a.due ?? 0));
+    const cc = courseColor(course.id);
+    const items = (data?.items ?? []).filter((a) => a.courseId === course.id);
+    const mats = detail?.materials ?? [];
+    const when = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const upcoming = items.filter((a) => a.status === 'todo' && a.due != null).sort((x, y) => (x.due ?? 0) - (y.due ?? 0)).slice(0, 3);
+    // Classwork grouped by topic, newest first inside each (like Classroom).
+    const groups: { name: string; rows: ({ k: 'a'; a: Assignment } | { k: 'm'; m: ClassMaterial })[] }[] = [];
+    const topicName = (id?: string) => detail?.topics.find((x) => x.id === id)?.name ?? '';
+    const all = [...items.map((a) => ({ k: 'a' as const, a, t: a.posted ?? a.due ?? 0, topic: a.topicId })), ...mats.map((m) => ({ k: 'm' as const, m, t: m.posted, topic: m.topicId }))]
+      .sort((x, y) => y.t - x.t);
+    for (const r of all) {
+      const name = topicName(r.topic);
+      let g = groups.find((x) => x.name === name);
+      if (!g) { g = { name, rows: [] }; groups.push(g); }
+      g.rows.push(r.k === 'a' ? { k: 'a', a: r.a } : { k: 'm', m: r.m });
+    }
+    groups.sort((x, y) => (x.name ? 1 : 0) - (y.name ? 1 : 0));
+    const line = (key: string, icon: string, title: string, right: string, onPress: () => void, color = cc, red = false) => (
+      <Pressable key={key} onPress={onPress} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, paddingHorizontal: 6, borderRadius: 10, backgroundColor: pressed ? t.chip : 'transparent' })}>
+        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={icon} size={16} color="#fff" />
+        </View>
+        <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 15.5, fontWeight: '500' }}>{title}</Text>
+        <Text style={{ color: red ? t.danger : t.faint, fontSize: 13 }}>{right}</Text>
+      </Pressable>
+    );
     body = (
-      <FlatList data={items} keyExtractor={keyOf} refreshControl={refresh}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, gap: 10 }}
-        ListHeaderComponent={
-          <View style={{ height: 110, borderRadius: 16, backgroundColor: courseColor(course.id), padding: 18, justifyContent: 'flex-end', marginBottom: 6 }}>
-            <Text numberOfLines={1} style={{ color: '#fff', fontSize: 24, fontWeight: '800' }}>{course.name}</Text>
-            {course.section ? <Text numberOfLines={1} style={{ color: '#ffffffd9', fontSize: 15, marginTop: 2 }}>{course.section}</Text> : null}
+      <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { load(); fetchCourse(course.id).then(setDetail).catch(() => {}); }} />}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60, maxWidth: 980, width: '100%', alignSelf: 'center' }}>
+        <View style={{ height: 150, borderRadius: 16, backgroundColor: cc, padding: 22, justifyContent: 'flex-end', overflow: 'hidden' }}>
+          <View style={{ position: 'absolute', right: -40, top: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: '#ffffff1A' }} />
+          <View style={{ position: 'absolute', right: 70, bottom: -90, width: 160, height: 160, borderRadius: 80, backgroundColor: '#ffffff12' }} />
+          <Text numberOfLines={1} style={{ color: '#fff', fontSize: 30, fontWeight: '700' }}>{course.name}</Text>
+          {course.section || course.room ? <Text numberOfLines={1} style={{ color: '#ffffffe0', fontSize: 16, marginTop: 3 }}>{[course.section, course.room].filter(Boolean).join(' · ')}</Text> : null}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 26, marginTop: 14, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: t.line }}>
+          {(['stream', 'classwork'] as const).map((x) => (
+            <Pressable key={x} onPress={() => setTab(x)} style={{ paddingVertical: 10, borderBottomWidth: 3, borderBottomColor: tab === x ? cc : 'transparent', marginBottom: -1 }}>
+              <Text style={{ color: tab === x ? cc : t.sub, fontSize: 15.5, fontWeight: '700' }}>{x === 'stream' ? 'Stream' : 'Classwork'}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {tab === 'stream' ? (
+          <View style={{ gap: 14 }}>
+            {upcoming.length ? (
+              <View style={{ borderRadius: 14, borderWidth: 1, borderColor: t.line, padding: 16, gap: 6 }}>
+                <Text style={{ color: t.text, fontSize: 15, fontWeight: '700', marginBottom: 2 }}>Upcoming</Text>
+                {upcoming.map((a) => (
+                  <Pressable key={keyOf(a)} onPress={() => setOpen(a)}>
+                    <Text numberOfLines={1} style={{ color: t.sub, fontSize: 14, lineHeight: 22 }}><Text style={{ color: t.text, fontWeight: '600' }}>{dueLabel(a.due)}</Text> — {a.title}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            {(detail?.posts ?? []).map((p) => (
+              <View key={p.id} style={{ borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: t.card, padding: 16, gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: cc, alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="megaphone" size={15} color="#fff" />
+                  </View>
+                  <Text style={{ flex: 1, color: t.sub, fontSize: 13.5, fontWeight: '600' }}>Your teacher · {when(p.posted)}</Text>
+                </View>
+                {p.text ? <Text selectable style={{ color: t.text, fontSize: 15.5, lineHeight: 22 }}>{p.text}</Text> : null}
+                {p.materials.length ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {p.materials.map((m, i) => <FileCard key={i} m={m} width={190} onPress={() => (m.kind === 'drive' ? setPreview({ m, a: null }) : openLink(m.url))} />)}
+                  </View>
+                ) : null}
+              </View>
+            ))}
+            {detail && !detail.posts.length && !upcoming.length ? empty('Nothing posted here yet.') : null}
+            {!detail ? <ActivityIndicator style={{ marginTop: 30 }} color={t.accent} /> : null}
           </View>
-        }
-        ListEmptyComponent={empty('No assignments in this class yet.')}
-        renderItem={({ item }) => row(item, false)} />
+        ) : (
+          <View style={{ gap: 18 }}>
+            {groups.map((g) => (
+              <View key={g.name || '_'}>
+                {g.name ? <Text style={{ color: cc, fontSize: 22, fontWeight: '600', paddingBottom: 8, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: cc + '66' }}>{g.name}</Text> : null}
+                {g.rows.map((r) => r.k === 'a'
+                  ? line(keyOf(r.a), r.a.status === 'done' ? 'checkmark' : 'doc.text', r.a.title,
+                    r.a.status === 'done' ? 'Turned in' : r.a.status === 'missing' ? 'Missing' : r.a.due ? dueLabel(r.a.due) : '',
+                    () => setOpen(r.a), r.a.status === 'done' ? '#9AA0A6' : cc, r.a.status === 'missing')
+                  : line(r.m.id, 'book.closed', r.m.title, `Posted ${when(r.m.posted)}`, () => setOpenMat(r.m)))}
+              </View>
+            ))}
+            {!groups.length ? empty('No classwork yet.') : null}
+          </View>
+        )}
+      </ScrollView>
     );
   } else if (view === 'classes') {
     const cols = width >= 1000 ? 3 : width >= 640 ? 2 : 1;
@@ -279,106 +370,12 @@ export default function ClassroomScreen() {
       {err ? <Text style={{ color: t.danger, fontSize: 14, paddingHorizontal: 20, paddingBottom: 8 }}>{err}</Text> : null}
       {body}
 
-      <AssignmentSheet a={open} onClose={() => setOpen(null)} note={open ? noteFor(open) : undefined}
-        onBlank={startBlank} onMaterial={openInQuill} />
+      <ItemSheet a={open} mat={openMat} note={open ? noteFor(open) : undefined}
+        onClose={() => { setOpen(null); setOpenMat(null); }} onBlank={startBlank} onWrite={openInQuill}
+        onPreview={(m) => setPreview({ m, a: open })} />
+      <PreviewSheet m={preview?.m ?? null} onClose={() => setPreview(null)} onWrite={(m) => openInQuill(preview?.a ?? null, m)} />
       <ConfirmSheet visible={signOut} title="Disconnect Google Classroom?" message="Quill forgets your Google sign-in. Your notes stay." confirm="Disconnect" onCancel={() => setSignOut(false)}
         onConfirm={async () => { setSignOut(false); await disconnect(); setEmail(null); setData(null); }} />
     </View>
-  );
-}
-
-/** The assignment's page: what to do, the worksheets, and your work. */
-function AssignmentSheet({ a, note, onClose, onBlank, onMaterial }: {
-  a: Assignment | null; note?: { id: string; title: string }; onClose: () => void;
-  onBlank: (a: Assignment) => void; onMaterial: (a: Assignment, m: Material) => void;
-}) {
-  const t = useTheme();
-  if (!a) return null;
-  const c = courseColor(a.courseId);
-  const sheets = (a.materials ?? []).filter((m) => m.kind === 'drive');
-  const big = (label: string, icon: string, onPress: () => void, primary = false) => (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 50, borderRadius: 14, backgroundColor: primary ? t.accent : t.chip, opacity: pressed ? 0.8 : 1 })}>
-      <Icon name={icon} size={17} color={primary ? '#fff' : t.accent} />
-      <Text style={{ color: primary ? '#fff' : t.accent, fontSize: 16, fontWeight: '700' }}>{label}</Text>
-    </Pressable>
-  );
-  return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: t.bg }}>
-        <View style={{ backgroundColor: c, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 20 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text numberOfLines={1} style={{ flex: 1, color: '#ffffffe0', fontSize: 14, fontWeight: '700' }}>{a.course.toUpperCase()}</Text>
-            <Pressable onPress={onClose} accessibilityLabel="Close" style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff33' }}>
-              <Icon name="xmark" size={13} color="#fff" />
-            </Pressable>
-          </View>
-          <Text style={{ color: '#fff', fontSize: 25, fontWeight: '800', marginTop: 8 }}>{a.title}</Text>
-          <Text style={{ color: '#ffffffe0', fontSize: 15, marginTop: 6 }}>
-            {a.status === 'done' ? (a.grade != null && a.points ? `Graded ${a.grade}/${a.points}` : 'Turned in') : dueLabel(a.due)}
-            {a.status !== 'done' && a.points ? ` · ${a.points} points` : ''}
-            {a.status === 'missing' ? ' · Missing' : ''}
-          </Text>
-        </View>
-        <ScrollView contentContainerStyle={{ padding: 22, gap: 22, paddingBottom: 50 }}>
-          <View style={{ gap: 10 }}>
-            <Text style={{ color: t.faint, fontSize: 12.5, fontWeight: '800', letterSpacing: 0.6 }}>YOUR WORK</Text>
-            {note ? (
-              <>
-                <Pressable onPress={() => { onClose(); router.push(`/note/${note.id}`); }} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, backgroundColor: pressed ? t.chip : t.card, borderWidth: 1, borderColor: t.line })}>
-                  <Icon name="doc.text" size={20} color={t.accent} />
-                  <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 16, fontWeight: '600' }}>{note.title}</Text>
-                  <Text style={{ color: t.accent, fontSize: 14, fontWeight: '700' }}>Open</Text>
-                </Pressable>
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  {a.status !== 'done' ? big('Hand in', 'paperplane.fill', () => { onClose(); router.push(`/note/${note.id}?handin=1`); }, true) : null}
-                </View>
-                {a.status !== 'done' ? (
-                  <Text style={{ color: t.sub, fontSize: 13.5, lineHeight: 19 }}>
-                    Hand in sends your note as a PDF. In the share menu pick Classroom, choose this assignment, then tap Turn in.
-                  </Text>
-                ) : null}
-              </>
-            ) : (
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                {sheets.length ? big('Write on the worksheet', 'pencil.and.outline', () => onMaterial(a, sheets[0]), true) : null}
-                {big(sheets.length ? 'Blank note' : 'Start a note', 'square.and.pencil', () => onBlank(a), !sheets.length)}
-              </View>
-            )}
-          </View>
-
-          {a.description ? (
-            <View style={{ gap: 8 }}>
-              <Text style={{ color: t.faint, fontSize: 12.5, fontWeight: '800', letterSpacing: 0.6 }}>INSTRUCTIONS</Text>
-              <Text selectable style={{ color: t.text, fontSize: 16, lineHeight: 23 }}>{a.description}</Text>
-            </View>
-          ) : null}
-
-          {a.materials?.length ? (
-            <View style={{ gap: 8 }}>
-              <Text style={{ color: t.faint, fontSize: 12.5, fontWeight: '800', letterSpacing: 0.6 }}>FROM YOUR TEACHER</Text>
-              {a.materials.map((m, i) => (
-                <Pressable key={i} onPress={() => openLink(m.url)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, backgroundColor: pressed ? t.chip : t.card, borderWidth: 1, borderColor: t.line })}>
-                  <View style={{ width: 36, height: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: t.chip }}>
-                    <Icon name={MAT_ICON[m.kind]} size={17} color={t.sub} />
-                  </View>
-                  <Text numberOfLines={2} style={{ flex: 1, color: t.text, fontSize: 15, fontWeight: '600' }}>{m.title}</Text>
-                  {m.kind === 'drive' ? (
-                    <Pressable onPress={() => onMaterial(a, m)} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: t.accent + '1A' }}>
-                      <Icon name="square.and.arrow.down" size={13} color={t.accent} />
-                      <Text style={{ color: t.accent, fontSize: 13, fontWeight: '700' }}>Open in Quill</Text>
-                    </Pressable>
-                  ) : <Icon name="arrow.up.right" size={13} color={t.faint} />}
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-
-          <Pressable onPress={() => openLink(a.link)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 14, height: 40 }}>
-            <Text style={{ color: t.sub, fontSize: 14.5, fontWeight: '600' }}>Open in Google Classroom</Text>
-            <Icon name="arrow.up.right" size={12} color={t.sub} />
-          </Pressable>
-        </ScrollView>
-      </View>
-    </Modal>
   );
 }
