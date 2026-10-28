@@ -71,7 +71,7 @@ export default function ClassroomScreen() {
   // Saved assignments show at once; the fresh list loads behind them.
   useEffect(() => {
     (async () => {
-      const [em, c] = await Promise.all([connectedEmail(), cached()]);
+      const [em, c] = await Promise.all([connectedEmail(), cached().catch(() => null)]);
       setEmail(em); if (c) setData(c);
       const ok = await isConfigured();
       setReady(ok);

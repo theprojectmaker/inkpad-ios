@@ -59,7 +59,8 @@ export async function isConfigured(): Promise<boolean | null> {
   } catch { return null; }
 }
 
-export const connectedEmail = () => kv.get('gc.email');
+/** The signed-in Google account, or null (also if the keychain can't be read). */
+export const connectedEmail = async () => { try { return await kv.get('gc.email'); } catch { return null; } };
 
 /** Opens Google's sign-in in a secure sheet; resolves with the account email. */
 export async function connect(): Promise<string> {
