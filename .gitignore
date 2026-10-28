@@ -9,3 +9,6 @@ public/canvaskit.wasm
 /ios/
 /android/
 *.ipa
+
+# local secrets (the AI key comes from the QUILL_APP_TOKEN GitHub secret in builds)
+.env*.local

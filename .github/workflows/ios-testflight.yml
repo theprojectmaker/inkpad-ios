@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 90
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # The key for Quill's AI / Classroom backend, baked into the app at build time.
+      EXPO_PUBLIC_QUILL_TOKEN: ${{ secrets.QUILL_APP_TOKEN }}
       EAS_SKIP_AUTO_FINGERPRINT: '1'
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +47,16 @@ jobs:
       - name: Check the token is set
         run: |
           if [ -z "$EXPO_TOKEN" ]; then echo "::error::Add the EXPO_TOKEN repository secret first"; exit 1; fi
+          if [ -z "$EXPO_PUBLIC_QUILL_TOKEN" ]; then echo "::error::Add the QUILL_APP_TOKEN repository secret first"; exit 1; fi
           npx --yes eas-cli@latest whoami
 
       - name: Build the app on this Mac (eas build --local)
         run: npx --yes eas-cli@latest build --platform ios --profile production --local --non-interactive --output "$RUNNER_TEMP/app.ipa"
+
+      - name: Check the backend key made it into the app
+        run: |
+          unzip -p "$RUNNER_TEMP/app.ipa" 'Payload/*.app/main.jsbundle' | grep -aqF "$EXPO_PUBLIC_QUILL_TOKEN" \
+            || { echo "::error::The QUILL_APP_TOKEN key is missing from the app bundle"; exit 1; }
 
       - name: Keep the .ipa as a download
         uses: actions/upload-artifact@v4

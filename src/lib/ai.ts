@@ -3,8 +3,9 @@
 import * as ImageManipulator from 'expo-image-manipulator';
 
 const ENDPOINT = 'https://quill-study.pages.dev/api/ai';
-// Not a secret: just keeps random traffic off the endpoint.
-export const APP_TOKEN = 'Nn6LJ_rM5O9z7VHjSwDdSIQv';
+// Keeps random traffic off the endpoint. It is not in the (public) code: builds get it
+// from the QUILL_APP_TOKEN GitHub secret, the web preview from .env.local.
+export const APP_TOKEN = process.env.EXPO_PUBLIC_QUILL_TOKEN ?? '';
 
 export type AiTask = 'summary' | 'flashcards' | 'quiz' | 'explain' | 'ask' | 'clean';
 export type Flashcard = { q: string; a: string };
