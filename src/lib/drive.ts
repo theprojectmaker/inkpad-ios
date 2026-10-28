@@ -28,7 +28,15 @@ async function req(url: string, init: RequestInit = {}): Promise<any> {
 }
 
 /** The id of a folder Quill made (made now if missing), cached on the iPad. */
-async function folder(name: string, parent: string): Promise<string> {
+const making = new Map<string, Promise<string>>();
+/** One lookup per folder at a time, so two saves at once can't make two "Quill" folders. */
+function folder(name: string, parent: string): Promise<string> {
+  const key = `${parent}/${name}`;
+  let p = making.get(key);
+  if (!p) { p = findOrMake(name, parent).finally(() => making.delete(key)); making.set(key, p); }
+  return p;
+}
+async function findOrMake(name: string, parent: string): Promise<string> {
   if (!folders) { try { folders = JSON.parse((await fsx.readText(FOLDERS)) || '{}'); } catch { folders = {}; } }
   const key = `${parent}/${name}`;
   const known = folders![key];
@@ -52,7 +60,7 @@ export async function ensureGoogle() {
  * Saves a note's PDF into Drive › Quill › <subject>. Pass the id from last time
  * to replace that copy. Resolves with the Drive file id.
  */
-export async function saveToDrive(pdfPath: string, title: string, subject: string, existing?: string): Promise<string> {
+export async function saveToDrive(pdfPath: string, title: string, subject: string, existing?: string, opts: { quiet?: boolean } = {}): Promise<string> {
   if (Platform.OS === 'web') throw new Error('Saving to Drive works on the iPad.');
   const run = async () => {
     const name = `${title}.pdf`;
@@ -74,7 +82,7 @@ export async function saveToDrive(pdfPath: string, title: string, subject: strin
   };
   try { return await run(); }
   catch (e: any) {
-    if (!e?.relogin) throw e;
+    if (!e?.relogin || opts.quiet) throw e;   // a background save never pops up Google's sign-in
     await connect();          // asks Google for the new permission, then tries once more
     return run();
   }

@@ -97,6 +97,7 @@ extension QuillCanvasView {
     let h = max(CGFloat(b.size) * 1.5, ed.sizeThatFits(CGSize(width: CGFloat(b.w), height: 10000)).height)
     ed.frame = CGRect(x: CGFloat(b.x) - 2, y: CGFloat(b.y) - 2, width: CGFloat(b.w) + 4, height: h)
     if ed.superview == nil { textHost.addSubview(ed) }
+    ed.contentScaleFactor = textScale()
     ed.becomeFirstResponder()
   }
 
@@ -127,6 +128,25 @@ extension QuillCanvasView {
 
   // MARK: - Labels
 
+  /// Text is drawn at the zoom it's shown at, so it stays sharp (not a blown-up bitmap).
+  func textScale() -> CGFloat { min(8, UIScreen.main.scale * max(1, canvas.zoomScale)) }
+  func updateTextScale() {
+    let s = textScale()
+    for l in labels.values where abs(l.contentScaleFactor - s) > 0.01 { l.contentScaleFactor = s; l.setNeedsDisplay() }
+    if let ed = editor { ed.contentScaleFactor = s; ed.subviews.forEach { $0.contentScaleFactor = s } }
+  }
+
+  /// Moves all ink and text sideways (when the pages are re-centred).
+  func shiftAll(dx: CGFloat) {
+    var strokes: [PKStroke] = []
+    for var s in canvas.drawing.strokes { s.transform = s.transform.concatenating(CGAffineTransform(translationX: dx, y: 0)); strokes.append(s) }
+    canvas.drawing = PKDrawing(strokes: strokes)
+    texts = texts.map { b in var n = b; n.x += Double(dx); return n }
+    renderTexts()
+    saveTexts()
+    saveNow(sync: true)
+  }
+
   func renderTexts() {
     labels.values.forEach { $0.removeFromSuperview() }
     labels = [:]
@@ -142,6 +162,7 @@ extension QuillCanvasView {
     let h = l.sizeThatFits(CGSize(width: CGFloat(b.w), height: 10000)).height
     l.frame = CGRect(x: CGFloat(b.x), y: CGFloat(b.y), width: CGFloat(b.w), height: max(h, CGFloat(b.size)))
     l.isHidden = b.id == editingId
+    l.contentScaleFactor = textScale()
     if l.superview == nil { textHost.addSubview(l) }
     labels[b.id] = l
   }
@@ -172,6 +193,7 @@ extension QuillCanvasView {
   /// A picture of page `i` (background, ink and text) for the page sidebar or the library.
   func pageThumb(_ i: Int, path: String, width: Double) -> Bool {
     guard i >= 0, i < specs.count, i < frames.count else { return false }
+    commitEdit()
     let p = specs[i], f = frames[i]
     let k = CGFloat(width) / CGFloat(p.w)
     let size = CGSize(width: CGFloat(p.w) * k, height: CGFloat(p.h) * k)

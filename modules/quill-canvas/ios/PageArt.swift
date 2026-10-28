@@ -42,23 +42,24 @@ extension UIColor {
 final class ArtCache {
   static let shared = ArtCache()
   private let lock = NSLock()
-  private var pdfs: [String: CGPDFDocument] = [:]
-  private var images: [String: UIImage] = [:]
+  // NSCache drops the least used entries under memory pressure (no thrashing, no unbounded growth).
+  private let pdfs = NSCache<NSString, CGPDFDocument>()
+  private let images: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.totalCostLimit = 220 * 1024 * 1024; return c }()
 
   func pdf(_ path: String) -> CGPDFDocument? {
     lock.lock(); defer { lock.unlock() }
-    if let d = pdfs[path] { return d }
+    if let d = pdfs.object(forKey: path as NSString) { return d }
     guard let d = CGPDFDocument(URL(fileURLWithPath: path) as CFURL) else { return nil }
-    pdfs[path] = d
+    pdfs.setObject(d, forKey: path as NSString)
     return d
   }
 
   func image(_ path: String) -> UIImage? {
     lock.lock(); defer { lock.unlock() }
-    if let i = images[path] { return i }
+    if let i = images.object(forKey: path as NSString) { return i }
     guard let i = UIImage(contentsOfFile: path) else { return nil }
-    if images.count > 12 { images.removeAll() }
-    images[path] = i
+    let px = Int(i.size.width * i.scale * i.size.height * i.scale * 4)
+    images.setObject(i, forKey: path as NSString, cost: px)
     return i
   }
 }

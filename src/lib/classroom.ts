@@ -48,8 +48,15 @@ const kv = {
   del: async (k: string) => (Platform.OS === 'web' ? globalThis.localStorage?.removeItem(k) : SecureStore.deleteItemAsync(k)),
 };
 
-export async function isConfigured(): Promise<boolean> {
-  try { const r = await fetch(`${BACKEND}/api/google/refresh`); return !!(await r.json()).configured; } catch { return false; }
+/** Is Classroom switched on? null = can't tell right now (offline): don't treat that as "no". */
+export async function isConfigured(): Promise<boolean | null> {
+  try {
+    const c = new AbortController();
+    const tm = setTimeout(() => c.abort(), 6000);
+    const r = await fetch(`${BACKEND}/api/google/refresh`, { signal: c.signal });
+    clearTimeout(tm);
+    return !!(await r.json()).configured;
+  } catch { return null; }
 }
 
 export const connectedEmail = () => kv.get('gc.email');
@@ -78,9 +85,14 @@ export async function disconnect() {
   if (rt) fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rt)}`, { method: 'POST' }).catch(() => {});
 }
 
-/** A fresh Google access token (signs in again only when Google says so). */
+let refreshing: Promise<string> | null = null;
+/** A fresh Google access token (signs in again only when Google says so). Callers share one refresh. */
 export async function token(): Promise<string> {
   if (access && access.exp - Date.now() > 60_000) return access.at;
+  if (!refreshing) refreshing = refresh().finally(() => { refreshing = null; });
+  return refreshing;
+}
+async function refresh(): Promise<string> {
   const rt = await kv.get('gc.rt');
   if (!rt) throw Object.assign(new Error('Connect your Google account.'), { relogin: true });
   const r = await fetch(`${BACKEND}/api/google/refresh`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-quill-app': APP_TOKEN }, body: JSON.stringify({ rt }) });
@@ -90,24 +102,45 @@ export async function token(): Promise<string> {
   return d.at;
 }
 
-async function call(url: string): Promise<Response> {
+async function call(url: string, retried = false): Promise<Response> {
   const r = await fetch(url, { headers: { authorization: `Bearer ${await token()}` } });
-  if (r.status === 401) { access = null; throw Object.assign(new Error('Your Google sign-in expired. Connect again.'), { relogin: true }); }
+  if (r.status === 401) {
+    access = null;
+    if (!retried) return call(url, true);       // the access token ran out: get a new one and try once more
+    throw Object.assign(new Error('Your Google sign-in expired. Connect again.'), { relogin: true });
+  }
   if (r.status === 403) {
     const d = await r.json().catch(() => ({}));
     const s = JSON.stringify(d);
     if (/insufficient|scope/i.test(s)) throw Object.assign(new Error('Quill needs one more permission. Connect again.'), { relogin: true });
-    throw new Error(/admin|domain|disabled/i.test(s) ? "Your school's Google admin hasn't allowed Quill yet." : "Google said Quill can't open that.");
+    throw Object.assign(new Error(/admin|domain|disabled/i.test(s) ? "Your school's Google admin hasn't allowed Quill yet." : "Google said Quill can't open that."), { status: 403 });
   }
-  if (!r.ok) throw new Error(`Google didn't answer (${r.status}).`);
+  if (!r.ok) throw Object.assign(new Error(`Google didn't answer (${r.status}).`), { status: r.status });
   return r;
 }
 const get = async (path: string): Promise<any> => (await call(API + path)).json();
 
+/** Every page of a list (Classroom sends 50-200 at a time). */
+async function getAll(path: string, key: string, max = 8): Promise<any[]> {
+  const out: any[] = [];
+  let tok = '';
+  for (let i = 0; i < max; i++) {
+    const d = await get(path + (tok ? `&pageToken=${encodeURIComponent(tok)}` : ''));
+    out.push(...(d[key] ?? []));
+    tok = d.nextPageToken;
+    if (!tok) break;
+  }
+  return out;
+}
+
+/** Only "not allowed / not there" means empty; offline or a Google hiccup must not wipe saved data. */
+const skippable = (e: any) => e?.status === 403 || e?.status === 404;
+
 const dueOf = (w: any): number | undefined => {
   if (!w.dueDate) return undefined;
   const { year, month, day } = w.dueDate;
-  const h = w.dueTime?.hours ?? 23, m = w.dueTime?.minutes ?? 59;
+  // Google leaves out zero fields: {} is midnight UTC; no dueTime at all means the end of the day.
+  const h = w.dueTime ? w.dueTime.hours ?? 0 : 23, m = w.dueTime ? w.dueTime.minutes ?? 0 : 59;
   return Date.UTC(year, month - 1, day, h, m);
 };
 
@@ -122,15 +155,16 @@ const materialsOf = (list: any[] | undefined): Material[] => (list ?? []).map((m
 /** Every active class and its assignments with your status (to do / missing / done). */
 export async function fetchAssignments(): Promise<ClassroomData> {
   const email = (await kv.get('gc.email')) || '';
-  const cr = await get('/courses?studentId=me&courseStates=ACTIVE&pageSize=50');
+  const cr = { courses: await getAll('/courses?studentId=me&courseStates=ACTIVE&pageSize=50', 'courses', 4) };
   const courses: Course[] = (cr.courses ?? []).map((c: any) => ({ id: c.id, name: c.name, section: c.section, room: c.room, link: c.alternateLink }));
   const items: Assignment[] = [];
   await Promise.all(courses.map(async (c) => {
     try {
-      const [cw, subs] = await Promise.all([
-        get(`/courses/${c.id}/courseWork?courseWorkStates=PUBLISHED&orderBy=updateTime%20desc&pageSize=60`),
-        get(`/courses/${c.id}/courseWork/-/studentSubmissions?userId=me&pageSize=200`),
+      const [cwList, subList] = await Promise.all([
+        getAll(`/courses/${c.id}/courseWork?courseWorkStates=PUBLISHED&orderBy=updateTime%20desc&pageSize=100`, 'courseWork'),
+        getAll(`/courses/${c.id}/courseWork/-/studentSubmissions?userId=me&pageSize=200`, 'studentSubmissions'),
       ]);
+      const cw = { courseWork: cwList }, subs = { studentSubmissions: subList };
       const byWork = new Map<string, any>((subs.studentSubmissions ?? []).map((s: any) => [s.courseWorkId, s]));
       for (const w of cw.courseWork ?? []) {
         const s = byWork.get(w.id);
@@ -144,7 +178,7 @@ export async function fetchAssignments(): Promise<ClassroomData> {
           state: s?.state, yours: materialsOf(s?.assignmentSubmission?.attachments),
         });
       }
-    } catch (e) { if ((e as any)?.relogin) throw e; }
+    } catch (e) { if ((e as any)?.relogin || !skippable(e)) throw e; }
   }));
   const data: ClassroomData = { email, fetched: Date.now(), courses, items };
   fsx.writeText(CACHE, JSON.stringify(data)).catch(() => {});
@@ -153,11 +187,11 @@ export async function fetchAssignments(): Promise<ClassroomData> {
 
 /** A class's Stream, topics and class materials (fetched when you open the class). */
 export async function fetchCourse(courseId: string): Promise<CourseDetail> {
-  const safe = async (path: string, key: string) => { try { return (await get(path))[key] ?? []; } catch (e) { if ((e as any)?.relogin) throw e; return []; } };
+  const safe = async (path: string, key: string, max: number) => { try { return await getAll(path, key, max); } catch (e) { if (skippable(e)) return []; throw e; } };
   const [topics, posts, mats] = await Promise.all([
-    safe(`/courses/${courseId}/topics?pageSize=50`, 'topic'),
-    safe(`/courses/${courseId}/announcements?announcementStates=PUBLISHED&orderBy=updateTime%20desc&pageSize=30`, 'announcements'),
-    safe(`/courses/${courseId}/courseWorkMaterials?courseWorkMaterialStates=PUBLISHED&pageSize=60`, 'courseWorkMaterial'),
+    safe(`/courses/${courseId}/topics?pageSize=50`, 'topic', 4),
+    safe(`/courses/${courseId}/announcements?announcementStates=PUBLISHED&orderBy=updateTime%20desc&pageSize=30`, 'announcements', 1),
+    safe(`/courses/${courseId}/courseWorkMaterials?courseWorkMaterialStates=PUBLISHED&pageSize=60`, 'courseWorkMaterial', 4),
   ]);
   const d: CourseDetail = {
     topics: topics.map((x: any) => ({ id: x.topicId, name: x.name })),
@@ -172,21 +206,19 @@ export async function cachedCourse(courseId: string): Promise<CourseDetail | nul
   try { const s = await fsx.readText(`inkpad/classroom-${courseId}.json`); return s ? JSON.parse(s) : null; } catch { return null; }
 }
 
-const thumbs = new Map<string, Promise<{ uri: string; headers: Record<string, string> } | null>>();
-/** A preview picture of a Drive file (Google makes it; it needs the sign-in to load). */
-export function driveThumb(fileId: string) {
-  let p = thumbs.get(fileId);
-  if (!p) {
-    p = (async () => {
-      try {
-        const m = await (await call(`${DRIVE}/files/${fileId}?fields=thumbnailLink&supportsAllDrives=true`)).json();
-        if (!m.thumbnailLink) return null;
-        return { uri: String(m.thumbnailLink).replace(/=s\d+$/, '=s640'), headers: { authorization: `Bearer ${await token()}` } };
-      } catch { return null; }
-    })();
-    thumbs.set(fileId, p);
-  }
-  return p;
+const thumbs = new Map<string, { link: string; at: number }>();
+/** A preview picture of a Drive file (Google makes it; it needs the sign-in to load). Never caches a failure. */
+export async function driveThumb(fileId: string): Promise<{ uri: string; headers: Record<string, string> } | null> {
+  try {
+    let t = thumbs.get(fileId);
+    if (!t || Date.now() - t.at > 45 * 60_000) {      // Google's picture links only last a while
+      const m = await (await call(`${DRIVE}/files/${fileId}?fields=thumbnailLink&supportsAllDrives=true`)).json();
+      if (!m.thumbnailLink) return null;
+      t = { link: String(m.thumbnailLink).replace(/=s\d+$/, '=s640'), at: Date.now() };
+      thumbs.set(fileId, t);
+    }
+    return { uri: t.link, headers: { authorization: `Bearer ${await token()}` } };
+  } catch { return null; }
 }
 
 export async function cached(): Promise<ClassroomData | null> {

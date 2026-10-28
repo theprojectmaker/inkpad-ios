@@ -2,8 +2,8 @@
 // A class has its Stream (teacher posts) and Classwork (by topic). An assignment's
 // page shows the teacher's files as previews, "Write on the worksheet" and Hand in.
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, FlatList, Pressable, RefreshControl, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FileCard, ItemSheet, PreviewSheet } from '@/components/classroom-parts';
@@ -36,6 +36,7 @@ export default function ClassroomScreen() {
   const [filter, setFilter] = useState<Status>('todo');
   const [course, setCourse] = useState<Course | null>(null);
   const [open, setOpen] = useState<Assignment | null>(null);
+  const openedLink = useRef(false);   // the "Due soon" link opens its assignment once, not after every refresh
   const [openMat, setOpenMat] = useState<ClassMaterial | null>(null);
   const [preview, setPreview] = useState<{ m: Material; a: Assignment | null } | null>(null);
   const [tab, setTab] = useState<'stream' | 'classwork'>('stream');
@@ -47,7 +48,11 @@ export default function ClassroomScreen() {
     let live = true;
     setTab('stream');
     cachedCourse(course.id).then((d) => { if (live && d) setDetail(d); });
-    fetchCourse(course.id).then((d) => { if (live) setDetail(d); }).catch((e) => { if (live) setErr(String(e?.message ?? e)); });
+    fetchCourse(course.id).then((d) => { if (live) { setDetail(d); setErr(''); } }).catch((e) => {
+      if (!live) return;
+      if (e?.relogin) setEmail(null);
+      setErr(String(e?.message ?? e));
+    });
     return () => { live = false; };
   }, [course]);
   const [loading, setLoading] = useState(false);
@@ -70,13 +75,18 @@ export default function ClassroomScreen() {
       setEmail(em); if (c) setData(c);
       const ok = await isConfigured();
       setReady(ok);
-      if (em && ok) load();
+      if (em && ok !== false) load();
     })();
+  }, [load]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (st) => { if (st === 'active' && (await connectedEmail())) load(); });
+    return () => sub.remove();
   }, [load]);
 
   // Opened from the library's "Due soon" strip: show that assignment.
   useEffect(() => {
-    if (params.a && data && !open) { const a = data.items.find((x) => keyOf(x) === params.a); if (a) setOpen(a); }
+    if (params.a && data && !openedLink.current) { const a = data.items.find((x) => keyOf(x) === params.a); if (a) { openedLink.current = true; setOpen(a); } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.a, data]);
 
@@ -108,7 +118,12 @@ export default function ClassroomScreen() {
   };
 
   /** The teacher's worksheet as pages to write on (linked to the assignment if it has no note yet). */
+  const opening = useRef(false);
   const openInQuill = async (a: Assignment | null, m: Material) => {
+    if (opening.current) return;
+    opening.current = true;
+    // Close the sheets first: progress and errors show on this screen, not hidden behind them.
+    setOpen(null); setOpenMat(null); setPreview(null);
     try {
       busy(`Opening ${m.title}…`);
       const f = await downloadMaterial(m);
@@ -128,7 +143,7 @@ export default function ClassroomScreen() {
       busy(null);
       if (e?.relogin) { setOpen(null); setEmail(null); }
       toast(String(e?.message ?? e));
-    }
+    } finally { opening.current = false; }
   };
 
   const back = () => {
@@ -262,7 +277,7 @@ export default function ClassroomScreen() {
               </View>
             ))}
             {detail && !detail.posts.length && !upcoming.length ? empty('Nothing posted here yet.') : null}
-            {!detail ? <ActivityIndicator style={{ marginTop: 30 }} color={t.accent} /> : null}
+            {!detail && !err ? <ActivityIndicator style={{ marginTop: 30 }} color={t.accent} /> : null}
           </View>
         ) : (
           <View style={{ gap: 18 }}>
@@ -404,8 +419,10 @@ export default function ClassroomScreen() {
 
       <ItemSheet a={open} mat={openMat} note={open ? noteFor(open) : undefined}
         onClose={() => { setOpen(null); setOpenMat(null); }} onBlank={startBlank} onWrite={openInQuill}
-        onPreview={(m) => setPreview({ m, a: open })} />
-      <PreviewSheet m={preview?.m ?? null} onClose={() => setPreview(null)} onWrite={(m) => openInQuill(preview?.a ?? null, m)} />
+        onPreview={(m) => setPreview({ m, a: open })}>
+        {open || openMat ? <PreviewSheet m={preview?.m ?? null} onClose={() => setPreview(null)} onWrite={(m) => openInQuill(preview?.a ?? null, m)} /> : null}
+      </ItemSheet>
+      {!open && !openMat ? <PreviewSheet m={preview?.m ?? null} onClose={() => setPreview(null)} onWrite={(m) => openInQuill(preview?.a ?? null, m)} /> : null}
       <ConfirmSheet visible={signOut} title="Disconnect Google Classroom?" message="Quill forgets your Google sign-in. Your notes stay." confirm="Disconnect" onCancel={() => setSignOut(false)}
         onConfirm={async () => { setSignOut(false); await disconnect(); setEmail(null); setData(null); }} />
     </View>

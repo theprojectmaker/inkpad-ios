@@ -23,6 +23,12 @@ export const fsx = {
   async writeBytes(path: string, bytes: Uint8Array, append = false) {
     await fsx.writeBase64(path, b64FromBytes(bytes), append);
   },
+  list(dir: string): string[] {
+    const out = new Set<string>();
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) ?? ''; if (k.startsWith(PREFIX + dir + '/')) out.add(k.slice(PREFIX.length + dir.length + 1).split('/')[0]); } } catch {}
+    for (const k of bin.keys()) if (k.startsWith(dir + '/')) out.add(k.slice(dir.length + 1).split('/')[0]);
+    return [...out];
+  },
   exists(path: string) {
     if (bin.has(path)) return true;
     try { return localStorage.getItem(PREFIX + path) != null; } catch { return false; }

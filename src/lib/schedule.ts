@@ -23,6 +23,9 @@ export function parseTime(s: string): number | null {
   return h * 60 + min;
 }
 
+/** "6:50 AM" style, for typing times in (so morning and evening never get mixed up). */
+export const fmtTimeAP = (mins: number) => `${fmtTime(mins)} ${Math.floor(mins / 60) % 24 < 12 ? 'AM' : 'PM'}`;
+
 export const fmtTime = (mins: number) => {
   const h = Math.floor(mins / 60) % 24, m = mins % 60;
   return `${h % 12 || 12}:${String(m).padStart(2, '0')}`;

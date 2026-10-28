@@ -42,8 +42,9 @@ export function Desmos({ onClose, onBack, compact }: { onClose?: () => void; onB
   const local = useRef<WebView>(null);
   const url = `https://www.desmos.com/${mode}`;
 
-  const check = useCallback(() => { setOffline(null); online().then((ok) => setOffline(!ok)); }, []);
-  useEffect(() => { if (Platform.OS !== 'web') check(); }, [check]);
+  const [checking, setChecking] = useState(false);
+  const check = useCallback(() => { setChecking(true); online().then((ok) => { setOffline(!ok); setChecking(false); }); }, []);
+  useEffect(() => { if (Platform.OS !== 'web') { setOffline(null); check(); } }, [check]);
   // The offline calculator switches between graph and keypad itself.
   useEffect(() => { if (offline) local.current?.injectJavaScript(`window.setMode&&setMode(${JSON.stringify(mode === 'scientific' ? 'calc' : 'graph')});true;`); }, [mode, offline]);
 
@@ -53,7 +54,7 @@ export function Desmos({ onClose, onBack, compact }: { onClose?: () => void; onB
         {onBack ? <IconButton name="chevron.left" label="Back to notes" onPress={onBack} /> : null}
         <View style={{ flexDirection: 'row', backgroundColor: t.chip, borderRadius: 9, padding: 2, flexShrink: 1 }}>
           {MODES.map((m) => (
-            <Pressable key={m.id} onPress={() => { setMode(m.id); if (!offline) setLoading(true); }}
+            <Pressable key={m.id} onPress={() => { if (m.id === mode) return; setMode(m.id); if (!offline) setLoading(true); }}
               style={{ paddingHorizontal: compact ? 14 : 20, height: 30, borderRadius: 7, justifyContent: 'center', backgroundColor: mode === m.id ? t.elev : 'transparent' }}>
               <Text style={{ color: mode === m.id ? t.text : t.sub, fontSize: 14, fontWeight: '700' }}>{m.label}</Text>
             </Pressable>
@@ -62,7 +63,7 @@ export function Desmos({ onClose, onBack, compact }: { onClose?: () => void; onB
         {offline ? (
           <Pressable onPress={check} accessibilityLabel="Try Desmos again" style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: t.chip }}>
             <Icon name="wifi.slash" size={12} color={t.sub} />
-            <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700' }}>{compact ? 'Offline' : 'Offline · tap to retry Desmos'}</Text>
+            <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700' }}>{checking ? 'Checking…' : compact ? 'Offline' : 'Offline · tap to retry Desmos'}</Text>
           </Pressable>
         ) : null}
         <View style={{ flex: 1 }} />

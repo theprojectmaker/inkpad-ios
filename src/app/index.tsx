@@ -49,20 +49,27 @@ export default function LibraryScreen() {
   const folderOf = (id: string | null) => lib.lib.folders.find((f) => f.id === id);
   const currentFolderId = filter.kind === 'folder' ? filter.id : null;
 
+  // Search text per note, lowercased once (not on every keystroke); includes typed text.
+  const hays = useMemo(() => new Map(lib.lib.notes.map((n) => [n.id, `${n.title}
+${n.text ?? ''}
+${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
+  const hay = (n: NoteMeta) => hays.get(n.id) ?? '';
   const notes = useMemo(() => {
     let list = lib.lib.notes.slice();
     if (filter.kind === 'fav') list = list.filter((n) => n.fav);
     else if (filter.kind === 'folder') list = list.filter((n) => n.folderId === filter.id);
     const needle = q.trim().toLowerCase();
-    if (needle) list = list.filter((n) => n.title.toLowerCase().includes(needle) || (n.pdfText ?? '').toLowerCase().includes(needle));
+    if (needle) list = list.filter((n) => hay(n).includes(needle));
     return list.sort((a, b) => b.updated - a.updated);
   }, [lib.lib, filter, q]);
 
   const open = (id: string) => router.push(`/note/${id}`);
 
   const newNote = async (style: PaperStyle) => {
-    const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color: 'white', size: 'letter' }, title: defaultTitle() });
-    open(id);
+    try {
+      const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color: 'white', size: 'letter' }, title: defaultTitle() });
+      open(id);
+    } catch (e) { toast("Couldn't make the note: " + String((e as Error)?.message ?? e)); }
   };
 
   const importPdfUri = async (uri: string, name: string) => {
@@ -83,7 +90,9 @@ export default function LibraryScreen() {
   if (__DEV__ && Platform.OS === 'web') (globalThis as any).__importPdf = importPdfUri;
 
   const importPdf = async () => {
-    const r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf'], copyToCacheDirectory: true });
+    let r;
+    try { r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf'], copyToCacheDirectory: true }); }
+    catch (e) { toast("Couldn't open Files: " + String((e as Error)?.message ?? e)); return; }
     if (r.canceled || !r.assets?.[0]) return;
     await importPdfUri(r.assets[0].uri, r.assets[0].name ?? 'PDF');
   };
@@ -91,16 +100,16 @@ export default function LibraryScreen() {
   // Paper notes or a worksheet -> a clean typed copy you can write on.
   // Paper -> the same pages, cleaned up (whiter paper, crisper ink), ready to write on.
   const scanPaper = async () => {
+    const id = uid('n');
     try {
       const uris = await scanEnhanced();
       if (!uris.length) return;
-      const id = uid('n');
       busy('Adding your pages…');
       const pages = await imagePages(id, uris);
       await lib.createNote({ id, folderId: currentFolderId, kind: 'image', title: `Scan ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`, pages, paper: { style: 'blank', color: 'white' } });
       busy(null);
       open(id);
-    } catch (e) { busy(null); toast(String((e as Error)?.message ?? e)); }
+    } catch (e) { busy(null); await fsx.remove(`inkpad/n/${id}`); toast(String((e as Error)?.message ?? e)); }
   };
 
   const scanClean = async () => {
@@ -115,7 +124,9 @@ export default function LibraryScreen() {
   };
 
   const importPhotos = async () => {
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, quality: 1, selectionLimit: 30 });
+    let r;
+    try { r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, quality: 1, selectionLimit: 30 }); }
+    catch (e) { toast("Couldn't open Photos: " + String((e as Error)?.message ?? e)); return; }
     if (r.canceled || !r.assets?.length) return;
     const id = uid('n');
     busy('Importing photos…');
@@ -124,7 +135,7 @@ export default function LibraryScreen() {
       await lib.createNote({ id, folderId: currentFolderId, kind: 'image', title: defaultTitle(), pages, paper: { style: 'blank', color: 'white' } });
       busy(null);
       open(id);
-    } catch { busy(null); toast("Couldn't import those photos."); }
+    } catch { busy(null); await fsx.remove(`inkpad/n/${id}`); toast("Couldn't import those photos."); }
   };
 
   // ----- layout -----
@@ -266,9 +277,9 @@ export default function LibraryScreen() {
         ) : null}
 
         {notes.length ? (
-          <FlatList key={cols} data={notes} keyExtractor={(n) => n.id} numColumns={cols} renderItem={card}
+          <FlatList key={`grid${cols}`} data={notes} keyExtractor={(n) => n.id} numColumns={cols} renderItem={card}
             columnWrapperStyle={{ gap: gapX }} contentContainerStyle={{ padding: pad, paddingTop: 18, paddingBottom: 60, gap: 26 }} />
-        ) : (
+        ) : !lib.ready ? <View style={{ flex: 1 }} /> : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 40 }}>
             <Text style={{ color: t.sub, fontSize: 17 }}>{q ? 'No notes match.' : 'No notes here yet.'}</Text>
             {!q ? (
@@ -295,7 +306,7 @@ export default function LibraryScreen() {
         { label: 'Rename', icon: 'pencil', onPress: () => setSheet('rename') },
         { label: target2.fav ? 'Remove from Favorites' : 'Add to Favorites', icon: target2.fav ? 'star.fill' : 'star', onPress: () => lib.updateNote(target2.id, { fav: !target2.fav }) },
         { label: 'Move to subject…', icon: 'folder', onPress: () => setSheet('move') },
-        { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { await lib.duplicateNote(target2.id); toast('Duplicated'); } },
+        { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { try { toast((await lib.duplicateNote(target2.id)) ? 'Duplicated' : "Couldn't duplicate that note."); } catch { toast("Couldn't duplicate that note."); } } },
         { label: 'Delete', icon: 'trash', danger: true, onPress: () => setSheet('delete') },
       ] : []} />
       <PromptSheet visible={sheet === 'rename'} title="Rename note" initial={target2?.title ?? ''} onCancel={() => setSheet(null)}

@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui';
 import { uid } from '@/lib/model';
-import { fmtTime, parseTime, type Period, type Schedule, useSchedule, whereNow } from '@/lib/schedule';
+import { fmtTime, fmtTimeAP, parseTime, type Period, type Schedule, useSchedule, whereNow } from '@/lib/schedule';
 
 const THEMES = [
   { name: 'Station', bg: '#0E0F12', tile: '#1C1E24', digit: '#F3E9D2', sub: '#9A9384', accent: '#F2B33D' },
@@ -116,13 +116,13 @@ type Row = { id: string; name: string; start: string; end: string };
 function ScheduleEditor({ visible, s, onClose }: { visible: boolean; s: Schedule; onClose: (next?: Schedule) => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   useEffect(() => {
-    if (visible) setRows(s.periods.map((p) => ({ id: p.id, name: p.name, start: fmtTime(p.start), end: fmtTime(p.end) })));
+    if (visible) setRows(s.periods.map((p) => ({ id: p.id, name: p.name, start: fmtTimeAP(p.start), end: fmtTimeAP(p.end) })));
   }, [visible, s.periods]);
 
   const add = () => setRows((r) => {
     const last = r[r.length - 1];
     const startMin = (last && parseTime(last.end)) != null ? parseTime(last.end)! + 4 : 8 * 60;
-    return [...r, { id: uid('pd'), name: `Period ${r.length + 1}`, start: fmtTime(startMin), end: fmtTime(startMin + 45) }];
+    return [...r, { id: uid('pd'), name: `Period ${r.length + 1}`, start: fmtTimeAP(startMin), end: fmtTimeAP(startMin + 45) }];
   });
   const set = (id: string, k: keyof Row, v: string) => setRows((r) => r.map((x) => (x.id === id ? { ...x, [k]: v } : x)));
 
@@ -135,6 +135,10 @@ function ScheduleEditor({ visible, s, onClose }: { visible: boolean; s: Schedule
     onClose({ ...s, periods: periods.sort((x, y) => x.start - y.start) });
   };
 
+  // A time Quill can't read (or a class ending before it starts) is outlined in red instead of quietly dropped.
+  const bad = (v: string) => parseTime(v) == null;
+  const ends = (r: Row) => { const a = parseTime(r.start), b = parseTime(r.end); return a != null && b != null && b <= a; };
+  const badField = { borderWidth: 1.5, borderColor: '#D93025' } as const;
   const field = { height: 42, borderRadius: 10, backgroundColor: '#F1F1F4', paddingHorizontal: 12, fontSize: 16, color: '#17181C' } as const;
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={done}>
@@ -152,9 +156,9 @@ function ScheduleEditor({ visible, s, onClose }: { visible: boolean; s: Schedule
           {rows.map((r) => (
             <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <TextInput value={r.name} onChangeText={(v) => set(r.id, 'name', v)} placeholder="Class" style={[field, { flex: 1 }]} />
-              <TextInput value={r.start} onChangeText={(v) => set(r.id, 'start', v)} placeholder="8:00" keyboardType="numbers-and-punctuation" style={[field, { width: 80, textAlign: 'center' }]} />
+              <TextInput value={r.start} onChangeText={(v) => set(r.id, 'start', v)} placeholder="8:00" keyboardType="numbers-and-punctuation" style={[field, { width: 104, textAlign: 'center' }, bad(r.start) ? badField : null]} />
               <Text style={{ color: '#9A9EA8' }}>–</Text>
-              <TextInput value={r.end} onChangeText={(v) => set(r.id, 'end', v)} placeholder="8:45" keyboardType="numbers-and-punctuation" style={[field, { width: 80, textAlign: 'center' }]} />
+              <TextInput value={r.end} onChangeText={(v) => set(r.id, 'end', v)} placeholder="8:45" keyboardType="numbers-and-punctuation" style={[field, { width: 104, textAlign: 'center' }, bad(r.end) || ends(r) ? badField : null]} />
               <Pressable onPress={() => setRows((x) => x.filter((y) => y.id !== r.id))} accessibilityLabel="Remove" hitSlop={6}
                 style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FDECEC' }}>
                 <Icon name="minus" size={14} color="#D93025" />

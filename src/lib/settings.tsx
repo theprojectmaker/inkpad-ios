@@ -89,12 +89,12 @@ export type Theme = {
 };
 
 const LIGHT: Theme = {
-  dark: false, bg: '#F6F5F2', side: '#EEEDE8', card: '#FFFFFF', elev: '#FFFFFF', text: '#17181C', sub: '#5E616B', faint: '#9A9DA6',
+  dark: false, bg: '#F6F5F2', side: '#EEEDE8', card: '#FFFFFF', elev: '#FFFFFF', text: '#17181C', sub: '#5E616B', faint: '#7A7D87',
   line: '#E1E0DA', accent: '#2563EB', accentText: '#FFFFFF', danger: '#DC2626', desk: '#E7E6E1', bar: '#FBFBF9', chip: '#ECEBE6',
 };
 const DARK: Theme = {
-  dark: true, bg: '#121316', side: '#18191D', card: '#1F2025', elev: '#26272D', text: '#F1F2F4', sub: '#A6A9B2', faint: '#6C707A',
-  line: '#2E3036', accent: '#5B8CFF', accentText: '#FFFFFF', danger: '#F87171', desk: '#0C0D0F', bar: '#1A1B1F', chip: '#2A2B31',
+  dark: true, bg: '#121316', side: '#18191D', card: '#1F2025', elev: '#26272D', text: '#F1F2F4', sub: '#A6A9B2', faint: '#8A8E98',
+  line: '#2E3036', accent: '#4C7DF5', accentText: '#FFFFFF', danger: '#F87171', desk: '#0C0D0F', bar: '#1A1B1F', chip: '#2A2B31',
 };
 
 export function useTheme(): Theme {

@@ -2,7 +2,7 @@
 // ToolButtons sit in the middle of the top bar (line icons, the pen and
 // highlighter show their colour underneath), and ToolStrip is a thin row under
 // the bar with the current tool's options: pen style, colours and sizes.
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import type { CanvasTool } from '@/components/quill-canvas';
 import { Icon } from '@/components/ui';
@@ -145,8 +145,11 @@ export function ToolStrip() {
   }
 
   return (
-    <View style={{ height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: t.line, backgroundColor: t.bar }}>
+    // Scrolls sideways when it doesn't fit (Split View, smaller iPads) instead of cutting off.
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}
+      style={{ height: 44, flexGrow: 0, borderBottomWidth: 1, borderBottomColor: t.line, backgroundColor: t.bar }}
+      contentContainerStyle={{ flexGrow: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
       {body}
-    </View>
+    </ScrollView>
   );
 }

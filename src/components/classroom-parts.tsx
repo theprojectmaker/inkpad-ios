@@ -109,7 +109,8 @@ export function HandInSheet({ pdf, onClose, onSave, onDrive, onOpen }: {
   const [step, setStep] = useState(1);
   const [via, setVia] = useState<'drive' | 'files'>('drive');
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (pdf) { setStep(1); setVia('drive'); } }, [pdf]);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { if (pdf) { setStep(1); setVia('drive'); setFailed(false); } }, [pdf]);
   if (!pdf) return null;
   const btn = (label: string, onPress: () => void, primary: boolean, icon?: string) => (
     <Pressable onPress={onPress} disabled={saving} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 7, height: 42, paddingHorizontal: 18, borderRadius: 21, backgroundColor: primary ? '#1967D2' : t.chip, opacity: pressed || saving ? 0.7 : 1 })}>
@@ -137,6 +138,7 @@ export function HandInSheet({ pdf, onClose, onSave, onDrive, onOpen }: {
     setSaving(true);
     const ok = await onDrive();
     setSaving(false);
+    setFailed(!ok);
     if (ok) { setVia('drive'); setStep(2); }
   };
   return (
@@ -149,6 +151,7 @@ export function HandInSheet({ pdf, onClose, onSave, onDrive, onOpen }: {
           </Pressable>
         </View>
         <Text style={{ color: t.sub, fontSize: 15 }}>Your note is ready as “{pdf.title}.pdf”.</Text>
+        {failed ? <Text style={{ color: t.danger, fontSize: 14.5 }}>Couldn't save to Google Drive. Check the internet and try again, or use Other.</Text> : null}
         {card(1, 'Save your work',
           step > 1 && via === 'drive' ? 'Saved in Google Drive › Quill.' : 'Save it to your Google Drive (best), or to Files. Have the Classroom app? “Other” → Classroom turns it in straight away.',
           <>
@@ -179,7 +182,8 @@ const statusOf = (a: Assignment) => {
  * title and due date, instructions, the teacher's files as previews; on the
  * right your status, your Quill note and Hand in.
  */
-export function ItemSheet({ a, mat, note, onClose, onBlank, onWrite, onPreview }: {
+export function ItemSheet({ a, mat, note, onClose, onBlank, onWrite, onPreview, children }: {
+  children?: React.ReactNode;   // shown on top (a file preview has to open from inside this sheet on iOS)
   a?: Assignment | null; mat?: ClassMaterial | null; note?: { id: string; title: string };
   onClose: () => void; onBlank: (a: Assignment) => void; onWrite: (a: Assignment | null, m: Material) => void; onPreview: (m: Material) => void;
 }) {
@@ -278,6 +282,7 @@ export function ItemSheet({ a, mat, note, onClose, onBlank, onWrite, onPreview }
           {yours}
         </ScrollView>
       </View>
+      {children}
     </Modal>
   );
 }

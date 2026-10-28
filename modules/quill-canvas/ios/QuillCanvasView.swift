@@ -55,6 +55,11 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   private(set) var frames: [CGRect] = []
   private var pagesKey = ""
   private var contentW: CGFloat = 612
+  private var lastFit: CGFloat = 0           // the fit-width zoom last time (to keep the user's zoom on resize)
+  var keyboardInset: CGFloat = 0             // room for the keyboard while typing in a text box
+  private let saveQueue = DispatchQueue(label: "quill.canvas.save")  // every drawing write, in order
+  private var pageViewsById: [String: (key: String, view: PageTileView)] = [:]
+  private var lastEmit: CFTimeInterval = 0
   private var contentH: CGFloat = 792
   private let gap: CGFloat = 28
   private var lastWidth: CGFloat = 0
@@ -98,6 +103,29 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     panGR.delegate = self
     panGR.maximumNumberOfTouches = 1
     textHost.addGestureRecognizer(panGR)
+    NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+  }
+
+  deinit { NotificationCenter.default.removeObserver(self) }
+
+  /// Leaving the app saves everything, including a text box still being typed.
+  @objc private func appBackground() { saveNow(sync: true) }
+
+  /// The keyboard never covers the text box being typed in.
+  @objc private func keyboardChanged(_ n: Notification) {
+    guard let win = window else { return }
+    let end = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
+    let mine = convert(bounds, to: win)
+    let overlap = n.name == UIResponder.keyboardWillHideNotification ? 0 : max(0, mine.maxY - end.minY)
+    keyboardInset = overlap
+    applyZoom()
+    if overlap > 0, let ed = editor, ed.superview != nil {
+      let r = textHost.convert(ed.frame, to: canvas).insetBy(dx: 0, dy: -24)
+      canvas.scrollRectToVisible(r, animated: true)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in if let s = self { s.stableOffset = s.canvas.contentOffset } }
+    }
   }
 
   // MARK: - Layout and zoom
@@ -108,25 +136,43 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     placeTextHost()
     if bounds.width > 1 && abs(bounds.width - lastWidth) > 0.5 {
       lastWidth = bounds.width
-      fitWidth()
+      refit(keepZoom: true)
     }
   }
 
   private func fitScale() -> CGFloat { max(0.05, (bounds.width - 40) / max(1, contentW)) }
 
   /// Page width fills the screen (with a small margin).
-  func fitWidth() {
+  func fitWidth() { refit(keepZoom: false) }
+
+  /// Fits the page to a new width. With keepZoom (rotation, side panels opening)
+  /// your zoom level and the spot you were looking at stay put; nothing jumps.
+  private func refit(keepZoom: Bool) {
     guard bounds.width > 1 else { return }
     let f = fitScale()
+    let oldZ = max(0.01, canvas.zoomScale)
+    let ratio = keepZoom && fitted && lastFit > 0 ? oldZ / lastFit : 1
+    let topY = (canvas.contentOffset.y + canvas.contentInset.top) / oldZ   // content point at the top of the screen
+    lastFit = f
     canvas.minimumZoomScale = f * 0.5
     canvas.maximumZoomScale = f * 6
-    canvas.setZoomScale(f, animated: false)
+    canvas.setZoomScale(min(f * 6, max(f * 0.5, f * ratio)), animated: false)
     applyZoom()
+    let z = canvas.zoomScale
     if !fitted {
       fitted = true
       canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
-      stableOffset = canvas.contentOffset
+    } else {
+      let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
+      let y = min(maxY, max(-canvas.contentInset.top, topY * z - canvas.contentInset.top))
+      let maxX = max(-canvas.contentInset.left, canvas.contentSize.width - canvas.bounds.width + canvas.contentInset.right)
+      let x = min(maxX, max(-canvas.contentInset.left, canvas.contentOffset.x))
+      canvas.contentOffset = CGPoint(x: x, y: y)
     }
+    stableOffset = canvas.contentOffset
+    updateTextScale()
+    lastPage = -1
+    reportPage()
   }
 
   private func applyZoom() {
@@ -138,7 +184,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     let size = CGSize(width: contentW * z, height: contentH * z)
     if canvas.contentSize != size { canvas.contentSize = size }
     let padX = max(0, (bounds.width - size.width) / 2)
-    let inset = UIEdgeInsets(top: 20, left: padX, bottom: 160, right: padX)
+    let inset = UIEdgeInsets(top: 20, left: padX, bottom: 160 + keyboardInset, right: padX)
     if canvas.contentInset != inset { canvas.contentInset = inset }
   }
 
@@ -156,7 +202,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   }
 
   func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-    if scrollView === canvas { stableOffset = canvas.contentOffset }
+    if scrollView === canvas { stableOffset = canvas.contentOffset; updateTextScale() }
   }
 
   /// Puts the view back where the user had it if something other than the user moved it.
@@ -204,7 +250,10 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     if key == pagesKey { return }
     pagesKey = key
     specs = ps
+    let oldW = contentW
     contentW = CGFloat(ps.map { $0.w }.max() ?? 612)
+    // Pages are centred on the widest one; if that changed, move the ink and text with them.
+    if loaded && abs(contentW - oldW) > 0.01 { shiftAll(dx: (contentW - oldW) / 2) }
     var y: CGFloat = 0
     var fs: [CGRect] = []
     for p in ps {
@@ -214,9 +263,18 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     frames = fs
     contentH = max(1, y - gap)
 
-    pageViews.forEach { $0.removeFromSuperview() }
+    // Pages that didn't change keep their view (and its drawn tiles), so nothing flashes.
+    var keep: [String: (key: String, view: PageTileView)] = [:]
     pageViews = zip(ps, fs).map { p, f in
+      let k = "\(p.kind)|\(p.file)|\(p.index)|\(p.w)x\(p.h)|\(p.bg)|\(p.marks.count)"
+      if let old = pageViewsById[p.id], old.key == k {
+        old.view.frame = f
+        old.view.layer.shadowPath = UIBezierPath(rect: CGRect(origin: .zero, size: f.size)).cgPath
+        keep[p.id] = old
+        return old.view
+      }
       let v = PageTileView(spec: p)
+      keep[p.id] = (k, v)
       v.frame = f
       v.layer.shadowColor = UIColor.black.cgColor
       v.layer.shadowOpacity = 0.12
@@ -226,6 +284,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
       pageHost.addSubview(v)
       return v
     }
+    for (id, old) in pageViewsById where keep[id] == nil || keep[id]!.view !== old.view { old.view.removeFromSuperview() }
+    pageViewsById = keep
     pageHost.transform = .identity
     pageHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     textHost.transform = .identity
@@ -261,6 +321,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     guard loaded else { return }
     dirty = true
     scheduleSave()
+    let now = CACurrentMediaTime()
+    if now - lastEmit > 0.25 { lastEmit = now; emitState() }
     holdScroll()
     DispatchQueue.main.async { [weak self] in self?.holdScroll() }
   }
@@ -275,20 +337,22 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   func saveNow(sync: Bool) {
     saveWork?.cancel()
     saveWork = nil
+    if sync { commitEdit() }
     guard loaded, dirty, let path = drawingPath, !path.isEmpty else { return }
     dirty = false
-    let data = canvas.drawing.dataRepresentation()
-    let count = canvas.drawing.strokes.count
+    let drawing = canvas.drawing          // a value copy; turned into bytes off the main thread
+    let count = drawing.strokes.count
     let write = {
+      let data = drawing.dataRepresentation()
       let url = URL(fileURLWithPath: path)
       try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try? data.write(to: url, options: .atomic)
     }
     if sync {
-      write()
+      saveQueue.sync { write() }
       emitState(strokes: count)
     } else {
-      DispatchQueue.global(qos: .utility).async {
+      saveQueue.async {
         write()
         DispatchQueue.main.async { [weak self] in self?.emitState(strokes: count) }
       }
@@ -367,17 +431,20 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: first.size))
     let url = URL(fileURLWithPath: path)
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    var images: [UIImage] = []
-    UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-      images = frames.map { drawing.image(from: $0, scale: 3) }
-    }
+    // One page at a time, so a long note never needs every page in memory at once.
     try renderer.writePDF(to: url) { ctx in
       for (i, p) in specs.enumerated() {
-        let r = CGRect(x: 0, y: 0, width: p.w, height: p.h)
-        ctx.beginPage(withBounds: r, pageInfo: [:])
-        PageArt.draw(p, in: ctx.cgContext)
-        if i < images.count { images[i].draw(in: r) }
-        if i < frames.count { drawTexts(onPage: frames[i], in: ctx.cgContext) }
+        autoreleasepool {
+          let r = CGRect(x: 0, y: 0, width: p.w, height: p.h)
+          ctx.beginPage(withBounds: r, pageInfo: [:])
+          PageArt.draw(p, in: ctx.cgContext)
+          if i < frames.count {
+            var ink: UIImage?
+            UITraitCollection(userInterfaceStyle: .light).performAsCurrent { ink = drawing.image(from: frames[i], scale: 2) }
+            ink?.draw(in: r)
+            drawTexts(onPage: frames[i], in: ctx.cgContext)
+          }
+        }
       }
     }
   }

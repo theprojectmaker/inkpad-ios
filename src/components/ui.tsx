@@ -76,10 +76,14 @@ export type MenuItem = { label: string; icon?: string; onPress: () => void; dang
 
 export function MenuSheet({ visible, onClose, title, items }: { visible: boolean; onClose: () => void; title?: string; items: MenuItem[] }) {
   const t = useTheme();
+  // One tap per opening, and the action waits until the sheet has gone, so a
+  // picker or another sheet it opens isn't dropped by iOS mid-dismiss.
+  const fired = useRef(false);
+  useEffect(() => { if (visible) fired.current = false; }, [visible]);
   return (
     <Sheet visible={visible} onClose={onClose} title={title} width={360}>
       {items.map((it, i) => (
-        <Pressable key={i} onPress={() => { onClose(); setTimeout(it.onPress, 60); }}
+        <Pressable key={i} onPress={() => { if (fired.current) return; fired.current = true; onClose(); setTimeout(it.onPress, Platform.OS === 'ios' ? 380 : 60); }}
           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 10, backgroundColor: pressed ? t.chip : 'transparent' })}>
           {it.icon ? <Icon name={it.icon} size={19} color={it.danger ? t.danger : t.text} /> : null}
           <Text style={{ flex: 1, color: it.danger ? t.danger : t.text, fontSize: 16 }}>{it.label}</Text>
@@ -138,7 +142,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setMsg(m);
     Animated.timing(op, { toValue: 1, duration: 160, useNativeDriver: Platform.OS !== 'web' }).start();
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => Animated.timing(op, { toValue: 0, duration: 220, useNativeDriver: Platform.OS !== 'web' }).start(() => setMsg(null)), 2600);
+    timer.current = setTimeout(() => Animated.timing(op, { toValue: 0, duration: 220, useNativeDriver: Platform.OS !== 'web' }).start(({ finished }) => { if (finished) setMsg(null); }), 2600);
   }, [op]);
   const busy = useCallback((m: string | null) => setBusy(m), []);
   return (

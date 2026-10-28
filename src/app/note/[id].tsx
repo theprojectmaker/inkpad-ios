@@ -2,7 +2,7 @@
 // tools in the middle, undo / redo / more on the right; a thin strip below
 // with the tool's options; an optional page sidebar; the PencilKit canvas.
 import * as ImagePicker from 'expo-image-picker';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,7 +76,9 @@ export default function Editor() {
   const [ruler, setRuler] = useState(false);
   const { s, set } = useSettings();
   const { width } = useWindowDimensions();
-  const tool = useMemo(() => currentTool(s), [s]);
+  const tool = useMemo(() => currentTool(s),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.inkKind, s.penStyle, s.inkSize, s.textSizeIdx, s.penColor, s.hlColor]);
   const [menu, setMenu] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [study, setStudy] = useState(false);
@@ -114,6 +116,8 @@ export default function Editor() {
       if (!(await canvas.current?.snapshot(absPath(notePath(id, name)), 360))) return;
       const old = lib.meta(id)?.thumb;
       lib.updateNote(id, { thumb: name, updated: Date.now() });
+      // Only drop the old picture once the library points at the new one.
+      await lib.flush();
       if (old && old !== name) fsx.remove(notePath(id, old));
     } catch {}
   }, [id, lib]);
@@ -139,8 +143,8 @@ export default function Editor() {
   const subject = () => lib.lib.folders.find((f) => f.id === meta?.folderId)?.name ?? 'Notes';
 
   /** Saves (or updates) this note in Google Drive › Quill › subject. */
-  const uploadPdf = async (pdf: { path: string; title: string }) => {
-    const driveId = await saveToDrive(pdf.path, pdf.title, subject(), lib.meta(id)?.drive?.id);
+  const uploadPdf = async (pdf: { path: string; title: string }, quiet = false) => {
+    const driveId = await saveToDrive(pdf.path, pdf.title, subject(), lib.meta(id)?.drive?.id, { quiet });
     lib.updateNote(id, { drive: { id: driveId, at: Date.now() } });
     changed.current = false;
   };
@@ -156,14 +160,17 @@ export default function Editor() {
     } finally { setBusy(false); }
   };
 
+  const leaving = useRef(false);
   const back = async () => {
+    if (leaving.current) return;
+    leaving.current = true;
     try { await canvas.current?.save(); } catch {}
     if (thumbTimer.current) { clearTimeout(thumbTimer.current); await makeThumb(); }
     // Keep Drive up to date: the PDF is made here (it needs the page), the upload finishes in the background.
     let pending: { path: string; title: string } | null = null;
     if (changed.current && (s.driveSync || meta?.drive)) { try { pending = await makePdf(); } catch {} }
     if (router.canGoBack()) router.back(); else router.replace('/');
-    if (pending) uploadPdf(pending).catch(() => toast("Couldn't update the copy in Google Drive. It'll try again next time."));
+    if (pending) uploadPdf(pending, true).catch(() => toast("Couldn't update the copy in Google Drive. It'll try again next time."));
   };
 
   /** Puts new pages right after page `after` (or at the end); ink below them moves down. */
@@ -172,11 +179,10 @@ export default function Editor() {
     let at = after == null || after >= doc.pages.length - 1 ? doc.pages.length : after + 1;
     const first = at;
     const list = [...doc.pages];
-    for (const p of add) {
-      if (at < list.length) await canvas.current?.insertPageSpace(at - 1, p.h);
-      list.splice(at, 0, p);
-      at++;
-    }
+    // One shift for all of them: each page is its height plus the gap between pages.
+    if (at < list.length) await canvas.current?.insertPageSpace(at - 1, add.reduce((h, p) => h + p.h + PAGE_GAP, 0) - PAGE_GAP);
+    list.splice(at, 0, ...add);
+    at += add.length;
     const next = { ...doc, pages: list };
     setDoc(next);
     await saveDoc(next);
@@ -249,7 +255,7 @@ export default function Editor() {
   // Came from the assignment page's "Hand in": start once the page has loaded.
   const autoHandIn = useRef(false);
   useEffect(() => {
-    if (handin === '1' && doc && meta?.hw && !autoHandIn.current) { autoHandIn.current = true; setTimeout(handIn, 900); }
+    if (handin === '1' && doc && meta?.hw && !autoHandIn.current) { autoHandIn.current = true; const tm = setTimeout(handIn, 900); return () => clearTimeout(tm); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handin, doc, meta?.hw]);
 
@@ -264,13 +270,14 @@ export default function Editor() {
     toast(`Page ${i + 1} deleted`);
   };
 
-  const narrow = width < 900;
+  const narrow = width < 1000;   // the pills show icons only, so nothing runs into the tools in the middle
   return (
     <View style={{ flex: 1, backgroundColor: t.bar, paddingTop: ins.top }}>
+      <Stack.Screen options={{ gestureEnabled: false }} />
       <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }}>
         <IconButton name="chevron.left" label="Back to notes" onPress={back} />
         <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => setSidebar((v) => !v)} />
-        <Pressable onPress={() => setRenaming(true)} style={{ maxWidth: narrow ? Math.max(70, width / 2 - 250) : 260, paddingHorizontal: 6, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
+        <Pressable onPress={() => setRenaming(true)} style={{ maxWidth: Math.max(60, Math.min(260, width / 2 - 118 - 92)), paddingHorizontal: 6, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
           <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
         </Pressable>
         <View style={{ flex: 1 }} />
@@ -338,7 +345,7 @@ export default function Editor() {
         { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />
       <HandInSheet pdf={handInPdf} onClose={() => setHandInPdf(null)}
-        onDrive={async () => { if (!handInPdf) return false; try { await ensureGoogle(); await uploadPdf(handInPdf); return true; } catch (e) { toast("Couldn't save to Drive: " + String((e as Error)?.message ?? e)); return false; } }}
+        onDrive={async () => { if (!handInPdf) return false; try { await ensureGoogle(); await uploadPdf(handInPdf); return true; } catch { return false; } }}
         onSave={() => handInPdf && sendToClassroom(handInPdf.path, handInPdf.title).catch((e) => toast(String(e?.message ?? e)))}
         onOpen={() => meta?.hw && openAssignment(meta.hw)} />
       <ConfirmSheet visible={delPage != null} title={`Delete page ${(delPage ?? 0) + 1}?`} message="Its writing is deleted too." onCancel={() => setDelPage(null)}

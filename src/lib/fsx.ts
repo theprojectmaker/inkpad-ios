@@ -17,18 +17,25 @@ function ensureParent(path: string) {
 
 export const fsx = {
   async readText(path: string): Promise<string | null> {
-    const f = file(path);
-    if (!f.exists) return null;
-    return f.text();
+    // A write interrupted by a crash leaves the new text in .tmp (or the old in .bak).
+    for (const p of [path, path + '.tmp', path + '.bak']) {
+      const f = file(p);
+      if (f.exists) { try { return await f.text(); } catch {} }
+    }
+    return null;
   },
   async writeText(path: string, text: string) {
     ensureParent(path);
     // Write to a temp file and swap it in, so a crash mid-write never leaves half a note.
+    // The old file is kept as .bak until the new one is in place.
     const tmp = file(path + '.tmp');
+    if (tmp.exists) tmp.delete();
     tmp.write(text);
-    const f = file(path);
-    if (f.exists) f.delete();
-    tmp.move(f);
+    const f = file(path), bak = file(path + '.bak');
+    if (bak.exists) bak.delete();
+    if (f.exists) f.move(bak);
+    tmp.move(file(path));
+    if (bak.exists) bak.delete();
   },
   async writeBase64(path: string, b64: string, append = false) {
     ensureParent(path);
@@ -37,6 +44,12 @@ export const fsx = {
   async writeBytes(path: string, bytes: Uint8Array, append = false) {
     ensureParent(path);
     file(path).write(bytes, { append });
+  },
+  /** Names of the files and folders inside a folder. */
+  list(dir: string): string[] {
+    const d = new Directory(root(), dir);
+    if (!d.exists) return [];
+    return d.list().map((it) => it.uri.replace(/\/$/, '').split('/').pop() ?? '').filter(Boolean);
   },
   exists(path: string) {
     return file(path).exists || new Directory(root(), path).exists;

@@ -39,9 +39,9 @@ sinh:Math.sinh,cosh:Math.cosh,tanh:Math.tanh,sqrt:Math.sqrt,abs:Math.abs,ln:Math
 sec:x=>1/Math.cos(x),csc:x=>1/Math.sin(x),cot:x=>1/Math.tan(x)};
 const CONST={pi:Math.PI,e:Math.E,'π':Math.PI};
 // --- tiny math parser: + - * / ^, ( ), implicit multiplication (2x, 3(x+1), x sin x), functions
-function tokenize(s){s=s.replace(/\*\*/g,'^').replace(/π/g,'pi').replace(/√/g,'sqrt').replace(/·|×/g,'*').replace(/÷/g,'/');
+function tokenize(s){s=s.replace(/²/g,'^2').replace(/³/g,'^3');for(let k=0;k<5&&/\|[^|]+\|/.test(s);k++)s=s.replace(/\|([^|]+)\|/g,'abs($1)');s=s.replace(/\*\*/g,'^').replace(/π/g,'pi').replace(/√/g,'sqrt').replace(/·|×/g,'*').replace(/÷/g,'/');
  const t=[];let i=0;while(i<s.length){const c=s[i];if(/\s/.test(c)){i++;continue}
- if(/[0-9.]/.test(c)){let j=i;while(j<s.length&&/[0-9.]/.test(s[j]))j++;t.push({k:'n',v:parseFloat(s.slice(i,j))});i=j;continue}
+ if(/[0-9.]/.test(c)){let j=i;while(j<s.length&&/[0-9.]/.test(s[j]))j++;const ex=s.slice(j).match(/^e[-+]?[0-9]+/);if(ex)j+=ex[0].length;t.push({k:'n',v:parseFloat(s.slice(i,j))});i=j;continue}
  if(/[a-zA-Z]/.test(c)){let j=i;while(j<s.length&&/[a-zA-Z0-9_]/.test(s[j]))j++;let w=s.slice(i,j);
   // split runs like "xy" or "2ab" into single letters unless it's a known name
   while(w.length){const f=Object.keys(FN).concat(Object.keys(CONST)).sort((a,b)=>b.length-a.length).find(n=>w.startsWith(n));
@@ -56,7 +56,10 @@ function parse(src){const t=tokenize(src);let p=0;const peek=()=>t[p],eat=v=>{if
  function power(){const b=atom();if(eat('^')){const x=unary();return e=>Math.pow(b(e),x(e))}return b}
  function atom(){const q=t[p++];if(!q)throw Error('Unfinished');
   if(q.k==='n')return()=>q.v;
-  if(q.k==='f'){const f=FN[q.v];let a;if(eat('(')){a=expr();if(!eat(')'))throw Error('Missing )')}else a=power();return e=>f(a(e))}
+  if(q.k==='f'){const f=FN[q.v];let pw=null;if(eat('^'))pw=unary();let a;
+   if(eat('(')){a=expr();if(!eat(')'))throw Error('Missing )')}
+   else{a=power();for(;;){const n=peek();if(n&&(n.k==='n'||n.k==='id')){const b=power(),x=a;a=e=>x(e)*b(e)}else break}}
+   return pw?e=>Math.pow(f(a(e)),pw(e)):e=>f(a(e))}
   if(q.k==='id'){const n=q.v;if(n in CONST)return()=>CONST[n];
    if(peek()&&peek().v==='('&&defs[n]){p++;const a=expr();if(!eat(')'))throw Error('Missing )');return e=>defs[n]({...e,x:a(e)})}
    used.add(n);return e=>{if(n in e)return e[n];if(defs[n])return defs[n](e);throw Error('Undefined '+n)}}
@@ -67,7 +70,7 @@ let used=new Set(),defs={};
 function analyze(){defs={};const out=[];const vars={};
  // pass 1: definitions (a=3, f(x)=...)
  for(const r of rows){const s=r.text.trim();let m;
-  if((m=s.match(/^([a-zA-Z])\s*=\s*(-?[0-9.]+)$/))&&!'xy'.includes(m[1])){vars[m[1]]=+m[2];sliders[m[1]]=sliders[m[1]]||{min:-10,max:10};r.slider=m[1]}
+  if((m=s.match(/^([a-zA-Z])\s*=\s*(-?[0-9.]+(?:e[-+]?[0-9]+)?)$/))&&!'xy'.includes(m[1])){vars[m[1]]=+m[2];sliders[m[1]]=sliders[m[1]]||{min:-10,max:10};r.slider=m[1]}
   else if((m=s.match(/^([a-zA-Z])\(x\)\s*=\s*(.+)$/))){try{used=new Set();defs[m[1]]=parse(m[2])}catch(e){}}else r.slider=null}
  for(const r of rows){const s=r.text.trim();let item={r,kind:'none'};
   try{if(!s){out.push(item);continue}
