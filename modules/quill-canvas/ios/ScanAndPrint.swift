@@ -19,26 +19,7 @@ final class ScanSession: NSObject, VNDocumentCameraViewControllerDelegate {
 
   /// Makes a scan look like a clean original: white paper, dark crisp ink, no shadows.
   /// Only the picture is cleaned up; nothing on the page is changed or retyped.
-  static func cleanUp(_ img: UIImage) -> UIImage {
-    guard var image = CIImage(image: img) else { return img }
-    if let f = CIFilter(name: "CIDocumentEnhancer") {
-      f.setValue(image, forKey: kCIInputImageKey)
-      f.setValue(1.0, forKey: "inputAmount")
-      if let o = f.outputImage { image = o }
-    } else if let f = CIFilter(name: "CIColorControls") {
-      f.setValue(image, forKey: kCIInputImageKey)
-      f.setValue(1.25, forKey: kCIInputContrastKey)
-      f.setValue(0.06, forKey: kCIInputBrightnessKey)
-      if let o = f.outputImage { image = o }
-    }
-    if let f = CIFilter(name: "CISharpenLuminance") {
-      f.setValue(image, forKey: kCIInputImageKey)
-      f.setValue(0.45, forKey: kCIInputSharpnessKey)
-      if let o = f.outputImage { image = o }
-    }
-    guard let cg = ci.createCGImage(image, from: image.extent) else { return img }
-    return UIImage(cgImage: cg, scale: 1, orientation: img.imageOrientation)
-  }
+  static func cleanUp(_ img: UIImage) -> UIImage { OnDevice.fix(img, mode: "color") }
 
   func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
     var paths: [String] = []

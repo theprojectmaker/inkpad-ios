@@ -35,30 +35,78 @@ enum OnDevice {
     return ["lines": lines, "width": w, "height": h]
   }
 
-  /// A cleaner, sharper copy of a page picture: even white paper, crisp dark writing,
-  /// less grain. Saved as JPEG at `dst`.
-  static func enhance(_ src: String, to dst: String) throws -> Bool {
-    guard let img = UIImage(contentsOfFile: src), var image = CIImage(image: img) else {
-      throw NSError(domain: "Quill", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't open that picture."])
-    }
-    if let f = CIFilter(name: "CINoiseReduction") {
+  /// Makes a phone photo or scan of a page look like a clean file, on the iPad:
+  /// small photos are enlarged, the lighting is flattened (shadows and grey paper
+  /// become even white), and the writing becomes dark and sharp.
+  /// mode "color" keeps colours (pens, highlighter); "document" is crisp black and white.
+  static func fix(_ input: UIImage, mode: String) -> UIImage {
+    let img = upright(input)
+    guard var image = CIImage(image: img) else { return input }
+    let full = image.extent
+
+    // 1. Too small to read well: enlarge with a high-quality filter.
+    let side = max(full.width, full.height)
+    if side < 2200, let f = CIFilter(name: "CILanczosScaleTransform") {
       f.setValue(image, forKey: kCIInputImageKey)
-      f.setValue(0.015, forKey: "inputNoiseLevel")
-      f.setValue(0.5, forKey: "inputSharpness")
+      f.setValue(2200 / side, forKey: kCIInputScaleKey)
+      f.setValue(1.0, forKey: kCIInputAspectRatioKey)
       if let o = f.outputImage { image = o }
     }
-    let base = UIImage(ciImage: image)
-    let cleaned = ScanSession.cleanUp(render(base, like: img))
-    guard let data = cleaned.jpegData(compressionQuality: 0.92) else { return false }
+    let ext = image.extent
+
+    // 2. The paper's lighting: shrink, wipe out the writing (the paper is the brightest
+    //    thing nearby), blur; then divide the page by it so the paper turns even white.
+    let k: CGFloat = 0.125
+    let small = image.transformed(by: CGAffineTransform(scaleX: k, y: k))
+    let paper = small
+      .applyingFilter("CIMorphologyMaximum", ["inputRadius": 4])
+      .applyingFilter("CIGaussianBlur", ["inputRadius": 8])
+      .cropped(to: small.extent)
+      .clampedToExtent()
+      .transformed(by: CGAffineTransform(scaleX: 1 / k, y: 1 / k))
+      .cropped(to: ext)
+    image = paper.applyingFilter("CIDivideBlendMode", [kCIInputBackgroundImageKey: image]).cropped(to: ext)
+
+    // 3. Clean, dark, sharp writing.
+    if mode == "document" {
+      image = image.applyingFilter("CIColorControls", [kCIInputSaturationKey: 0.0, kCIInputContrastKey: 1.05])
+      image = image.applyingFilter("CIToneCurve", [
+        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.35, y: 0.12),
+        "inputPoint2": CIVector(x: 0.6, y: 0.55), "inputPoint3": CIVector(x: 0.8, y: 0.97), "inputPoint4": CIVector(x: 1, y: 1),
+      ])
+    } else {
+      image = image.applyingFilter("CIColorControls", [kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05])
+      image = image.applyingFilter("CIToneCurve", [
+        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.3, y: 0.2),
+        "inputPoint2": CIVector(x: 0.55, y: 0.5), "inputPoint3": CIVector(x: 0.85, y: 0.98), "inputPoint4": CIVector(x: 1, y: 1),
+      ])
+    }
+    image = image.applyingFilter("CINoiseReduction", ["inputNoiseLevel": 0.01, "inputSharpness": 0.6])
+    image = image.applyingFilter("CISharpenLuminance", [kCIInputSharpnessKey: 0.55]).cropped(to: ext)
+    guard let cg = ci.createCGImage(image, from: ext) else { return input }
+    return UIImage(cgImage: cg, scale: 1, orientation: .up)
+  }
+
+  /// The picture drawn the right way up (camera photos carry a rotation flag).
+  private static func upright(_ img: UIImage) -> UIImage {
+    if img.imageOrientation == .up { return img }
+    let fmt = UIGraphicsImageRendererFormat()
+    fmt.scale = 1
+    return UIGraphicsImageRenderer(size: CGSize(width: img.size.width * img.scale, height: img.size.height * img.scale), format: fmt).image { _ in
+      img.draw(in: CGRect(origin: .zero, size: CGSize(width: img.size.width * img.scale, height: img.size.height * img.scale)))
+    }
+  }
+
+  /// A cleaned-up copy of a page picture, saved as JPEG at `dst`.
+  static func enhance(_ src: String, to dst: String, mode: String) throws -> Bool {
+    guard let img = UIImage(contentsOfFile: src) else {
+      throw NSError(domain: "Quill", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't open that picture."])
+    }
+    guard let data = fix(img, mode: mode).jpegData(compressionQuality: 0.92) else { return false }
     let url = URL(fileURLWithPath: dst)
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try data.write(to: url, options: .atomic)
     return true
-  }
-
-  private static func render(_ i: UIImage, like orig: UIImage) -> UIImage {
-    guard let ciImg = i.ciImage, let cg = ci.createCGImage(ciImg, from: ciImg.extent) else { return orig }
-    return UIImage(cgImage: cg, scale: orig.scale, orientation: orig.imageOrientation)
   }
 
   /// "ready", "off" (Apple Intelligence is turned off), "downloading" or "unsupported".

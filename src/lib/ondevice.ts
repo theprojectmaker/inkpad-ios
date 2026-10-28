@@ -9,7 +9,7 @@ export type LocalAIStatus = 'ready' | 'off' | 'downloading' | 'unsupported';
 
 type NativeOnDevice = {
   readText(path: string): Promise<{ lines: OcrLine[]; width: number; height: number }>;
-  enhanceImage(src: string, dst: string): Promise<boolean>;
+  enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
   localAIStatus(): LocalAIStatus;
   localAI(instructions: string, prompt: string): Promise<string>;
 };
@@ -32,10 +32,14 @@ export async function pageText(uri: string): Promise<string> {
   return (await readText(uri)).map((l) => l.text).join('\n');
 }
 
-/** A cleaner, sharper copy of a page picture, written to `dst` (file:// uri or path). */
-export async function enhanceImage(src: string, dst: string): Promise<void> {
+/**
+ * A page picture fixed up to look like a clean file (on the iPad, offline): enlarged if
+ * small, even white paper, no shadows, dark sharp writing. "color" keeps colours,
+ * "document" is crisp black and white. Written to `dst` (file:// uri or path).
+ */
+export async function enhanceImage(src: string, dst: string, mode: 'color' | 'document' = 'color'): Promise<void> {
   if (!Native?.enhanceImage) throw new Error('This works in the iPad app.');
-  if (!(await Native.enhanceImage(plain(src), plain(dst)))) throw new Error("Couldn't improve that page.");
+  if (!(await Native.enhanceImage(plain(src), plain(dst), mode))) throw new Error("Couldn't improve that page.");
 }
 
 export function localAIStatus(): LocalAIStatus {

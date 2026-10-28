@@ -263,20 +263,20 @@ export default function Editor() {
   }, [handin, doc, meta?.hw]);
 
   /** Quality enhancer: a photo or scan page gets even white paper, crisp writing and less grain. */
-  const enhancePage = async (i: number) => {
+  const enhancePage = async (i: number, mode: 'color' | 'document' = 'color') => {
     const p = doc?.pages[i];
     if (!doc || !p || p.bg.kind !== 'image' || busy) return;
     setBusy(true);
     try {
       const old = p.bg.file, name = `img_${uid()}.jpg`;
-      await enhanceImage(fsx.uri(notePath(id, old)), fsx.uri(notePath(id, name)));
+      await enhanceImage(fsx.uri(notePath(id, old)), fsx.uri(notePath(id, name)), mode);
       const next = { ...doc, pages: doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'image' as const, file: name } } : q)) };
       setDoc(next);
       await saveDoc(next);
       lib.updateNote(id, { updated: Date.now() });
       setVer((v) => v + 1);
       fsx.remove(notePath(id, old));
-      toast(`Page ${i + 1} cleaned up`);
+      toast(mode === 'document' ? `Page ${i + 1} is now a clean black & white document` : `Page ${i + 1} cleaned up`);
     } catch (e) { toast("Couldn't improve that page: " + String((e as Error)?.message ?? e)); }
     finally { setBusy(false); }
   };
@@ -385,7 +385,10 @@ export default function Editor() {
         { label: 'Add a page at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPage() },
         ...(canScan() ? [{ label: 'Scan paper into this note', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
         { label: 'Add photos as pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
-        ...(doc?.pages[page.page]?.bg.kind === 'image' ? [{ label: 'Improve this page\'s quality', icon: 'wand.and.stars', onPress: () => enhancePage(page.page) }] : []),
+        ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
+          { label: 'Fix page quality (keep colours)', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
+          { label: 'Make it a clean B&W document', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
+        ] : []),
         ...(meta?.hw ? [
           { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
           { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },

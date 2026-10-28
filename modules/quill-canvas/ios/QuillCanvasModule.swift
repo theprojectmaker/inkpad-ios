@@ -29,8 +29,8 @@ public final class QuillCanvasModule: Module {
     }
 
     // A cleaned-up, sharper copy of a page picture.
-    AsyncFunction("enhanceImage") { (src: String, dst: String) throws -> Bool in
-      return try OnDevice.enhance(src, to: dst)
+    AsyncFunction("enhanceImage") { (src: String, dst: String, mode: String) throws -> Bool in
+      return try OnDevice.enhance(src, to: dst, mode: mode)
     }
 
     // Apple's on-device model (no internet): its state, and one answer.
