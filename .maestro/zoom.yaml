@@ -1,0 +1,40 @@
+# Writing while zoomed in (the app opens notes at 3x zoom with -QuillTestZoom 3).
+# Strokes at different speeds, a scroll while zoomed, more strokes, undo.
+appId: com.solyapps.notes
+---
+- launchApp:
+    clearState: true
+    arguments:
+      QuillTestZoom: "3"
+- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- tapOn: "New"
+- extendedWaitUntil: { visible: "Lined note", timeout: 5000, optional: true }
+- tapOn: { text: "Lined note", optional: true }
+- extendedWaitUntil: { visible: "More", timeout: 8000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: z01-zoomed
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Draw with finger", optional: true }
+- waitForAnimationToEnd
+- swipe: { start: "20%, 30%", end: "70%, 32%", duration: 900 }
+- takeScreenshot: z02-slow-stroke
+- swipe: { start: "20%, 40%", end: "70%, 44%", duration: 250 }
+- takeScreenshot: z03-fast-stroke
+- swipe: { start: "30%, 50%", end: "35%, 70%", duration: 500 }
+- swipe: { start: "40%, 50%", end: "60%, 70%", duration: 500 }
+- swipe: { start: "60%, 50%", end: "45%, 72%", duration: 500 }
+- takeScreenshot: z04-more-strokes
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Draw with finger", optional: true }
+- swipe: { start: "50%, 75%", end: "50%, 45%", duration: 700 }
+- waitForAnimationToEnd
+- takeScreenshot: z05-scrolled-zoomed
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Draw with finger", optional: true }
+- swipe: { start: "25%, 35%", end: "75%, 60%", duration: 600 }
+- takeScreenshot: z06-after-scroll-stroke
+- tapOn: { text: "Undo.*", optional: true }
+- takeScreenshot: z07-undo
+- tapOn: { text: "Highlighter", optional: true }
+- swipe: { start: "20%, 31%", end: "70%, 33%", duration: 600 }
+- takeScreenshot: z08-highlight

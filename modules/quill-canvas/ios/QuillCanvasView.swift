@@ -205,6 +205,17 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     if !fitted {
       fitted = true
       canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+      // Automated tests only (launch argument -QuillTestZoom 3): open already zoomed in.
+      let testZoom = UserDefaults.standard.double(forKey: "QuillTestZoom")
+      if testZoom > 1 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+          guard let self else { return }
+          self.canvas.setZoomScale(f * CGFloat(testZoom), animated: false)
+          self.applyZoom()
+          self.canvas.contentOffset = CGPoint(x: self.canvas.contentSize.width * 0.12, y: self.canvas.contentSize.height * 0.04)
+          self.stableOffset = self.canvas.contentOffset
+        }
+      }
     } else {
       let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
       let y = min(maxY, max(-canvas.contentInset.top, topY * z - canvas.contentInset.top))
