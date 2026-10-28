@@ -100,8 +100,8 @@ final class FastTiledLayer: CATiledLayer {
   override class func fadeDuration() -> CFTimeInterval { 0 }
 }
 
-/// One page background on screen. Tiled, so PDF text and ruling are redrawn sharp when zoomed.
-final class PageTileView: UIView {
+/// The sharp, tiled drawing of a page (PDF text and ruling stay crisp when zoomed).
+final class PageTiles: UIView {
   override class var layerClass: AnyClass { FastTiledLayer.self }
   let spec: PageSpec
 
@@ -109,11 +109,11 @@ final class PageTileView: UIView {
     self.spec = spec
     super.init(frame: CGRect(x: 0, y: 0, width: spec.w, height: spec.h))
     isUserInteractionEnabled = false
-    isOpaque = true
-    backgroundColor = UIColor(hex: spec.bg)
+    isOpaque = false
+    backgroundColor = .clear
     if let tl = layer as? CATiledLayer {
       tl.levelsOfDetail = 4
-      tl.levelsOfDetailBias = 4
+      tl.levelsOfDetailBias = 3
       tl.tileSize = CGSize(width: 512, height: 512)
     }
   }
@@ -123,5 +123,44 @@ final class PageTileView: UIView {
   override func draw(_ rect: CGRect) {
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
     PageArt.draw(spec, in: ctx)
+  }
+}
+
+/// One page on screen. Underneath: the whole page drawn once as a picture, so it is
+/// always there at once (no grey boxes while zooming, resizing or opening a panel);
+/// on top: the sharp tiles, which fill in a moment later.
+final class PageTileView: UIView {
+  let spec: PageSpec
+  private let tiles: PageTiles
+
+  init(spec: PageSpec) {
+    self.spec = spec
+    tiles = PageTiles(spec: spec)
+    super.init(frame: CGRect(x: 0, y: 0, width: spec.w, height: spec.h))
+    isUserInteractionEnabled = false
+    isOpaque = true
+    backgroundColor = UIColor(hex: spec.bg)
+    layer.contentsGravity = .resize
+    tiles.frame = bounds
+    tiles.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    addSubview(tiles)
+    drawPreview()
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  private func drawPreview() {
+    let s = spec
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let k = min(2.0, 1600.0 / max(s.w, s.h))
+      let fmt = UIGraphicsImageRendererFormat()
+      fmt.scale = 1
+      fmt.opaque = true
+      let img = UIGraphicsImageRenderer(size: CGSize(width: s.w * k, height: s.h * k), format: fmt).image { ctx in
+        ctx.cgContext.scaleBy(x: k, y: k)
+        PageArt.draw(s, in: ctx.cgContext)
+      }
+      DispatchQueue.main.async { self?.layer.contents = img.cgImage }
+    }
   }
 }

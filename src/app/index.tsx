@@ -157,7 +157,7 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
   );
 
   const sideRow = (label: string, on: boolean, onPress: () => void, opts: { icon?: string; color?: string; count: number; onLongPress?: () => void }) => (
-    <Pressable key={label + (opts.color ?? '')} onPress={onPress} onLongPress={opts.onLongPress} delayLongPress={350}
+    <Pressable key={label + (opts.color ?? '')} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} onLongPress={opts.onLongPress} delayLongPress={350}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 11, height: 40, paddingHorizontal: 12, borderRadius: 10, backgroundColor: on ? t.accent : pressed ? t.chip : 'transparent' })}>
       {opts.color ? <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: on ? '#fff' : opts.color, marginHorizontal: 3 }} />
         : <Icon name={opts.icon ?? 'doc'} size={18} color={on ? '#fff' : t.sub} />}

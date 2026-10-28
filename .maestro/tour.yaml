@@ -29,6 +29,18 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - takeScreenshot: 06-pen-options
 - tapOn: { text: "Close pen options", optional: true }
+# Highlighter, eraser, typed text
+- tapOn: { text: "Highlighter", optional: true }
+- swipe: { start: "25%, 36%", end: "60%, 38%", duration: 500 }
+- tapOn: { text: "Eraser", optional: true }
+- swipe: { start: "45%, 30%", end: "45%, 52%", duration: 500 }
+- takeScreenshot: 06b-highlight-erase
+- tapOn: { text: "Text", optional: true }
+- tapOn: { point: "40%, 62%" }
+- inputText: "Hello from the test"
+- tapOn: { point: "70%, 80%" }
+- takeScreenshot: 06c-text
+- tapOn: { text: "Pen", optional: true }
 # Fingers scroll again; add two pages
 - tapOn: { text: "More", optional: true }
 - tapOn: { text: "Draw with finger", optional: true }
@@ -53,6 +65,7 @@ appId: com.solyapps.notes
 - takeScreenshot: 10-study
 - tapOn: { text: "Close study", optional: true }
 - tapOn: { text: "Calculator", optional: true }
+- takeScreenshot: 11a-calculator-opening
 - waitForAnimationToEnd: { timeout: 8000 }
 - takeScreenshot: 11-calculator-panel
 - tapOn: { text: "Hide calculator", optional: true }

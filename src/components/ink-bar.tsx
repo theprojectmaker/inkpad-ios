@@ -148,7 +148,7 @@ export function ToolStrip({ floating }: { floating?: boolean } = {}) {
 
   return (
     floating ? (
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', rowGap: 8, maxWidth: 640, paddingHorizontal: 14, paddingVertical: 10,
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', rowGap: 8, maxWidth: 860, paddingHorizontal: 16, paddingVertical: 10,
         borderRadius: 18, backgroundColor: t.elev, borderWidth: t.dark ? 1 : 0, borderColor: t.line,
         shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } }}>
         {body}
