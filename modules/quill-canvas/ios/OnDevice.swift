@@ -59,30 +59,30 @@ enum OnDevice {
     let k: CGFloat = 0.125
     let small = image.transformed(by: CGAffineTransform(scaleX: k, y: k))
     let paper = small
-      .applyingFilter("CIMorphologyMaximum", ["inputRadius": 4])
-      .applyingFilter("CIGaussianBlur", ["inputRadius": 8])
+      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 4])
+      .applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 8])
       .cropped(to: small.extent)
       .clampedToExtent()
       .transformed(by: CGAffineTransform(scaleX: 1 / k, y: 1 / k))
       .cropped(to: ext)
-    image = paper.applyingFilter("CIDivideBlendMode", [kCIInputBackgroundImageKey: image]).cropped(to: ext)
+    image = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: ext)
 
     // 3. Clean, dark, sharp writing.
     if mode == "document" {
-      image = image.applyingFilter("CIColorControls", [kCIInputSaturationKey: 0.0, kCIInputContrastKey: 1.05])
-      image = image.applyingFilter("CIToneCurve", [
+      image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0, kCIInputContrastKey: 1.05])
+      image = image.applyingFilter("CIToneCurve", parameters: [
         "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.35, y: 0.12),
         "inputPoint2": CIVector(x: 0.6, y: 0.55), "inputPoint3": CIVector(x: 0.8, y: 0.97), "inputPoint4": CIVector(x: 1, y: 1),
       ])
     } else {
-      image = image.applyingFilter("CIColorControls", [kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05])
-      image = image.applyingFilter("CIToneCurve", [
+      image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05])
+      image = image.applyingFilter("CIToneCurve", parameters: [
         "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.3, y: 0.2),
         "inputPoint2": CIVector(x: 0.55, y: 0.5), "inputPoint3": CIVector(x: 0.85, y: 0.98), "inputPoint4": CIVector(x: 1, y: 1),
       ])
     }
-    image = image.applyingFilter("CINoiseReduction", ["inputNoiseLevel": 0.01, "inputSharpness": 0.6])
-    image = image.applyingFilter("CISharpenLuminance", [kCIInputSharpnessKey: 0.55]).cropped(to: ext)
+    image = image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.01, "inputSharpness": 0.6])
+    image = image.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.55]).cropped(to: ext)
     guard let cg = ci.createCGImage(image, from: ext) else { return input }
     return UIImage(cgImage: cg, scale: 1, orientation: .up)
   }
