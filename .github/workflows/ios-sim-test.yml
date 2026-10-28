@@ -37,10 +37,10 @@ jobs:
       - name: Build for the simulator
         run: |
           WS=$(ls -d ios/*.xcworkspace | head -1); SCHEME=$(basename "$WS" .xcworkspace)
-          set -o pipefail
           xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build | tail -40
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build > build.log 2>&1 || { grep -E "error:" build.log | sort -u | head -40; exit 1; }
+          tail -5 build.log
 
       - name: Start an iPad simulator
         run: |
