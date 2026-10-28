@@ -81,7 +81,7 @@ export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: st
 }
 
 /** Saves a picked image (downscaled) into the note; returns its file name and size. */
-export async function saveImage(noteId: string, uri: string, maxSide = 2000): Promise<{ file: string; w: number; h: number }> {
+export async function saveImage(noteId: string, uri: string, maxSide = 2800): Promise<{ file: string; w: number; h: number }> {
   let r = await ImageManipulator.manipulateAsync(uri, [], { compress: 1 });
   const big = Math.max(r.width, r.height);
   if (big > maxSide) {

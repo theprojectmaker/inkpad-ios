@@ -70,7 +70,7 @@ extension QuillCanvasView {
   func panStartsOnBox() -> Bool { box(at: panGR.location(in: textHost)) != nil }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-    g === tapGR
+    g === tapGR || g === undoTap || g === redoTap
   }
 
   // MARK: - Editing

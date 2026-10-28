@@ -50,6 +50,9 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   let onPageChange = EventDispatcher()
   lazy var tapGR = UITapGestureRecognizer(target: self, action: #selector(onTextTap(_:)))
   lazy var panGR = UIPanGestureRecognizer(target: self, action: #selector(onTextPan(_:)))
+  lazy var undoTap: UITapGestureRecognizer = { let g = UITapGestureRecognizer(target: self, action: #selector(onUndoTap)); g.numberOfTouchesRequired = 2; return g }()
+  lazy var redoTap: UITapGestureRecognizer = { let g = UITapGestureRecognizer(target: self, action: #selector(onRedoTap)); g.numberOfTouchesRequired = 3; return g }()
+  private let hud = UILabel()
   private var pageViews: [PageTileView] = []
   private(set) var specs: [PageSpec] = []
   private(set) var frames: [CGRect] = []
@@ -86,6 +89,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     canvas.alwaysBounceVertical = true
     canvas.contentInsetAdjustmentBehavior = .never
     canvas.showsVerticalScrollIndicator = true
+    canvas.scrollsToTop = false                    // tapping the top of the screen must never jump to page 1
     canvas.tool = PKInkingTool(.pen, color: .black, width: 3)
     addSubview(canvas)
 
@@ -103,12 +107,51 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     panGR.delegate = self
     panGR.maximumNumberOfTouches = 1
     textHost.addGestureRecognizer(panGR)
+    // Tap with two fingers to undo, three to redo (like Notability / GoodNotes).
+    for g in [undoTap, redoTap] {
+      g.delegate = self
+      g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+      canvas.addGestureRecognizer(g)
+    }
+    undoTap.require(toFail: redoTap)
+    hud.font = .systemFont(ofSize: 15, weight: .semibold)
+    hud.textColor = .white
+    hud.textAlignment = .center
+    hud.backgroundColor = UIColor(white: 0.1, alpha: 0.78)
+    hud.layer.cornerRadius = 17
+    hud.layer.masksToBounds = true
+    hud.alpha = 0
+    addSubview(hud)
     NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
   }
 
   deinit { NotificationCenter.default.removeObserver(self) }
+
+  @objc private func onUndoTap() {
+    let can = canvas.undoManager?.canUndo ?? false
+    if can { undo() }
+    flash(can ? "Undo" : "Nothing to undo")
+  }
+
+  @objc private func onRedoTap() {
+    let can = canvas.undoManager?.canRedo ?? false
+    if can { redo() }
+    flash(can ? "Redo" : "Nothing to redo")
+  }
+
+  /// A small "Undo" / "Redo" bubble, so a finger tap gives feedback.
+  private func flash(_ text: String) {
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    hud.text = text
+    let w = hud.intrinsicContentSize.width + 34
+    hud.frame = CGRect(x: (bounds.width - w) / 2, y: 18, width: w, height: 34)
+    bringSubviewToFront(hud)
+    hud.layer.removeAllAnimations()
+    hud.alpha = 1
+    UIView.animate(withDuration: 0.35, delay: 0.7, options: [.beginFromCurrentState], animations: { self.hud.alpha = 0 })
+  }
 
   /// Leaving the app saves everything, including a text box still being typed.
   @objc private func appBackground() { saveNow(sync: true) }

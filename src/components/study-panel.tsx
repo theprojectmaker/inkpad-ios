@@ -7,21 +7,23 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { Markdown } from '@/components/markdown';
 import type { CanvasHandle } from '@/components/quill-canvas';
 import { Icon } from '@/components/ui';
-import { askAi, type Flashcard, imageDataUrl, type QuizQ } from '@/lib/ai';
+import { askStudy, type Flashcard, type QuizQ } from '@/lib/ai';
 import { fsx } from '@/lib/fsx';
 import { notePath, renderDir } from '@/lib/noteio';
+import { type OcrLine, readText } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
 
-type Tab = 'summary' | 'cards' | 'quiz' | 'explain' | 'ask';
+type Tab = 'summary' | 'cards' | 'quiz' | 'explain' | 'help' | 'ask';
 type Scope = 'page' | 'note';
 type Saved = { summary?: string; explain?: string; cards?: Flashcard[]; quiz?: QuizQ[]; title?: string };
-type Msg = { role: 'user' | 'assistant'; text: string };
+type Msg = { role: 'user' | 'assistant'; text: string; err?: boolean };
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'cards', label: 'Flashcards' },
   { id: 'quiz', label: 'Quiz' },
   { id: 'explain', label: 'Explain' },
+  { id: 'help', label: 'Question help' },
   { id: 'ask', label: 'Ask' },
 ];
 const MAX_PAGES = 6;
@@ -36,6 +38,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   const [saved, setSaved] = useState<Saved>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [chat, setChat] = useState<Msg[]>([]);       // kept here so switching tabs doesn't erase it
   const savePath = notePath(noteId, 'study.json');
 
   useEffect(() => {
@@ -49,8 +52,8 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
     const out: string[] = [];
     for (const i of idx) {
       const rel = `${renderDir(noteId)}/study_${i}.jpg`;
-      const ok = await canvas.current?.pageThumb(i, absPath(rel), 800);
-      if (ok) out.push(await imageDataUrl(fsx.uri(rel), 1600));
+      const ok = await canvas.current?.pageThumb(i, absPath(rel), 1100);
+      if (ok) out.push(fsx.uri(rel));
     }
     if (!out.length) throw new Error("Couldn't read the page.");
     return out;
@@ -60,7 +63,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
     setBusy(true); setErr('');
     try {
       const imgs = await pageImages();
-      const r = await askAi(what, imgs);
+      const r = await askStudy(what, imgs);
       if (what === 'summary') keep({ summary: r.text });
       else if (what === 'explain') keep({ explain: r.text });
       else if (what === 'flashcards') keep({ cards: (r.data?.cards ?? []).filter((c: Flashcard) => c?.q && c?.a), title: r.data?.title });
@@ -103,10 +106,12 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
     body = saved.explain ? <><Markdown text={saved.explain} /><Redo onPress={() => run('explain')} /></> : <MakeButton label="Explain the hard parts" onPress={() => run('explain')} />;
   } else if (tab === 'cards') {
     body = saved.cards?.length ? <><Cards cards={saved.cards} /><Redo onPress={() => run('flashcards')} /></> : <MakeButton label="Make flashcards" onPress={() => run('flashcards')} />;
+  } else if (tab === 'help') {
+    body = <Helper pages={pageImages} scopeLabel={scopeLabel} />;
   } else if (tab === 'quiz') {
     body = saved.quiz?.length ? <><Quiz questions={saved.quiz} /><Redo onPress={() => run('quiz')} /></> : <MakeButton label="Quiz me" onPress={() => run('quiz')} />;
   } else {
-    body = <Ask pageImages={pageImages} scopeLabel={scopeLabel} />;
+    body = <Ask pageImages={pageImages} scopeLabel={scopeLabel} msgs={chat} setMsgs={setChat} />;
   }
 
   return (
@@ -220,9 +225,8 @@ function Quiz({ questions }: { questions: QuizQ[] }) {
   );
 }
 
-function Ask({ pageImages, scopeLabel }: { pageImages: () => Promise<string[]>; scopeLabel: string }) {
+function Ask({ pageImages, scopeLabel, msgs, setMsgs }: { pageImages: () => Promise<string[]>; scopeLabel: string; msgs: Msg[]; setMsgs: React.Dispatch<React.SetStateAction<Msg[]>> }) {
   const t = useTheme();
-  const [msgs, setMsgs] = useState<Msg[]>([]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const scroll = useRef<ScrollView>(null);
@@ -230,14 +234,14 @@ function Ask({ pageImages, scopeLabel }: { pageImages: () => Promise<string[]>; 
     const question = q.trim();
     if (!question || busy) return;
     setQ('');
-    const history = msgs;
+    const history = msgs.filter((m) => !m.err);   // errors aren't part of the conversation
     setMsgs((m) => [...m, { role: 'user', text: question }]);
     setBusy(true);
     try {
-      const r = await askAi('ask', await pageImages(), { question, history });
+      const r = await askStudy('ask', await pageImages(), { question, history });
       setMsgs((m) => [...m, { role: 'assistant', text: r.text || '…' }]);
     } catch (e) {
-      setMsgs((m) => [...m, { role: 'assistant', text: String((e as Error)?.message ?? e) }]);
+      setMsgs((m) => [...m, { role: 'assistant', text: String((e as Error)?.message ?? e), err: true }]);
     } finally { setBusy(false); setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 50); }
   };
   return (
@@ -258,6 +262,114 @@ function Ask({ pageImages, scopeLabel }: { pageImages: () => Promise<string[]>; 
           <Icon name="arrow.up" size={16} color={q.trim() && !busy ? '#fff' : t.faint} />
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/** The questions on a page: numbered items (1. 2) a. Q3) and lines ending in "?", with their next lines. */
+function findQuestions(lines: OcrLine[]): string[] {
+  const start = /^(\(?\d{1,2}[.)]|\(?[a-hA-H][.)]|Q\d+[.:)]?)\s+/;
+  const out: string[] = [];
+  let cur: { text: string; bottom: number; h: number } | null = null;
+  for (const l of lines) {
+    const t = l.text.trim();
+    if (!t) continue;
+    if (start.test(t) || (/\?\s*$/.test(t) && !cur)) {
+      if (cur) out.push(cur.text);
+      cur = { text: t, bottom: l.y + l.h, h: l.h };
+    } else if (cur && l.y - cur.bottom < cur.h * 1.2 && !/^_+$/.test(t)) {
+      cur.text += ' ' + t; cur.bottom = l.y + l.h;       // the question goes on to the next line
+    } else if (cur) { out.push(cur.text); cur = null; }
+  }
+  if (cur) out.push(cur.text);
+  return out.filter((q) => q.replace(start, '').length > 6).slice(0, 30);
+}
+
+/**
+ * Question helper: finds the questions on the page, and for the one you pick
+ * gives hints and the steps to solve it (the answer only when you ask for it).
+ */
+function Helper({ pages, scopeLabel }: { pages: () => Promise<string[]>; scopeLabel: string }) {
+  const t = useTheme();
+  const [qs, setQs] = useState<string[] | null>(null);
+  const [pick, setPick] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
+  const [help, setHelp] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [busy, setBusy] = useState<'find' | 'help' | 'answer' | null>(null);
+  const [err, setErr] = useState('');
+
+  const find = async () => {
+    setBusy('find'); setErr('');
+    try {
+      const found: string[] = [];
+      for (const u of await pages()) found.push(...findQuestions(await readText(u)));
+      setQs(found);
+    } catch (e) { setErr(String((e as Error)?.message ?? e)); }
+    finally { setBusy(null); }
+  };
+  const ask = async (q: string, final: boolean) => {
+    setBusy(final ? 'answer' : 'help'); setErr('');
+    try {
+      const question = final
+        ? `Now give the final answer to this question, with one line saying how you got it: "${q}"`
+        : `Help me with this question from my page: "${q}". Explain what it's asking, then give numbered steps and hints to solve it myself. Don't give the final answer yet.`;
+      const r = await askStudy('ask', await pages(), { question });
+      if (final) setAnswer(r.text || ''); else { setHelp(r.text || ''); setAnswer(''); }
+    } catch (e) { setErr(String((e as Error)?.message ?? e)); }
+    finally { setBusy(null); }
+  };
+  const choose = (q: string) => { setPick(q); setHelp(''); setAnswer(''); ask(q, false); };
+
+  if (pick) {
+    return (
+      <View style={{ gap: 12 }}>
+        <Pressable onPress={() => { setPick(null); setHelp(''); setAnswer(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="chevron.left" size={13} color={t.accent} />
+          <Text style={{ color: t.accent, fontSize: 14, fontWeight: '600' }}>All questions</Text>
+        </Pressable>
+        <View style={{ padding: 14, borderRadius: 14, backgroundColor: t.elev, borderWidth: 1, borderColor: t.line }}>
+          <Text style={{ color: t.text, fontSize: 16, fontWeight: '600', lineHeight: 22 }}>{pick}</Text>
+        </View>
+        {err ? <Text style={{ color: t.danger, fontSize: 14 }}>{err}</Text> : null}
+        {busy === 'help' ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : help ? <Markdown text={help} /> : null}
+        {help && !answer ? (
+          <Pressable onPress={() => ask(pick, true)} disabled={!!busy} style={{ alignSelf: 'flex-start', height: 38, paddingHorizontal: 16, borderRadius: 19, backgroundColor: t.chip, justifyContent: 'center', opacity: busy ? 0.6 : 1 }}>
+            <Text style={{ color: t.text, fontSize: 14, fontWeight: '700' }}>{busy === 'answer' ? 'Checking…' : 'Show the answer'}</Text>
+          </Pressable>
+        ) : null}
+        {answer ? (
+          <View style={{ padding: 14, borderRadius: 14, backgroundColor: '#16A34A14', borderWidth: 1, borderColor: '#16A34A55' }}>
+            <Text style={{ color: '#16A34A', fontSize: 12, fontWeight: '800', letterSpacing: 0.6, marginBottom: 6 }}>ANSWER</Text>
+            <Markdown text={answer} />
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={{ color: t.sub, fontSize: 14, lineHeight: 20 }}>Stuck on a question? Pick it and Quill walks you through it step by step. You see the answer only when you want it.</Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TextInput value={typed} onChangeText={setTyped} placeholder="Type a question…" placeholderTextColor={t.faint} returnKeyType="go"
+          onSubmitEditing={() => typed.trim() && choose(typed.trim())}
+          style={{ flex: 1, height: 40, paddingHorizontal: 12, borderRadius: 20, backgroundColor: t.chip, color: t.text, fontSize: 15 }} />
+        <Pressable onPress={() => typed.trim() && choose(typed.trim())} accessibilityLabel="Help with this" style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: typed.trim() ? t.accent : t.chip }}>
+          <Icon name="arrow.up" size={16} color={typed.trim() ? '#fff' : t.faint} />
+        </Pressable>
+      </View>
+      <Pressable onPress={find} disabled={!!busy} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 22, backgroundColor: t.accent, opacity: pressed || busy ? 0.75 : 1 })}>
+        {busy === 'find' ? <ActivityIndicator color="#fff" /> : <Icon name="text.viewfinder" size={16} color="#fff" />}
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{qs ? 'Look again' : `Find the questions on ${scopeLabel}`}</Text>
+      </Pressable>
+      {err ? <Text style={{ color: t.danger, fontSize: 14 }}>{err}</Text> : null}
+      {qs && !qs.length ? <Text style={{ color: t.sub, fontSize: 14 }}>No numbered questions found. Type the question above instead.</Text> : null}
+      {qs?.map((q, i) => (
+        <Pressable key={i} onPress={() => choose(q)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: t.line, backgroundColor: pressed ? t.chip : t.elev })}>
+          <Text numberOfLines={3} style={{ flex: 1, color: t.text, fontSize: 15, lineHeight: 21 }}>{q}</Text>
+          <Icon name="chevron.right" size={13} color={t.faint} />
+        </Pressable>
+      ))}
     </View>
   );
 }

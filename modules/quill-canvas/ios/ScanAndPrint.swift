@@ -46,10 +46,10 @@ final class ScanSession: NSObject, VNDocumentCameraViewControllerDelegate {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let stamp = Int(Date().timeIntervalSince1970 * 1000)
     for i in 0..<scan.pageCount {
-      var img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: enhance ? 2400 : 2000)
+      var img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: enhance ? 3200 : 2800)   // sharp enough to read small print
       if enhance { img = ScanSession.cleanUp(img) }
       let url = dir.appendingPathComponent("scan_\(stamp)_\(i).jpg")
-      if let data = img.jpegData(compressionQuality: enhance ? 0.9 : 0.85), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
+      if let data = img.jpegData(compressionQuality: 0.92), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
     }
     controller.dismiss(animated: true) { [self] in
       promise.resolve(paths)

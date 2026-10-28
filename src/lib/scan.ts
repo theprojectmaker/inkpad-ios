@@ -4,8 +4,9 @@
 import { requireNativeModule } from 'expo-modules-core';
 import { Platform } from 'react-native';
 
-import { askAi, imageDataUrl } from './ai';
+import { aiOnline, askAi, imageDataUrl } from './ai';
 import { fsx } from './fsx';
+import { type OcrLine, readText } from './ondevice';
 
 type NativeScan = { scanDocument(enhance: boolean): Promise<string[]>; htmlToPdf(html: string, path: string): Promise<number> };
 let Native: NativeScan | null = null;
@@ -21,7 +22,7 @@ export const canScan = () => !!Native;
  */
 export async function scanEnhanced(): Promise<string[]> {
   if (!Native) throw new Error("Scanning works in the iPad app.");
-  return (await Native.scanDocument(true)).map((p) => "file://" + p);
+  return (await Native.scanDocument(true)).map((p) => 'file://' + p);
 }
 
 const CSS = `
@@ -68,12 +69,22 @@ export async function scanToCleanCopy(onStep: (msg: string) => void): Promise<{ 
   const paths = await Native.scanDocument(false);
   if (!paths.length) return null;
   const bodies: string[] = [];
+  // With internet the AI retypes each page; with none (or if it fails) the iPad reads
+  // the page itself and Quill lays it out, so this always works.
+  let online = await aiOnline();
   for (let i = 0; i < paths.length; i++) {
-    onStep(paths.length > 1 ? `Making a clean copy… page ${i + 1} of ${paths.length}` : 'Making a clean copy…');
-    const img = await imageDataUrl('file://' + paths[i], 1800);
-    const r = await askAi('clean', [img]);
-    if (!r.text?.trim()) throw new Error(`The AI couldn't read page ${i + 1}. Try scanning it again with more light.`);
-    bodies.push(r.text);
+    const of = paths.length > 1 ? ` page ${i + 1} of ${paths.length}` : '';
+    if (online) {
+      onStep(`Making a clean copy…${of}`);
+      try {
+        const r = await askAi('clean', [await imageDataUrl('file://' + paths[i], 1800)]);
+        if (r.text?.trim()) { bodies.push(r.text); continue; }
+      } catch { online = false; }
+    }
+    onStep(`Reading the page on this iPad…${of}`);
+    const lines = await readText('file://' + paths[i]);
+    if (!lines.length && paths.length === 1) throw new Error("Couldn't find any writing. Try scanning again with more light.");
+    bodies.push(ocrToHtml(lines, i === 0));
   }
   onStep('Laying out the pages…');
   const html = cleanDocument(bodies);
@@ -83,4 +94,75 @@ export async function scanToCleanCopy(onStep: (msg: string) => void): Promise<{ 
   const h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(bodies[0]);
   const title = (h1 ? stripTags(h1[1]) : '').slice(0, 80) || 'Scanned notes';
   return { pdfUri: fsx.uri(out), title, text: stripTags(bodies.join(' ')).slice(0, 4000) };
+}
+
+// ---------- the offline converter ----------
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * A typed page from the lines the iPad read off a scan (no internet): rows are
+ * rebuilt from where the lines sit, bigger lines become headings, bullets and
+ * numbered questions keep their marks, ____ becomes a writing blank, and a gap
+ * under a question becomes writing lines.
+ */
+export function ocrToHtml(lines: OcrLine[], first: boolean): string {
+  if (!lines.length) return '<p class="figure">(No writing found on this page.)</p>';
+  // Lines on the same row (a question and its points, table cells) join left to right.
+  const rows: { text: string; x: number; y: number; h: number }[] = [];
+  for (const l of [...lines].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const r = rows.find((q) => Math.abs(q.y - l.y) < Math.min(q.h, l.h) * 0.5);
+    if (r) {
+      const parts = [{ x: r.x, t: r.text }, { x: l.x, t: l.text }].sort((a, b) => a.x - b.x);
+      r.text = parts.map((p) => p.t).join('    ');
+      r.x = Math.min(r.x, l.x); r.h = Math.max(r.h, l.h);
+    } else rows.push({ text: l.text.trim(), x: l.x, y: l.y, h: l.h });
+  }
+  rows.sort((a, b) => a.y - b.y);
+  const hs = rows.map((r) => r.h).sort((a, b) => a - b);
+  const H = hs[Math.floor(hs.length / 2)] || 0.02;
+  const left = Math.min(...rows.map((r) => r.x));
+  const out: string[] = [];
+  let list: 'ul' | null = null;
+  let para: string[] = [];
+  const flush = () => { if (para.length) { out.push(`<p>${para.join(' ')}</p>`); para = []; } };
+  const close = () => { if (list) { out.push('</ul>'); list = null; } };
+  const blanks = (s: string) => esc(s).replace(/_{3,}/g, '<span class="blank"></span>');
+  let headed = !first;
+  rows.forEach((r, i) => {
+    const prev = rows[i - 1], next = rows[i + 1];
+    const gapBefore = prev ? r.y - (prev.y + prev.h) : 0;
+    const gapAfter = next ? next.y - (r.y + r.h) : 0;
+    const text = r.text.replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const big = r.h > H * 1.35 && text.length < 70;
+    const bullet = /^[•·▪●○◦\-–*]\s+/.exec(text);
+    const numbered = /^(\(?\d{1,2}[.)]|\(?[a-hA-H][.)]|Q\d+[.:)]?)\s+/.exec(text);
+    const indent = r.x - left > 0.035 ? ' style="margin-left:18pt"' : '';
+    if (gapBefore > H * 0.9) flush();
+    if (big || (!headed && i === 0 && text.length < 60 && !numbered)) {
+      flush(); close();
+      out.push(!headed ? `<h1>${esc(text)}</h1>` : `<h2>${esc(text)}</h2>`);
+      headed = true;
+      return;
+    }
+    if (bullet) {
+      flush();
+      if (!list) { out.push('<ul>'); list = 'ul'; }
+      out.push(`<li>${blanks(text.slice(bullet[0].length))}</li>`);
+      return;
+    }
+    close();
+    if (numbered) {
+      flush();
+      out.push(`<p${indent}><b>${esc(numbered[1])}</b> ${blanks(text.slice(numbered[0].length))}</p>`);
+      // Room to answer: a big gap under a question turns into writing lines.
+      if (gapAfter > H * 2.2) out.push('<div class="line"></div>'.repeat(Math.min(8, Math.max(1, Math.round(gapAfter / (H * 1.8))))));
+      return;
+    }
+    if (indent && !para.length) { out.push(`<p${indent}>${blanks(text)}</p>`); return; }
+    para.push(blanks(text));
+  });
+  flush(); close();
+  return out.join('\n');
 }

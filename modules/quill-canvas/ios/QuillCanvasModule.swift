@@ -23,6 +23,25 @@ public final class QuillCanvasModule: Module {
       return try PrintHTML.pdf(html, to: path)
     }.runOnQueue(.main)
 
+    // Reads printed and handwritten text from a picture, on the iPad (works offline).
+    AsyncFunction("readText") { (path: String) throws -> [String: Any] in
+      return try OnDevice.readText(path)
+    }
+
+    // A cleaned-up, sharper copy of a page picture.
+    AsyncFunction("enhanceImage") { (src: String, dst: String) throws -> Bool in
+      return try OnDevice.enhance(src, to: dst)
+    }
+
+    // Apple's on-device model (no internet): its state, and one answer.
+    Function("localAIStatus") { () -> String in
+      return OnDevice.aiStatus()
+    }
+
+    AsyncFunction("localAI") { (instructions: String, prompt: String) async throws -> String in
+      return try await OnDevice.ask(instructions: instructions, prompt: prompt)
+    }
+
     View(QuillCanvasView.self) {
       Events("onDrawingChange", "onPageChange")
 

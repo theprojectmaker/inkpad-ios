@@ -14,13 +14,14 @@ import { StudyPanel } from '@/components/study-panel';
 import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
-import { handIn as sendToClassroom, openAssignment, openLink } from '@/lib/classroom';
+import { dueLabel, handIn as sendToClassroom, openAssignment, openLink } from '@/lib/classroom';
 import { ensureGoogle, NOTES_SITE, saveToDrive } from '@/lib/drive';
 import { sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
-import { type NoteDoc, type Page, paperPage, pageSizeOf } from '@/lib/model';
+import { type NoteDoc, type Page, paperPage, pageSizeOf, uid } from '@/lib/model';
+import { enhanceImage } from '@/lib/ondevice';
 import { imagePages, loadDoc, notePath, saveDoc } from '@/lib/noteio';
 import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
@@ -259,6 +260,25 @@ export default function Editor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handin, doc, meta?.hw]);
 
+  /** Quality enhancer: a photo or scan page gets even white paper, crisp writing and less grain. */
+  const enhancePage = async (i: number) => {
+    const p = doc?.pages[i];
+    if (!doc || !p || p.bg.kind !== 'image' || busy) return;
+    setBusy(true);
+    try {
+      const old = p.bg.file, name = `img_${uid()}.jpg`;
+      await enhanceImage(fsx.uri(notePath(id, old)), fsx.uri(notePath(id, name)));
+      const next = { ...doc, pages: doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'image' as const, file: name } } : q)) };
+      setDoc(next);
+      await saveDoc(next);
+      lib.updateNote(id, { updated: Date.now() });
+      setVer((v) => v + 1);
+      fsx.remove(notePath(id, old));
+      toast(`Page ${i + 1} cleaned up`);
+    } catch (e) { toast("Couldn't improve that page: " + String((e as Error)?.message ?? e)); }
+    finally { setBusy(false); }
+  };
+
   const removePage = async (i: number) => {
     if (!doc || doc.pages.length < 2) return;
     await canvas.current?.deletePage(i);
@@ -270,38 +290,62 @@ export default function Editor() {
     toast(`Page ${i + 1} deleted`);
   };
 
-  const narrow = width < 1000;   // the pills show icons only, so nothing runs into the tools in the middle
+  const narrow = width < 1000;   // labels hide, so the three parts of the bar never touch
+  const subjectName = lib.lib.folders.find((f) => f.id === meta?.folderId)?.name;
   return (
     <View style={{ flex: 1, backgroundColor: t.bar, paddingTop: ins.top }}>
       <Stack.Screen options={{ gestureEnabled: false }} />
-      <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }}>
-        <IconButton name="chevron.left" label="Back to notes" onPress={back} />
-        <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => setSidebar((v) => !v)} />
-        <Pressable onPress={() => setRenaming(true)} style={{ maxWidth: Math.max(60, Math.min(260, width / 2 - 118 - 92)), paddingHorizontal: 6, height: 40, justifyContent: 'center' }} accessibilityLabel="Rename note">
-          <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{meta?.title ?? 'Note'}</Text>
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        {meta?.hw ? (
-          <Pressable onPress={handIn} accessibilityLabel="Hand in to Classroom"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 11, borderRadius: 17, marginRight: 4, backgroundColor: '#1E8E3E' }}>
-            <Icon name="paperplane.fill" size={14} color="#fff" />
-            {!narrow ? <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>Hand in</Text> : null}
+      {/* Three parts that never overlap: you and the note on the left, the pens in
+          the middle, page actions on the right. */}
+      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 8 }}>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
+          <IconButton name="chevron.left" label="Back to notes" onPress={back} />
+          <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => setSidebar((v) => !v)} />
+          <Pressable onPress={() => setRenaming(true)} style={{ flexShrink: 1, minWidth: 0, paddingHorizontal: 6, height: 44, justifyContent: 'center' }} accessibilityLabel="Rename note">
+            <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{meta?.title ?? 'Note'}</Text>
+            {!narrow ? (
+              <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12, marginTop: 1 }}>
+                {[subjectName, doc ? `${doc.pages.length} page${doc.pages.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}
+              </Text>
+            ) : null}
           </Pressable>
-        ) : null}
-        <IconButton name="function" label={calc ? 'Hide calculator' : 'Graphing calculator'} active={calc} onPress={() => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); }} />
-        <Pressable onPress={() => { setStudy((v) => !v); setCalc(false); }} accessibilityLabel="Study with AI"
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 34, paddingHorizontal: 11, borderRadius: 17, marginRight: 4, backgroundColor: study ? t.accent : t.accent + '1A' }}>
-          <Icon name="sparkles" size={15} color={study ? '#fff' : t.accent} />
-          {!narrow ? <Text style={{ color: study ? '#fff' : t.accent, fontSize: 14, fontWeight: '700' }}>Study</Text> : null}
-        </Pressable>
-        <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
-        <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
-        <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
-        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.chip, borderRadius: 14, paddingHorizontal: 4, height: 44 }}>
           <ToolButtons />
+        </View>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <IconButton name="arrow.uturn.backward" label="Undo (or tap with two fingers)" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
+            <IconButton name="arrow.uturn.forward" label="Redo (or tap with three fingers)" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
+          </View>
+          <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 4 }} />
+          <IconButton name="function" label={calc ? 'Hide calculator' : 'Calculator'} active={calc} onPress={() => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); }} />
+          <Pressable onPress={() => { setStudy((v) => !v); setCalc(false); }} accessibilityLabel="Study with AI"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, height: 36, paddingHorizontal: narrow ? 10 : 13, borderRadius: 18, marginHorizontal: 2, backgroundColor: study ? t.accent : t.accent + '1A' }}>
+            <Icon name="sparkles" size={15} color={study ? '#fff' : t.accent} />
+            {!narrow ? <Text style={{ color: study ? '#fff' : t.accent, fontSize: 14, fontWeight: '700' }}>Study</Text> : null}
+          </Pressable>
+          <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
         </View>
       </View>
       <ToolStrip />
+      {meta?.hw ? (
+        // Homework: which assignment this is for, and Hand in, out of the way of the tools.
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, height: 40, backgroundColor: t.dark ? '#13281B' : '#EAF6EE', borderBottomWidth: 1, borderBottomColor: t.line }}>
+          <Icon name="graduationcap" size={15} color="#1E8E3E" />
+          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 14 }}>
+            <Text style={{ fontWeight: '700' }}>{meta.hw.course}</Text>
+            <Text style={{ color: t.sub }}>{'  ·  '}{meta.hw.title}{meta.hw.due ? `  ·  ${dueLabel(meta.hw.due)}` : ''}</Text>
+          </Text>
+          <Pressable onPress={() => openAssignment(meta.hw!)} style={{ height: 30, paddingHorizontal: 12, borderRadius: 15, justifyContent: 'center' }}>
+            <Text style={{ color: t.sub, fontSize: 13.5, fontWeight: '600' }}>Assignment</Text>
+          </Pressable>
+          <Pressable onPress={handIn} accessibilityLabel="Hand in to Classroom" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 14, borderRadius: 15, backgroundColor: '#1E8E3E' }}>
+            <Icon name="paperplane.fill" size={13} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '700' }}>Hand in</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <View style={{ flex: 1, flexDirection: 'row' }}>
         {sidebar && doc ? (
           <PageSidebar noteId={id} pages={doc.pages} current={page.page} ver={ver} canvas={canvas} absPath={absPath}
@@ -332,6 +376,7 @@ export default function Editor() {
         { label: 'Add a page at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPage() },
         ...(canScan() ? [{ label: 'Scan paper into this note', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
         { label: 'Add photos as pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
+        ...(doc?.pages[page.page]?.bg.kind === 'image' ? [{ label: 'Improve this page\'s quality', icon: 'wand.and.stars', onPress: () => enhancePage(page.page) }] : []),
         ...(meta?.hw ? [
           { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
           { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
