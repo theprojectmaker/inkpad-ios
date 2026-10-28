@@ -81,6 +81,7 @@ export default function Editor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [s.inkKind, s.penStyle, s.inkSize, s.textSizeIdx, s.penColor, s.hlColor]);
   const [menu, setMenu] = useState(false);
+  const [opts, setOpts] = useState(false);     // the picked pen's options card (tap the pen again)
   const [sidebar, setSidebar] = useState(false);
   const [study, setStudy] = useState(false);
   const [calc, setCalc] = useState(false);       // Desmos beside the page (kept loaded once opened)
@@ -127,6 +128,7 @@ export default function Editor() {
   const onChange = useCallback((e: { nativeEvent: CanvasState }) => {
     setSt(e.nativeEvent);
     changed.current = true;
+    setOpts(false);
     setVer((v) => v + 1);
     if (thumbTimer.current) clearTimeout(thumbTimer.current);
     thumbTimer.current = setTimeout(makeThumb, 2500);
@@ -311,7 +313,7 @@ export default function Editor() {
           </Pressable>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.chip, borderRadius: 14, paddingHorizontal: 4, height: 44 }}>
-          <ToolButtons />
+          <ToolButtons onOptions={() => setOpts((v) => !v)} />
         </View>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -328,7 +330,6 @@ export default function Editor() {
           <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
         </View>
       </View>
-      <ToolStrip />
       {meta?.hw ? (
         // Homework: which assignment this is for, and Hand in, out of the way of the tools.
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, height: 40, backgroundColor: t.dark ? '#13281B' : '#EAF6EE', borderBottomWidth: 1, borderBottomColor: t.line }}>
@@ -371,6 +372,14 @@ export default function Editor() {
         {study && doc ? <StudyPanel noteId={id} page={page.page} pageCount={doc.pages.length} canvas={canvas} absPath={absPath} onClose={() => setStudy(false)} /> : null}
       </View>
 
+      {opts ? (
+        <>
+          <Pressable accessibilityLabel="Close pen options" onPress={() => setOpts(false)} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, top: ins.top + 56 }} />
+          <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: ins.top + 52, alignItems: 'center', paddingHorizontal: 12 }}>
+            <ToolStrip floating />
+          </View>
+        </>
+      ) : null}
       <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
         { label: 'Insert a page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
         { label: 'Add a page at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPage() },

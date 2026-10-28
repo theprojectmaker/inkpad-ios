@@ -64,7 +64,8 @@ jobs:
           xcrun simctl io "$SIM" recordVideo --codec=h264 --force out/run.mp4 &
           echo $! > out/rec.pid
           sleep 2
-          maestro test "${{ inputs.flow }}" --debug-output out/maestro 2>&1 | tee out/maestro.txt
+          maestro test "${{ inputs.flow }}" --test-output-dir shots --debug-output out/maestro 2>&1 | tee out/maestro.txt
+          find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ ; 2>/dev/null || true
           kill -INT $(cat out/rec.pid) || true; sleep 3
           kill $(cat out/log.pid) || true
 
@@ -80,4 +81,5 @@ jobs:
           path: |
             shots
             out
+          include-hidden-files: true
           retention-days: 7

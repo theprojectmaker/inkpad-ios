@@ -52,7 +52,8 @@ export function currentTool(s: { inkKind?: InkTool; penStyle?: PenStyle; inkSize
   return { kind: 'lasso', color: '#000000', width: 1 };
 }
 
-export function ToolButtons() {
+/** The tools. Like Notability: tap a tool to pick it, tap it again for its options. */
+export function ToolButtons({ onOptions }: { onOptions?: () => void } = {}) {
   const t = useTheme();
   const { s, set } = useSettings();
   const kind = s.inkKind ?? 'pen';
@@ -62,7 +63,7 @@ export function ToolButtons() {
         const on = x.id === kind;
         const under = x.id === 'pen' ? s.penColor : x.id === 'marker' ? s.hlColor : null;
         return (
-          <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => set({ inkKind: x.id })}
+          <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => { if (on) onOptions?.(); else set({ inkKind: x.id }); }}
             style={({ pressed }) => ({ width: 44, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.accent + (t.dark ? '33' : '18') : pressed ? t.chip : 'transparent' })}>
             <Icon name={x.icon} size={20} color={on ? t.accent : t.text} />
             {under ? <View style={{ position: 'absolute', bottom: 5, width: 16, height: 3, borderRadius: 2, backgroundColor: under }} /> : null}
@@ -78,7 +79,8 @@ const Sep = () => {
   return <View style={{ width: 1, height: 20, backgroundColor: t.line, marginHorizontal: 10 }} />;
 };
 
-export function ToolStrip() {
+/** The picked tool's options: pen style, colours, sizes. Shown as a card under the tools. */
+export function ToolStrip({ floating }: { floating?: boolean } = {}) {
   const t = useTheme();
   const { s, set } = useSettings();
   const kind = s.inkKind ?? 'pen';
@@ -145,6 +147,13 @@ export function ToolStrip() {
   }
 
   return (
+    floating ? (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', rowGap: 8, maxWidth: 640, paddingHorizontal: 14, paddingVertical: 10,
+        borderRadius: 18, backgroundColor: t.elev, borderWidth: t.dark ? 1 : 0, borderColor: t.line,
+        shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } }}>
+        {body}
+      </View>
+    ) :
     // Scrolls sideways when it doesn't fit (Split View, smaller iPads) instead of cutting off.
     <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}
       style={{ height: 44, flexGrow: 0, borderBottomWidth: 1, borderBottomColor: t.line, backgroundColor: t.bar }}
