@@ -1,0 +1,83 @@
+# Runs Quill on an iPad simulator (free GitHub Mac, no signing) and walks through
+# the app with Maestro (.maestro/tour.yaml): screenshots of every step, a screen
+# recording and the app's log come back as the "sim-test" download.
+name: iPad simulator test
+
+on:
+  workflow_dispatch:
+    inputs:
+      flow:
+        description: Maestro flow to run
+        default: .maestro/tour.yaml
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 80
+    env:
+      EXPO_PUBLIC_QUILL_TOKEN: ${{ secrets.QUILL_APP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Make the iOS project
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Build for the simulator
+        run: |
+          WS=$(ls -d ios/*.xcworkspace | head -1); SCHEME=$(basename "$WS" .xcworkspace)
+          set -o pipefail
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build | tail -40
+
+      - name: Start an iPad simulator
+        run: |
+          DEV=$(xcrun simctl list devices available | grep -E "iPad (Pro 13|Pro \(12|Air 13|Pro 11|Air)" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          echo "Using $DEV"; echo "SIM=$DEV" >> $GITHUB_ENV
+          xcrun simctl boot "$DEV"; xcrun simctl bootstatus "$DEV" -b
+          APP=$(ls -d build/Build/Products/Release-iphonesimulator/*.app | head -1)
+          xcrun simctl install "$DEV" "$APP"
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> $GITHUB_PATH
+
+      - name: Walk through the app
+        continue-on-error: true
+        run: |
+          mkdir -p out shots
+          xcrun simctl spawn "$SIM" log stream --level debug --predicate 'process == "Quill"' > out/app.log 2>&1 &
+          echo $! > out/log.pid
+          xcrun simctl io "$SIM" recordVideo --codec=h264 --force out/run.mp4 &
+          echo $! > out/rec.pid
+          sleep 2
+          maestro test "${{ inputs.flow }}" --debug-output out/maestro 2>&1 | tee out/maestro.txt
+          kill -INT $(cat out/rec.pid) || true; sleep 3
+          kill $(cat out/log.pid) || true
+
+      - name: Crash reports
+        if: always()
+        run: cp ~/Library/Logs/DiagnosticReports/*Quill* out/ 2>/dev/null || echo "no crash reports"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-test
+          path: |
+            shots
+            out
+          retention-days: 7

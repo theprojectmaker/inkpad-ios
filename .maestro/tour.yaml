@@ -1,0 +1,67 @@
+# A walk through Quill on an iPad simulator: library, a new note, writing with a
+# finger, undo, scrolling, adding pages, the page sidebar, Classroom, Calculator,
+# Clock. Every step takes a screenshot (shots/*.png) so the run can be looked at.
+appId: com.solyapps.notes
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- takeScreenshot: shots/01-library
+- tapOn: "New"
+- takeScreenshot: shots/02-new-menu
+- tapOn: "Lined note"
+- waitForAnimationToEnd:
+    timeout: 4000
+- takeScreenshot: shots/03-editor
+# Fingers write (the simulator has no Apple Pencil)
+- tapOn: "More"
+- tapOn: "Draw with finger"
+- waitForAnimationToEnd
+- swipe: { start: "25%, 35%", end: "60%, 37%", duration: 500 }
+- swipe: { start: "25%, 40%", end: "55%, 46%", duration: 500 }
+- swipe: { start: "30%, 50%", end: "40%, 30%", duration: 400 }
+- takeScreenshot: shots/04-ink
+- tapOn: "Undo (or tap with two fingers)"
+- takeScreenshot: shots/05-after-undo
+# Pen options
+- tapOn: "Pen"
+- takeScreenshot: shots/06-pen-tap
+- tapOn: "Pen"
+- takeScreenshot: shots/07-pen-options
+# Fingers scroll again
+- tapOn: "More"
+- tapOn: "Draw with finger"
+- tapOn: "More"
+- tapOn: "Add a page at the end"
+- tapOn: "More"
+- tapOn: "Add a page at the end"
+- waitForAnimationToEnd
+- swipe: { start: "50%, 80%", end: "50%, 25%", duration: 600 }
+- waitForAnimationToEnd
+- takeScreenshot: shots/08-scrolled
+# Tapping the very top of the screen must not jump back to page 1
+- tapOn: { point: "50%, 1%" }
+- waitForAnimationToEnd
+- takeScreenshot: shots/09-after-top-tap
+- tapOn: "Show pages"
+- waitForAnimationToEnd
+- takeScreenshot: shots/10-page-sidebar
+- tapOn: "Study with AI"
+- waitForAnimationToEnd
+- takeScreenshot: shots/11-study
+- tapOn: "Close study"
+- tapOn: "Calculator"
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: shots/12-calculator-panel
+- tapOn: "Hide calculator"
+- tapOn: "Back to notes"
+- waitForAnimationToEnd
+- takeScreenshot: shots/13-library-after
+- tapOn: "Classroom"
+- waitForAnimationToEnd
+- takeScreenshot: shots/14-classroom
+- tapOn: "Back to notes"
+- tapOn: "Clock"
+- waitForAnimationToEnd
+- takeScreenshot: shots/15-clock
