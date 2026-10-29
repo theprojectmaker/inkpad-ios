@@ -107,13 +107,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     panGR.delegate = self
     panGR.maximumNumberOfTouches = 1
     textHost.addGestureRecognizer(panGR)
-    // Tap with two fingers to undo, three to redo (like Notability / GoodNotes).
-    for g in [undoTap, redoTap] {
-      g.delegate = self
-      g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-      canvas.addGestureRecognizer(g)
-    }
-    undoTap.require(toFail: redoTap)
+    // No finger-tap undo: a hand resting on the screen while writing counted as a
+    // two-finger tap and undid what was just written. Undo/redo are the buttons only.
     hud.font = .systemFont(ofSize: 15, weight: .semibold)
     hud.textColor = .white
     hud.textAlignment = .center

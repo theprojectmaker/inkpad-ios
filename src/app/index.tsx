@@ -35,7 +35,7 @@ export default function LibraryScreen() {
 
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'new' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder'>(null);
+  const [sheet, setSheet] = useState<null | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
 
@@ -236,6 +236,13 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           {!wide ? <IconButton name="graduationcap" label="Classroom" onPress={() => router.push('/classroom')} /> : null}
           {!wide ? <IconButton name="function" label="Calculator" onPress={() => router.push('/calculator')} /> : null}
           {!wide ? <IconButton name="clock" label="Clock" onPress={() => router.push('/clock')} /> : null}
+          {canScan() ? (
+            <Pressable onPress={() => setSheet('scan')} accessibilityLabel="Scan"
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 15, borderRadius: 19, backgroundColor: t.accent + '1A', opacity: pressed ? 0.8 : 1 })}>
+              <Icon name="doc.viewfinder" size={16} color={t.accent} />
+              <Text style={{ color: t.accent, fontSize: 15, fontWeight: '700' }}>Scan</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
             style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 15, borderRadius: 19, backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
             <Icon name="plus" size={16} color="#fff" />
@@ -291,13 +298,17 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         )}
       </View>
 
+      <MenuSheet visible={sheet === 'scan'} onClose={() => setSheet(null)} title="Scan paper" items={[
+        { label: 'Scan and clean it up (AI, works offline)', icon: 'doc.viewfinder', onPress: scanPaper },
+        { label: 'Scan and turn it into typed notes (AI)', icon: 'text.viewfinder', onPress: scanClean },
+      ]} />
       <MenuSheet visible={sheet === 'new'} onClose={() => setSheet(null)} title="New" items={[
         { label: 'Lined note', icon: 'line.3.horizontal', onPress: () => newNote('lined') },
         { label: 'Blank note', icon: 'square', onPress: () => newNote('blank') },
         { label: 'Grid note', icon: 'grid', onPress: () => newNote('grid') },
         ...(canScan() ? [
-          { label: 'Scan paper', icon: 'doc.viewfinder', onPress: scanPaper },
-          { label: 'Scan & retype with AI', icon: 'text.viewfinder', onPress: scanClean },
+          { label: 'Scan paper (AI clean-up)', icon: 'doc.viewfinder', onPress: scanPaper },
+          { label: 'Scan & turn into typed notes (AI)', icon: 'text.viewfinder', onPress: scanClean },
         ] : []),
         { label: 'Import a PDF', icon: 'doc.richtext', onPress: importPdf },
         { label: 'Import photos', icon: 'photo', onPress: importPhotos },

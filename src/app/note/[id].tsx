@@ -317,8 +317,8 @@ export default function Editor() {
         </View>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <IconButton name="arrow.uturn.backward" label="Undo (or tap with two fingers)" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
-            <IconButton name="arrow.uturn.forward" label="Redo (or tap with three fingers)" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
+            <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
+            <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
           </View>
           <View style={{ width: 1, height: 22, backgroundColor: t.line, marginHorizontal: 4 }} />
           <IconButton name="function" label={calc ? 'Hide calculator' : 'Calculator'} active={calc} onPress={() => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); }} />
