@@ -54,35 +54,44 @@ enum OnDevice {
     }
     let ext = image.extent
 
-    // 2. The paper's lighting: shrink, wipe out the writing (the paper is the brightest
-    //    thing nearby), blur; then divide the page by it so the paper turns even white.
+    // 2. Smooth out the camera's grain first, so evening out the light can't blow it up.
+    image = image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.05, "inputSharpness": 0.4])
+      .applyingFilter("CIMedianFilter").cropped(to: ext)
+
+    // 3. The paper's lighting: shrink (the writing almost vanishes), keep the brightest
+    //    nearby value (the paper), soften a little; then divide the page by it so the
+    //    paper turns even white. Tight on purpose: a wide blur lets the bright middle
+    //    leak into dark corners and turns them black.
     let k: CGFloat = 0.125
     let small = image.transformed(by: CGAffineTransform(scaleX: k, y: k))
-    let paper = small
-      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 4])
-      .applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 8])
+    let paper = small.clampedToExtent()
+      .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 1])
+      .applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 1.5])
+      .applyingFilter("CIColorClamp", parameters: [
+        "inputMinComponents": CIVector(x: 0.05, y: 0.05, z: 0.05, w: 0), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
+      ])
       .cropped(to: small.extent)
       .clampedToExtent()
       .transformed(by: CGAffineTransform(scaleX: 1 / k, y: 1 / k))
       .cropped(to: ext)
-    image = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: ext)
+    image = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+      .applyingFilter("CIMedianFilter").cropped(to: ext)
 
-    // 3. Clean, dark, sharp writing.
+    // 4. Clean, dark, sharp writing; nearly-white paper becomes pure white.
     if mode == "document" {
-      image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0, kCIInputContrastKey: 1.05])
+      image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
       image = image.applyingFilter("CIToneCurve", parameters: [
-        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.35, y: 0.12),
-        "inputPoint2": CIVector(x: 0.6, y: 0.55), "inputPoint3": CIVector(x: 0.8, y: 0.97), "inputPoint4": CIVector(x: 1, y: 1),
+        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.4, y: 0.1),
+        "inputPoint2": CIVector(x: 0.62, y: 0.6), "inputPoint3": CIVector(x: 0.8, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
       ])
     } else {
-      image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.15, kCIInputContrastKey: 1.05])
       image = image.applyingFilter("CIToneCurve", parameters: [
-        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.3, y: 0.2),
-        "inputPoint2": CIVector(x: 0.55, y: 0.5), "inputPoint3": CIVector(x: 0.85, y: 0.98), "inputPoint4": CIVector(x: 1, y: 1),
+        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.45, y: 0.3),
+        "inputPoint2": CIVector(x: 0.65, y: 0.62), "inputPoint3": CIVector(x: 0.82, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
       ])
     }
-    image = image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.01, "inputSharpness": 0.6])
-    image = image.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.55]).cropped(to: ext)
+    image = image.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.45]).cropped(to: ext)
     guard let cg = ci.createCGImage(image, from: ext) else { return input }
     return UIImage(cgImage: cg, scale: 1, orientation: .up)
   }
