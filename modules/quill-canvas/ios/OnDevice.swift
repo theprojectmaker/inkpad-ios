@@ -96,6 +96,11 @@ enum OnDevice {
         "inputPoint2": CIVector(x: 0.65, y: 0.62), "inputPoint3": CIVector(x: 0.82, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
       ])
     }
+    // A slightly blurry scan: a wide unsharp mask rebuilds soft letter edges, then a
+    // fine sharpen crisps the detail (wide first, so it doesn't amplify grain).
+    image = image.clampedToExtent()
+      .applyingFilter("CIUnsharpMask", parameters: [kCIInputRadiusKey: 3.0 * max(1, ext.width / 2200), kCIInputIntensityKey: 0.7])
+      .cropped(to: ext)
     image = image.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.45]).cropped(to: ext)
     guard let cg = ci.createCGImage(image, from: ext) else { return input }
     return UIImage(cgImage: cg, scale: 1, orientation: .up)
