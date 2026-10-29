@@ -15,7 +15,7 @@ appId: com.solyapps.notes
 - extendedWaitUntil: { visible: "zzz-never-shown", timeout: 2000, optional: true }
 - tapOn: { point: "81%, 32%" }
 - tapOn: { text: "Add", optional: true }
-- extendedWaitUntil: { visible: "More", timeout: 15000, optional: true }
+- extendedWaitUntil: { visible: "More", timeout: 60000, optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: f02-imported
 - tapOn: { text: "More", optional: true }
