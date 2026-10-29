@@ -63,6 +63,7 @@ jobs:
           echo $! > out/log.pid
           xcrun simctl io "$SIM" recordVideo --codec=h264 --force out/run.mp4 &
           echo $! > out/rec.pid
+          xcrun simctl addmedia "$SIM" .maestro/media/*.jpg || true
           sleep 2
           maestro test "${{ inputs.flow }}" --test-output-dir shots --debug-output out/maestro 2>&1 | tee out/maestro.txt
           find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ ; 2>/dev/null || true

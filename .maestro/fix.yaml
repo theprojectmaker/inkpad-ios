@@ -2,8 +2,6 @@
 # then "Fix page quality" (keeps colours) and "clean B&W document".
 appId: com.solyapps.notes
 ---
-- addMedia:
-    - media/bad-worksheet.jpg
 - launchApp:
     clearState: true
 - extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
