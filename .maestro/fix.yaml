@@ -12,9 +12,9 @@ appId: com.solyapps.notes
 - tapOn: { text: "Import photos", optional: true }
 - waitForAnimationToEnd: { timeout: 5000 }
 - takeScreenshot: f01-picker
-- tapOn: { point: "45%, 37.6%" }
+- tapOn: { point: "45%, 38%" }
 - waitForAnimationToEnd
-- tapOn: { point: "81.5%, 31.6%" }
+- tapOn: { point: "81%, 32%" }
 - extendedWaitUntil: { visible: "More", timeout: 15000, optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: f02-imported
