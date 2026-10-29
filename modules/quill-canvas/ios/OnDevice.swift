@@ -86,6 +86,11 @@ enum OnDevice {
         "inputPoint2": CIVector(x: 0.62, y: 0.6), "inputPoint3": CIVector(x: 0.8, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
       ])
     } else {
+      // Colour grain gets boosted along with the light: keep the sharp brightness, but
+      // take the colour from a smoothed copy (pen and highlighter colours survive).
+      let soft = image.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 6]).cropped(to: ext)
+        .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.85])
+      image = soft.applyingFilter("CIColorBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: ext)
       image = image.applyingFilter("CIToneCurve", parameters: [
         "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.45, y: 0.3),
         "inputPoint2": CIVector(x: 0.65, y: 0.62), "inputPoint3": CIVector(x: 0.82, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
