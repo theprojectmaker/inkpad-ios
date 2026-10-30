@@ -80,7 +80,9 @@ enum OnDevice {
 
     // 4. Clean, dark, sharp writing; nearly-white paper becomes pure white.
     if mode == "document" {
-      image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+      // Grey from the darkest colour channel, so blue or red pen turns as dark as pencil
+      // (plain brightness would make blue ink faint and broken).
+      image = image.applyingFilter("CIMinimumComponent")
       image = image.applyingFilter("CIToneCurve", parameters: [
         "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.4, y: 0.1),
         "inputPoint2": CIVector(x: 0.62, y: 0.6), "inputPoint3": CIVector(x: 0.8, y: 1), "inputPoint4": CIVector(x: 1, y: 1),

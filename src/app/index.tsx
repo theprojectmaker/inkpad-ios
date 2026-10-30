@@ -132,11 +132,8 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     const id = uid('n');
     busy('Importing photos…');
     try {
-      console.log('[quill] importPhotos picked', r.assets.length);
       const pages = await imagePages(id, r.assets.map((x) => x.uri));
-      console.log('[quill] importPhotos pages', pages.length);
       await lib.createNote({ id, folderId: currentFolderId, kind: 'image', title: defaultTitle(), pages, paper: { style: 'blank', color: 'white' } });
-      console.log('[quill] importPhotos note created');
       busy(null);
       open(id);
     } catch { busy(null); await fsx.remove(`inkpad/n/${id}`); toast("Couldn't import those photos."); }

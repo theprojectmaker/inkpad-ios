@@ -82,9 +82,7 @@ export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: st
 
 /** Saves a picked image (downscaled) into the note; returns its file name and size. */
 export async function saveImage(noteId: string, uri: string, maxSide = 2800): Promise<{ file: string; w: number; h: number }> {
-  console.log('[quill] saveImage start', uri);
   let r = await ImageManipulator.manipulateAsync(uri, [], { compress: 1 });
-  console.log('[quill] saveImage probed', r.width, r.height);
   const big = Math.max(r.width, r.height);
   if (big > maxSide) {
     const k = maxSide / big;
@@ -93,9 +91,7 @@ export async function saveImage(noteId: string, uri: string, maxSide = 2800): Pr
     r = await ImageManipulator.manipulateAsync(uri, [], { compress: 0.88, format: ImageManipulator.SaveFormat.JPEG });
   }
   const file = `img_${uid()}.jpg`;
-  console.log('[quill] saveImage copy', r.uri);
   await fsx.copyIn(r.uri, notePath(noteId, file));
-  console.log('[quill] saveImage done');
   return { file, w: r.width || 1000, h: r.height || 1000 };
 }
 
