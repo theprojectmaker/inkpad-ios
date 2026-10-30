@@ -14,7 +14,7 @@ import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages } from '@/lib/noteio';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
-import { useTheme } from '@/lib/settings';
+import { useSettings, useTheme } from '@/lib/settings';
 
 type Filter = { kind: 'all' } | { kind: 'fav' } | { kind: 'folder'; id: string };
 
@@ -31,6 +31,7 @@ export default function LibraryScreen() {
   const ins = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const lib = useLibrary();
+  const { s } = useSettings();
   const { toast, busy } = useToast();
 
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
@@ -222,6 +223,8 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap', count: due.length })}
             {sideRow('Calculator', false, () => router.push('/calculator'), { icon: 'function', count: 0 })}
             {sideRow('Clock', false, () => router.push('/clock'), { icon: 'clock', count: 0 })}
+            {s.gamesUnlocked ? sideRow('Games', false, () => router.push('/games'), { icon: 'gamecontroller', count: 0 }) : null}
+            {sideRow('Settings', false, () => router.push('/settings'), { icon: 'gearshape', count: 0 })}
             <Text style={{ color: t.faint, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginTop: 22, marginBottom: 6, paddingHorizontal: 12 }}>SUBJECTS</Text>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
@@ -239,6 +242,7 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           {!wide ? <IconButton name="graduationcap" label="Classroom" onPress={() => router.push('/classroom')} /> : null}
           {!wide ? <IconButton name="function" label="Calculator" onPress={() => router.push('/calculator')} /> : null}
           {!wide ? <IconButton name="clock" label="Clock" onPress={() => router.push('/clock')} /> : null}
+          {!wide ? <IconButton name="gearshape" label="Settings" onPress={() => router.push('/settings')} /> : null}
           {canScan() ? (
             <Pressable onPress={() => setSheet('scan')} accessibilityLabel="Scan"
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 38, paddingHorizontal: 15, borderRadius: 19, backgroundColor: t.accent + '1A', opacity: pressed ? 0.8 : 1 })}>
