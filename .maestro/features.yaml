@@ -188,7 +188,7 @@ appId: com.solyapps.notes
 - tapOn: { text: "Open another note beside", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 31-note-picker
-- tapOn: { text: "Note .*", index: 1, optional: true }
+- tapOn: { text: "Note .*", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 32-side-by-side
 - tapOn: { text: "Close second note", optional: true }
