@@ -23,6 +23,8 @@ export type CanvasHandle = {
   deletePage(index: number): Promise<void>;
   endTextEdit(): Promise<void>;
   insertPageSpace(after: number, height: number): Promise<void>;
+  pageIsEmpty(index: number): Promise<boolean>;
+  resizePage(index: number, delta: number): Promise<void>;
   movePage(from: number, to: number): Promise<void>;
   duplicatePage(index: number): Promise<void>;
   addPicture(file: string, width: number, height: number): Promise<void>;
@@ -50,6 +52,8 @@ type Props = ViewProps & {
   onDrawingChange?: (e: { nativeEvent: CanvasState }) => void;
   onPencilTap?: (e: { nativeEvent: { action: string } }) => void;
   onSelectionAction?: (e: { nativeEvent: { action: string; path?: string; text?: string } }) => void;
+  autoPage?: boolean;        // says when the last page has been written on
+  onLastPageUsed?: () => void;
   inkTaps?: boolean;         // a finger tapping ink reports when it was written
   onInkTapped?: (e: { nativeEvent: { ts: number } }) => void;
 };

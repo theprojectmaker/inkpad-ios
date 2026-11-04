@@ -246,15 +246,41 @@ export default function Editor() {
         if (!r.canceled) add = await imagePages(id, r.assets.map((x) => x.uri));
       }
       tbusy(null);
-      if (!add.length) return;
-      const first = await insertPages(add, page.page);
-      toast(add.length === 1 ? `Page ${(first ?? 0) + 1} added` : `${add.length} pages added`);
-      if (first != null) setTimeout(() => canvas.current?.scrollToPage(first), 400);
+      if (!add.length || !doc) return;
+      // The first one goes on the page you're on if nothing's on it, otherwise on the next
+      // page if that's empty; only then does it take a new page.
+      let target = -1;
+      for (const i of [page.page, page.page + 1]) {
+        const q = doc.pages[i];
+        if (q?.bg.kind === 'paper' && (await canvas.current?.pageIsEmpty(i))) { target = i; break; }
+      }
+      let first: number | undefined;
+      if (target >= 0) {
+        const old = doc.pages[target];
+        const delta = add[0].h - old.h;
+        if (delta) await canvas.current?.resizePage(target, delta);
+        // Pages after the filled one go in right behind it.
+        const rest = add.slice(1);
+        const restH = rest.reduce((h, p) => h + p.h + PAGE_GAP, 0);
+        if (rest.length && target < doc.pages.length - 1) await canvas.current?.insertPageSpace(target, restH - PAGE_GAP);
+        const pages = [...doc.pages];
+        pages.splice(target, 1, { ...add[0], id: old.id + 's' }, ...rest);
+        const next = { ...doc, pages };
+        setDoc(next);
+        await saveDoc(next);
+        lib.updateNote(id, { pages: pages.length, updated: Date.now() });
+        setVer((v) => v + 1);
+        first = target;
+      } else {
+        first = await insertPages(add, page.page);
+      }
+      toast(add.length === 1 ? `On page ${(first ?? 0) + 1}` : `${add.length} pages added`);
+      if (first != null) { const f = first; setTimeout(() => canvas.current?.scrollToPage(f), 400); }
     } catch (e) { tbusy(null); toast("Couldn't add that: " + String((e as Error)?.message ?? e)); }
   };
 
   /** A blank page like the one it follows, added at the end or right after page `after`. */
-  const addPage = async (after?: number) => {
+  const addPage = async (after?: number, quiet = false) => {
     if (!doc) return;
     const last = doc.pages[after ?? doc.pages.length - 1];
     const size = last && last.bg.kind === 'paper' ? { w: last.w, h: last.h } : pageSizeOf(doc.paper.size);
@@ -268,7 +294,7 @@ export default function Editor() {
     await saveDoc(next);
     lib.updateNote(id, { pages: next.pages.length, updated: Date.now() });
     setVer((v) => v + 1);
-    toast(at === next.pages.length - 1 ? `Page ${at + 1} added at the end` : `New page ${at + 1} inserted`);
+    if (!quiet) toast(at === next.pages.length - 1 ? `Page ${at + 1} added at the end` : `New page ${at + 1} inserted`);
   };
 
   const share = async () => {
@@ -544,7 +570,7 @@ export default function Editor() {
         <View style={{ flex: 1 }}>
           {doc ? (
             <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
-              onPencilTap={onPencilTap} onSelectionAction={onSelectionAction}
+              onPencilTap={onPencilTap} onSelectionAction={onSelectionAction} autoPage={s.autoPage !== false} onLastPageUsed={() => addPage(undefined, true)}
               inkTaps={audioOpen && !audio.rec && recordings.length > 0}
               onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && ms <= x.created + x.dur); if (r) hear(r, (ms - r.created) / 1000); }}
               drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
@@ -627,7 +653,7 @@ export default function Editor() {
         { label: 'Take a photo', icon: 'camera', onPress: () => placePhoto('camera') },
         { label: 'Paste', icon: 'doc.on.clipboard', onPress: paste },
         { label: 'Blank page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
-        ...(canScan() ? [{ label: 'Scan paper as new pages', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
+        ...(canScan() ? [{ label: 'Scan paper', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
         { label: 'Photos as new pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
       ]} />
       <MenuSheet visible={pageMenu != null} onClose={() => setPageMenu(null)} title={`Page ${(pageMenu ?? 0) + 1}`} items={pageMenu == null || !doc ? [] : (() => { const i = pageMenu; const p = doc.pages[i]; return [

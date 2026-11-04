@@ -29,6 +29,11 @@ appId: com.solyapps.notes
 - swipe: { start: "30%, 30%", end: "60%, 31%", duration: 500 }
 - tapOn: { text: "Saved pen 1", optional: true }
 - takeScreenshot: 04-saved-pens
+- swipe: { start: "50%, 80%", end: "50%, 30%", duration: 700 }
+- waitForAnimationToEnd
+- takeScreenshot: 04b-blank-page-appeared
+- swipe: { start: "50%, 30%", end: "50%, 85%", duration: 500 }
+- waitForAnimationToEnd
 # Pen options: save a pen, more colours
 - tapOn: { text: "Pen", optional: true }
 - waitForAnimationToEnd

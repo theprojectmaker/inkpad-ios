@@ -58,7 +58,12 @@ public final class QuillCanvasModule: Module {
     }
 
     View(QuillCanvasView.self) {
-      Events("onDrawingChange", "onPageChange", "onPencilTap", "onSelectionAction", "onInkTapped")
+      Events("onDrawingChange", "onPageChange", "onPencilTap", "onSelectionAction", "onInkTapped", "onLastPageUsed")
+
+      Prop("autoPage") { (view: QuillCanvasView, on: Bool) in
+        view.autoPage = on
+        view.checkLastPage()
+      }
 
       Prop("inkTaps") { (view: QuillCanvasView, on: Bool) in
         view.setInkTaps(on)
@@ -142,6 +147,14 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("insertPageSpace") { (view: QuillCanvasView, after: Int, height: Double) in
         view.insertPageSpace(after: after, height: height)
+      }.runOnQueue(.main)
+
+      AsyncFunction("pageIsEmpty") { (view: QuillCanvasView, index: Int) -> Bool in
+        return view.pageIsEmpty(index)
+      }.runOnQueue(.main)
+
+      AsyncFunction("resizePage") { (view: QuillCanvasView, index: Int, delta: Double) in
+        view.resizePage(index, delta: delta)
       }.runOnQueue(.main)
 
       AsyncFunction("movePage") { (view: QuillCanvasView, from: Int, to: Int) in

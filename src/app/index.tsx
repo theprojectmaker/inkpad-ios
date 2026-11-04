@@ -104,6 +104,13 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     (async () => {
       for (const f of fsx.list(dir)) {
         const path = `${dir}/${f}`;
+        if (f.endsWith('.jpg')) {
+          const id = uid('n');
+          const pages = await imagePages(id, [fsx.uri(path)]);
+          await lib.createNote({ id, folderId: null, kind: 'image', title: f.replace(/.jpg$/, ''), pages, paper: { style: 'blank', color: 'white' } });
+          await fsx.remove(path);
+          continue;
+        }
         const started = Date.now();
         let old = 'ok';
         try { await Promise.race([engine.info(`test/${f}`, path), new Promise((_, no) => setTimeout(() => no(new Error('timed out')), 150000))]); }

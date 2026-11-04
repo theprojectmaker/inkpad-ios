@@ -121,6 +121,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     return g
   }()
   let onPencilTap = EventDispatcher()
+  let onLastPageUsed = EventDispatcher()
+  var autoPage = false
+  var lastPageAsked = -1
   let onSelectionAction = EventDispatcher()
   let onInkTapped = EventDispatcher()
   var ruler: RulerView?
@@ -373,6 +376,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   /// Buttons stay buttons, and a finger on the ruler moves the ruler.
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    // A button on the lasso bar is a button: it must not count as tapping away from the selection.
+    if let v = touch.view, v.isDescendant(of: selBar) { return false }
     if g === inkGesture {
       if touch.view is UIControl { return false }
       if touch.type == .direct && touch.view is RulerView { return false }
@@ -604,7 +609,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     // One page at a time, so a long note never needs every page in memory at once.
     try renderer.writePDF(to: url) { ctx in
-      for (i, p) in specs.enumerated() {
+      var count = specs.count
+      while count > 1, specs[count - 1].kind == "paper", pageIsEmpty(count - 1) { count -= 1 }
+      for (i, p) in specs.prefix(count).enumerated() {
         autoreleasepool {
           let r = CGRect(x: 0, y: 0, width: p.w, height: p.h)
           ctx.beginPage(withBounds: r, pageInfo: [:])

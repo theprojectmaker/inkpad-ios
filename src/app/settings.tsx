@@ -70,6 +70,8 @@ export default function SettingsScreen() {
             right={<Switch value={!!s.fingerDraws} onValueChange={(v) => set({ fingerDraws: v })} />} />
           <Row icon="triangle" label="Shape lock" onPress={() => set({ holdToShape: s.holdToShape === false })} note="Draw a line, circle, box or triangle and hold the Pencil still: it snaps clean."
             right={<Switch value={s.holdToShape !== false} onValueChange={(v) => set({ holdToShape: v })} />} />
+          <Row icon="doc.badge.plus" label="Add pages automatically" onPress={() => set({ autoPage: s.autoPage === false })} note="Write on the last page and a blank one appears after it. An empty last page is left out when you share or hand in."
+            right={<Switch value={s.autoPage !== false} onValueChange={(v) => set({ autoPage: v })} />} />
           <Row icon="star" label="Saved pens bar" onPress={() => set({ showFavs: s.showFavs === false })} note="Your saved pens, floating at the side of the page. Save one from a pen's options."
             right={<Switch value={s.showFavs !== false} onValueChange={(v) => set({ showFavs: v })} />} />
           <Row icon="speedometer" label="Show ink speed" onPress={() => set({ inkStats: !s.inkStats })} note="Numbers on the page showing how fast the ink is on this iPad."

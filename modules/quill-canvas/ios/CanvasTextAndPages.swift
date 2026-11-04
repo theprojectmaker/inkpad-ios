@@ -308,6 +308,39 @@ extension QuillCanvasView {
     }
   }
 
+  /// Nothing written or placed on page `i` (its background doesn't count).
+  func pageIsEmpty(_ i: Int) -> Bool {
+    guard i >= 0, i < frames.count else { return false }
+    commitEdit()
+    let f = frames[i]
+    let top = f.minY - 14, bottom = f.maxY + 14
+    let inside = { (y: CGFloat) in y >= top && y < bottom }
+    return !document.strokes.contains { inside($0.bounds.midY) } && !texts.contains { inside(CGFloat($0.y)) }
+      && !pics.contains { inside(CGFloat($0.y + $0.h / 2)) } && !tapes.contains { inside(CGFloat(($0.y1 + $0.y2) / 2)) }
+  }
+
+  /// Page `i` is changing height by `delta`: everything below it moves with it.
+  func resizePage(_ i: Int, delta: Double) {
+    guard i >= 0, i < frames.count, delta != 0 else { return }
+    let below = frames[i].maxY + 14
+    let d = CGFloat(delta)
+    remapContent { $0 >= below ? d : 0 }
+  }
+
+  /// Tells the app once when the last page gets written on, so a blank page can follow it.
+  func checkLastPage() {
+    guard autoPage, let f = frames.last, frames.count != lastPageAsked, !pageIsEmptyFast(f) else { return }
+    lastPageAsked = frames.count
+    onLastPageUsed([:])
+  }
+
+  private func pageIsEmptyFast(_ f: CGRect) -> Bool {
+    let top = f.minY - 14
+    if let s = document.strokes.last, s.bounds.midY >= top { return false }
+    if document.strokes.contains(where: { $0.bounds.midY >= top }) { return false }
+    return !texts.contains { CGFloat($0.y) >= top } && !pics.contains { CGFloat($0.y + $0.h / 2) >= top }
+  }
+
   /// Moves page `from` so it becomes page `to`, with everything on it. The app then reorders its pages.
   func movePage(from: Int, to: Int) {
     guard from >= 0, from < frames.count, to >= 0, to < frames.count, from != to else { return }

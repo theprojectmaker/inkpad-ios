@@ -27,6 +27,7 @@ export type Settings = {
   tapeColor: string;
   favPens: FavPen[];
   favs: FavTool[];            // the pens saved in the floating pen bar
+  autoPage?: boolean;        // a blank page appears when you write on the last one (on by default)
   showFavs?: boolean;        // that bar is on screen (on by default)
   lastTool?: InkTool;        // for the Pencil double-tap
   lassoBox?: boolean;        // the lasso draws a rectangle

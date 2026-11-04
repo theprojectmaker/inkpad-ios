@@ -401,6 +401,7 @@ extension QuillCanvasView {
     undoStack.append(e)
     redoStack.removeAll()
     inkChanged()
+    checkLastPage()
   }
 
   func inkChanged() {
