@@ -8,6 +8,8 @@ struct ToolSpec: Record {
   @Field var kind: String = "pen"   // pen | fountain | pencil | monoline | marker | eraser | lasso
   @Field var color: String = "#111111"
   @Field var width: Double = 3
+  @Field var mode: String = ""      // eraser: partial | stroke | hl; lasso: free | box; text: the font
+  @Field var bold: Bool = false
 }
 
 struct LegacyStroke: Record {
@@ -18,7 +20,7 @@ struct LegacyStroke: Record {
 }
 
 /// A typed text box, in canvas coordinates.
-struct TextBox: Codable {
+struct TextBox: Codable, Equatable {
   var id: String
   var x: Double
   var y: Double
@@ -26,6 +28,8 @@ struct TextBox: Codable {
   var text: String
   var size: Double
   var color: String
+  var font: String? = nil
+  var bold: Bool? = nil
 }
 
 /// Fingers scroll and zoom; a finger on a lasso selection moves that instead.
@@ -60,7 +64,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   let lassoLayer = CAShapeLayer()
   var selection: [InkStroke] = []
   var selBox: CGRect = .null
-  var selDrag: (from: CGPoint, base: CGAffineTransform, sizing: Bool)?
+  var selTexts: [String] = []
+  var selPics: [String] = []
+  var selDrag: (from: CGPoint, base: CGAffineTransform, mode: SelDragMode)?
   let selOutline = CAShapeLayer()
   let selHandle = CAShapeLayer()
   let selBar = UIStackView()
@@ -79,6 +85,44 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     g.isEnabled = false
     return g
   }()
+  let pictureHost = UIView()               // photos, above the page and under the ink
+  let tapeHost = UIView()                  // tape, on top of the ink
+  var pics: [PictureObj] = []
+  var picViews: [String: UIImageView] = [:]
+  var tapes: [TapeObj] = []
+  var tapeViews: [String: UIView] = [:]
+  var tapeStart: CGPoint = .zero
+  var tapeDraft: UIView?
+  var tapeColor = "#F7B731"
+  var tapeWidth: CGFloat = 26
+  var eraserMode = "partial"
+  var lassoBox = false
+  var textFont = "system"
+  var textBold = false
+  var objBase = InkObjects(texts: [], pics: [], tapes: [])   // text, photos and tape as of the last undo step
+  var laserPts: [(CGPoint, CFTimeInterval)] = []
+  var laserBreaks: [Int] = []
+  var laserDown = false
+  var laserLink: CADisplayLink?
+  let laserLayer = CAShapeLayer()
+  lazy var tapeTap: UITapGestureRecognizer = {
+    let g = UITapGestureRecognizer(target: self, action: #selector(onTapeTap(_:)))
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    g.cancelsTouchesInView = false
+    g.delegate = self
+    return g
+  }()
+  lazy var inkTapGR: UITapGestureRecognizer = {
+    let g = UITapGestureRecognizer(target: self, action: #selector(onInkTap(_:)))
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    g.cancelsTouchesInView = false
+    g.delegate = self
+    g.isEnabled = false
+    return g
+  }()
+  let onPencilTap = EventDispatcher()
+  let onSelectionAction = EventDispatcher()
+  let onInkTapped = EventDispatcher()
   var ruler: RulerView?
   let statsLabel = UILabel()
   var dragStartOffset: CGPoint = .zero
@@ -153,6 +197,11 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     textHost.isUserInteractionEnabled = false
     canvas.addSubview(textHost)
     canvas.addSubview(ink)
+    pictureHost.isUserInteractionEnabled = false
+    pageHost.addSubview(pictureHost)
+    tapeHost.layer.anchorPoint = .zero
+    tapeHost.isUserInteractionEnabled = false
+    canvas.addSubview(tapeHost)
     ink.onLinkTick = { [weak self] in self?.inkTick() }
 
     tapGR.isEnabled = false
@@ -179,6 +228,11 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     addGestureRecognizer(inkGesture)
     addGestureRecognizer(selPan)
     addGestureRecognizer(selTap)
+    addGestureRecognizer(tapeTap)
+    addGestureRecognizer(inkTapGR)
+    let pencil = UIPencilInteraction()
+    pencil.delegate = self
+    addInteraction(pencil)
     makeSelectionUI()
 
     NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
@@ -276,6 +330,10 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       textHost.transform = tf
       textHost.layer.position = .zero
     }
+    if tapeHost.transform != tf || tapeHost.layer.position != .zero {
+      tapeHost.transform = tf
+      tapeHost.layer.position = .zero
+    }
     let content = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     if zoomView.bounds != content { zoomView.bounds = content }
     let middle = CGPoint(x: contentW * z / 2, y: contentH * z / 2)
@@ -349,7 +407,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   // MARK: - Pages
 
   func setPages(_ ps: [PageSpec]) {
-    let key = ps.map { "\($0.id)|\($0.kind)|\($0.file)|\($0.index)|\($0.w)x\($0.h)|\($0.bg)|\($0.marks.count)" }.joined(separator: ";")
+    // The marks count isn't enough: two papers can have as many lines at different places.
+    let sig = { (p: PageSpec) -> String in "\(p.marks.count)/\(p.marks.reduce(0.0) { $0 + $1.x * 3 + $1.y * 7 + $1.r })/\(p.marks.first?.color ?? "")" }
+    let key = ps.map { "\($0.id)|\($0.kind)|\($0.file)|\($0.index)|\($0.w)x\($0.h)|\($0.bg)|\(sig($0))" }.joined(separator: ";")
     if key == pagesKey { return }
     pagesKey = key
     specs = ps
@@ -369,7 +429,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     // Pages that didn't change keep their view (and its drawn tiles), so nothing flashes.
     var keep: [String: (key: String, view: PageTileView)] = [:]
     pageViews = zip(ps, fs).map { p, f in
-      let k = "\(p.kind)|\(p.file)|\(p.index)|\(p.w)x\(p.h)|\(p.bg)|\(p.marks.count)"
+      let k = "\(p.kind)|\(p.file)|\(p.index)|\(p.w)x\(p.h)|\(p.bg)|\(sig(p))"
       if let old = pageViewsById[p.id], old.key == k {
         old.view.frame = f
         old.view.layer.shadowPath = UIBezierPath(rect: CGRect(origin: .zero, size: f.size)).cgPath
@@ -393,6 +453,10 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     pageHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     textHost.transform = .identity
     textHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+    tapeHost.transform = .identity
+    tapeHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+    pictureHost.frame = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+    pageHost.bringSubviewToFront(pictureHost)
     lastPage = -1
     DispatchQueue.main.async { [weak self] in self?.reportPage() }
     if bounds.width > 1 {
@@ -422,6 +486,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       texts = boxes
       renderTexts()
     }
+    loadExtras()
   }
 
   /// Where the ink is kept, next to the drawing file of older notes.
@@ -496,12 +561,20 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if t.kind == "text" {
       textColor = t.color
       textSize = t.width
+      textFont = t.mode.isEmpty ? "system" : t.mode
+      textBold = t.bold
+      restyleEditor()
+      clearSelection()
+      selTap.isEnabled = false
       return
     }
-    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : .write
+    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : .write
     if mode != .lasso { clearSelection() }
     inkMode = mode
-    if mode == .erase { eraserWidth = max(4, w) }
+    selTap.isEnabled = mode == .lasso
+    if mode == .erase { eraserWidth = max(4, w); eraserMode = t.mode.isEmpty ? "partial" : t.mode }
+    if mode == .lasso { lassoBox = t.mode == "box" }
+    if mode == .tape { tapeColor = t.color; tapeWidth = w }
     if mode == .write { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w)) }
   }
 
@@ -532,6 +605,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
           ctx.beginPage(withBounds: r, pageInfo: [:])
           PageArt.draw(p, in: ctx.cgContext)
           if i < frames.count {
+            drawPictures(onPage: frames[i], in: ctx.cgContext)
             InkRaster.image(strokes, rect: frames[i], scale: 3)?.draw(in: r)
             drawTexts(onPage: frames[i], in: ctx.cgContext)
           }

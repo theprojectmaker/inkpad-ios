@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
-import type { FavPen, PenType, ShapeKind } from './model';
+import type { FavPen, PageSizeId, PaperColor, PaperStyle, PenType, ShapeKind } from './model';
 
 export type Sort = 'updated' | 'created' | 'title';
 export type Settings = {
@@ -20,12 +20,20 @@ export type Settings = {
   tabs: string[];           // open note tabs
   penColor: string; penWidth: number;
   hlColor: string; hlWidth: number;
-  eraser: 'stroke' | 'partial'; eraserSize: number;
+  eraser: 'stroke' | 'partial' | 'hl'; eraserSize: number;
   textSize: number;
   recentColors: string[];
   shapeKind: ShapeKind;
   tapeColor: string;
   favPens: FavPen[];
+  favs: FavTool[];            // the pens saved in the floating pen bar
+  showFavs?: boolean;        // that bar is on screen (on by default)
+  lastTool?: InkTool;        // for the Pencil double-tap
+  lassoBox?: boolean;        // the lasso draws a rectangle
+  tapeSize?: number;         // 0 | 1 | 2
+  textFont?: string;         // system | serif | mono | hand | round
+  textBold?: boolean;
+  defaultPaper?: { style: PaperStyle; color: PaperColor; size?: PageSizeId };
   inkKind: InkTool;          // the PencilKit tool picked in the editor
   inkSize: number;           // 0 | 1 | 2
   penStyle: PenStyle;        // which pen the Pen tool uses
@@ -35,7 +43,8 @@ export type Settings = {
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };
-export type InkTool = 'pen' | 'marker' | 'eraser' | 'lasso' | 'text';
+export type InkTool = 'pen' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser';
+export type FavTool = { kind: 'pen' | 'marker'; style: PenStyle; color: string; size: number };
 export type PenStyle = 'pen' | 'felt' | 'fountain' | 'pencil';
 
 const DEFAULTS: Settings = {
@@ -50,6 +59,12 @@ const DEFAULTS: Settings = {
   shapeKind: 'arrow',
   tapeColor: '#F7B731',
   favPens: [],
+  favs: [
+    { kind: 'pen', style: 'pen', color: '#111111', size: 1 },
+    { kind: 'pen', style: 'pen', color: '#1E5EFF', size: 1 },
+    { kind: 'pen', style: 'pen', color: '#E5322D', size: 1 },
+    { kind: 'marker', style: 'pen', color: '#FFE14D', size: 1 },
+  ],
   inkKind: 'pen', inkSize: 1, fingerDraws: false, penStyle: 'pen', textSizeIdx: 1,
 };
 

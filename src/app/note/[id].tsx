@@ -1,28 +1,36 @@
 // Editor, laid out like Notability: back / pages / title on the left, the
-// tools in the middle, undo / redo / more on the right; a thin strip below
-// with the tool's options; an optional page sidebar; the PencilKit canvas.
+// tools in the middle, insert / audio / undo / redo / more on the right; the tool's
+// options on a card; an optional page sidebar; the ink canvas; panels beside it.
 import * as ImagePicker from 'expo-image-picker';
+import * as Sharing from 'expo-sharing';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
-import { currentTool, ToolButtons, ToolStrip } from '@/components/ink-bar';
+import { AudioBar, transcribe, TranscriptPanel, useNoteAudio } from '@/components/audio-bar';
+import { FindPanel } from '@/components/find-panel';
+import { currentTool, FavBar, ToolButtons, ToolStrip } from '@/components/ink-bar';
+import { Markdown } from '@/components/markdown';
+import { PaperSheet } from '@/components/paper-sheet';
+import { NotePicker, SideNote } from '@/components/side-note';
 import { PageSidebar } from '@/components/page-sidebar';
 import { StudyPanel } from '@/components/study-panel';
 import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
-import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
+import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
+import { askStudy } from '@/lib/ai';
+import { loadPageText, pageTextToSearch, readPages, snapPages } from '@/lib/handindex';
 import { dueLabel, handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
 import { ensureGoogle, saveToDrive } from '@/lib/drive';
-import { sharePdf } from '@/lib/export';
+import { shareImage, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
-import { type NoteDoc, type Page, paperPage, pageSizeOf, uid } from '@/lib/model';
+import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
-import { imagePages, loadDoc, notePath, saveDoc } from '@/lib/noteio';
+import { imagePages, loadDoc, notePath, renderDir, saveDoc, saveImage } from '@/lib/noteio';
 import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -90,6 +98,20 @@ export default function Editor() {
   const [ver, setVer] = useState(0);            // bumps when ink changes (page thumbnails redraw)
   const [delPage, setDelPage] = useState<number | null>(null);
   const [handInPdf, setHandInPdf] = useState<{ path: string; title: string } | null>(null);
+  const [insert, setInsert] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [delRec, setDelRec] = useState<string | null>(null);
+  const [find, setFind] = useState(false);
+  const [second, setSecond] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [focus, setFocus] = useState(false);
+  const [pageMenu, setPageMenu] = useState<number | null>(null);
+  const [paperFor, setPaperFor] = useState<number | null>(null);
+  const [jump, setJump] = useState(false);
+  const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
+  const audio = useNoteAudio(id, toast);
   // Leaving the text tool finishes the text being typed.
   useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
   const meta = lib.lib.notes.find((n) => n.id === id);
@@ -126,6 +148,9 @@ export default function Editor() {
   }, [id, lib]);
 
   const changed = useRef(false);          // written on since it was opened (or last saved to Drive)
+  const pageNow = useRef(0);
+  pageNow.current = page.page;
+  const dirtyPages = useRef(new Set<number>());   // written on since they were last read for search
   // Re-renders only when undo/redo availability flips: re-drawing this screen
   // after every stroke made the next stroke start late.
   const onChange = useCallback((e: { nativeEvent: CanvasState }) => {
@@ -133,6 +158,7 @@ export default function Editor() {
     setSt((p) => (p.canUndo === n.canUndo && p.canRedo === n.canRedo ? p : n));
     changed.current = true;
     thumbStale.current = true;
+    dirtyPages.current.add(pageNow.current);
     setOpts((o) => (o ? false : o));
   }, []);
 
@@ -169,13 +195,24 @@ export default function Editor() {
   const back = async () => {
     if (leaving.current) return;
     leaving.current = true;
+    if (audio.rec) await stopRecording();
     try { await canvas.current?.save(); } catch {}
+    // Handwriting search: pictures of what changed now, and they're read after the note closes.
+    let shots: { pageId: string; path: string }[] = [];
+    try {
+      if (doc) {
+        const have = await loadPageText(id);
+        const unread = doc.pages.flatMap((p, i) => (have[p.id] ? [] : [i])).slice(0, 6);
+        shots = await snapPages(id, doc, [...new Set([...dirtyPages.current, ...unread])], canvas.current, absPath);
+      }
+    } catch {}
     if (thumbStale.current || !meta?.thumb) { thumbStale.current = false; await makeThumb(); }
     // Keep Drive up to date: the PDF is made here (it needs the page), the upload finishes in the background.
     let pending: { path: string; title: string } | null = null;
     if (changed.current && (s.driveSync || meta?.drive)) { try { pending = await makePdf(); } catch {} }
     if (router.canGoBack()) router.back(); else router.replace('/');
     if (pending) uploadPdf(pending, true).catch(() => toast("Couldn't update the copy in Google Drive. It'll try again next time."));
+    if (shots.length && doc) readPages(id, shots).then((t) => lib.updateNote(id, { hand: pageTextToSearch(t, doc.pages.map((p) => p.id)) })).catch(() => {});
   };
 
   /** Puts new pages right after page `after` (or at the end); ink below them moves down. */
@@ -277,7 +314,7 @@ export default function Editor() {
       await saveDoc(next);
       lib.updateNote(id, { updated: Date.now() });
       setVer((v) => v + 1);
-      fsx.remove(notePath(id, old));
+      if (!next.pages.some((q) => q.bg.kind === 'image' && q.bg.file === old)) fsx.remove(notePath(id, old));
       toast(mode === 'document' ? `Page ${i + 1} is now a clean black & white document` : `Page ${i + 1} cleaned up`);
     } catch (e) { toast("Couldn't improve that page: " + String((e as Error)?.message ?? e)); }
     finally { setBusy(false); }
@@ -294,6 +331,141 @@ export default function Editor() {
     toast(`Page ${i + 1} deleted`);
   };
 
+  // ----- audio -----
+  const recordings = doc?.recordings ?? [];
+  const startRecording = async () => { if (await audio.start()) { setAudioOpen(true); audio.unload(); } };
+  const stopRecording = async () => {
+    const r = await audio.stop();
+    if (!r || !doc) return;
+    const next = { ...doc, recordings: [...(doc.recordings ?? []), r] };
+    setDoc(next);
+    await saveDoc(next);
+    lib.updateNote(id, { audio: next.recordings!.length });
+    audio.load(r);
+  };
+  const setRecordings = async (list: Recording[]) => {
+    if (!doc) return;
+    const next = { ...doc, recordings: list };
+    setDoc(next);
+    await saveDoc(next);
+    lib.updateNote(id, { audio: list.length, said: list.flatMap((r) => (r.transcript ?? []).map((l) => l.text)).join(' ').slice(0, 12000) });
+  };
+  const deleteRecording = async (rid: string) => {
+    const r = recordings.find((x) => x.id === rid);
+    if (audio.loaded?.id === rid) audio.unload();
+    await setRecordings(recordings.filter((x) => x.id !== rid));
+    if (r) fsx.remove(notePath(id, r.file));
+  };
+  const makeTranscript = async () => {
+    const r = audio.loaded;
+    if (!r || transcribing) return;
+    setTranscribing(true);
+    try {
+      const lines = await transcribe(id, r);
+      await setRecordings(recordings.map((x) => (x.id === r.id ? { ...x, transcript: lines } : x)));
+      audio.load({ ...r, transcript: lines });
+    } catch (e) { toast(String((e as Error)?.message ?? e)); }
+    finally { setTranscribing(false); }
+  };
+  const hear = (r: Recording, seconds: number) => {
+    setAudioOpen(true);
+    audio.load(r);
+    // A moment before, so the start of the sentence isn't lost.
+    setTimeout(() => { audio.seek(Math.max(0, seconds * 1000 - 1500)); audio.play(); }, 180);
+  };
+  // Note Replay: ink written later in the recording shows faintly until it's reached.
+  const cur = audio.loaded;
+  const position = cur ? audio.status.currentTime : 0;
+  const replaying = !!cur && audioOpen && !audio.rec && (audio.status.playing || position > 0.1);
+  useEffect(() => {
+    if (replaying && cur) canvas.current?.setReplay(cur.created / 1000 + position, cur.created / 1000, (cur.created + cur.dur) / 1000);
+    else canvas.current?.setReplay(-1, 0, 0);
+  }, [replaying, cur, position]);
+
+  // ----- pages -----
+  const savePages = async (pages: Page[]) => {
+    if (!doc) return;
+    const next = { ...doc, pages };
+    setDoc(next);
+    await saveDoc(next);
+    lib.updateNote(id, { pages: pages.length, updated: Date.now() });
+    setVer((v) => v + 1);
+  };
+  const movePage = async (i: number, to: number) => {
+    if (!doc || to < 0 || to >= doc.pages.length) return;
+    await canvas.current?.movePage(i, to);
+    const list = [...doc.pages];
+    const [p] = list.splice(i, 1);
+    list.splice(to, 0, p);
+    await savePages(list);
+    toast(`Now page ${to + 1}`);
+  };
+  const duplicatePage = async (i: number) => {
+    if (!doc) return;
+    await canvas.current?.duplicatePage(i);
+    const list = [...doc.pages];
+    list.splice(i + 1, 0, { ...doc.pages[i], id: uid('p') });
+    await savePages(list);
+    toast(`Page ${i + 2} is a copy of page ${i + 1}`);
+  };
+  const shareCurrentPage = async (i: number) => {
+    try {
+      const path = `${renderDir(id)}/page_${i + 1}.jpg`;
+      if (!(await canvas.current?.pageThumb(i, absPath(path), 1224))) throw new Error('no picture');
+      await shareImage(path);
+    } catch (e) { toast("Couldn't share that page: " + String((e as Error)?.message ?? e)); }
+  };
+
+  // ----- things placed on the page -----
+  const placePhoto = async (from: 'library' | 'camera') => {
+    try {
+      let uri = '';
+      if (from === 'camera') {
+        const p = await ImagePicker.requestCameraPermissionsAsync();
+        if (!p.granted) { toast('Allow the camera for Quill in Settings.'); return; }
+        const r = await ImagePicker.launchCameraAsync({ quality: 0.9 });
+        if (!r.canceled) uri = r.assets[0]?.uri ?? '';
+      } else {
+        const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+        if (!r.canceled) uri = r.assets[0]?.uri ?? '';
+      }
+      if (!uri) return;
+      const im = await saveImage(id, uri);
+      set({ inkKind: 'lasso', lastTool: s.inkKind });
+      await canvas.current?.addPicture(im.file, im.w, im.h);
+    } catch (e) { toast("Couldn't add that photo: " + String((e as Error)?.message ?? e)); }
+  };
+  const paste = async () => {
+    set({ inkKind: 'lasso', lastTool: s.inkKind === 'lasso' ? s.lastTool : s.inkKind });
+    setOpts(false);
+    await canvas.current?.paste();
+  };
+  const onSelectionAction = async (e: { nativeEvent: { action: string; path?: string; text?: string } }) => {
+    const { action, path, text } = e.nativeEvent;
+    if (action === 'message' && text) toast(text);
+    else if (action === 'share' && path) Sharing.shareAsync('file://' + path, { mimeType: 'image/jpeg', UTI: 'public.jpeg' }).catch(() => {});
+    else if (action === 'explain' && path) {
+      setExplain({ busy: true, text: '' });
+      try {
+        const r = await askStudy('explain', ['file://' + path]);
+        setExplain({ busy: false, text: r.text ?? 'No answer came back.' });
+      } catch (err) { setExplain({ busy: false, text: String((err as Error)?.message ?? err) }); }
+    }
+  };
+  // The Apple Pencil's double-tap does what's set for it in the iPad's Settings.
+  const onPencilTap = (e: { nativeEvent: { action: string } }) => {
+    const kind = s.inkKind ?? 'pen';
+    const a = e.nativeEvent.action;
+    if (a === 'eraser') {
+      if (kind === 'eraser') set({ inkKind: s.lastTool && s.lastTool !== 'eraser' ? s.lastTool : 'pen', lastTool: 'eraser' });
+      else set({ inkKind: 'eraser', lastTool: kind });
+    } else if (a === 'previous') set({ inkKind: s.lastTool && s.lastTool !== kind ? s.lastTool : kind === 'pen' ? 'eraser' : 'pen', lastTool: kind });
+    else if (a === 'options') setOpts((v) => !v);
+  };
+  const closePanels = () => { setCalc(false); setStudy(false); setFind(false); setTranscriptOpen(false); };
+  const onLast = doc ? page.page >= doc.pages.length - 1 : false;
+  const paperPageNow = paperFor != null ? doc?.pages[paperFor] : null;
+
   const narrow = width < 1000;   // labels hide, so the three parts of the bar never touch
   const subjectName = lib.lib.folders.find((f) => f.id === meta?.folderId)?.name;
   return (
@@ -301,7 +473,7 @@ export default function Editor() {
       <Stack.Screen options={{ gestureEnabled: false }} />
       {/* Three parts that never overlap: you and the note on the left, the pens in
           the middle, page actions on the right. */}
-      <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 8 }}>
+      {focus ? null : <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 8 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
           <IconButton name="chevron.left" label="Back to notes" onPress={back} />
           <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} />
@@ -319,14 +491,16 @@ export default function Editor() {
         </View>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <IconButton name="plus.circle" label="Insert" onPress={() => setInsert(true)} />
+            <IconButton name={audio.rec ? 'waveform' : 'mic'} label="Audio" active={audioOpen || !!audio.rec} color={audio.rec ? '#E5322D' : undefined} onPress={() => setAudioOpen((v) => !v || !!audio.rec)} />
             <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
             <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
           </View>
           {calc || study ? <IconButton name="xmark" label={calc ? 'Close calculator' : 'Close Study'} onPress={() => { setCalc(false); setStudy(false); }} /> : null}
           <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
         </View>
-      </View>
-      {meta?.hw ? (
+      </View>}
+      {meta?.hw && !focus ? (
         // Homework: which assignment this is for, and Hand in, out of the way of the tools.
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, height: 40, backgroundColor: t.dark ? '#13281B' : '#EAF6EE', borderBottomWidth: 1, borderBottomColor: t.line }}>
           <Icon name="graduationcap" size={15} color="#1E8E3E" />
@@ -346,20 +520,51 @@ export default function Editor() {
       <View style={{ flex: 1, flexDirection: 'row' }}>
         {sidebar && doc ? (
           <PageSidebar noteId={id} pages={doc.pages} current={page.page} ver={ver} canvas={canvas} absPath={absPath}
-            onJump={(i) => canvas.current?.scrollToPage(i)} onDelete={(i) => { if (doc.pages.length > 1) setDelPage(i); else toast("A note needs at least one page."); }} onAdd={() => addPage()} />
+            onJump={(i) => canvas.current?.scrollToPage(i)} onMenu={setPageMenu} onAdd={() => addPage()} />
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
             <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
+              onPencilTap={onPencilTap} onSelectionAction={onSelectionAction}
+              inkTaps={audioOpen && !audio.rec && recordings.length > 0}
+              onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && ms <= x.created + x.dur); if (r) hear(r, (ms - r.created) / 1000); }}
               drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
               onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
-          {page.count > 1 ? (
-            <View pointerEvents="none" style={{ position: 'absolute', right: 14, bottom: 14, backgroundColor: 'rgba(20,22,28,0.72)', borderRadius: 12, paddingHorizontal: 10, height: 24, justifyContent: 'center' }}>
-              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{page.page + 1} / {page.count}</Text>
+          <FavBar />
+          {focus ? (
+            <View style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', backgroundColor: t.elev, borderRadius: 20, paddingHorizontal: 4 }}>
+              <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
+              <IconButton name="arrow.down.right.and.arrow.up.left" label="Leave focus mode" onPress={() => setFocus(false)} />
             </View>
           ) : null}
+          {!audioOpen ? (
+            <View pointerEvents="box-none" style={{ position: 'absolute', right: 14, bottom: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {onLast ? (
+                <Pressable accessibilityLabel="New page" onPress={() => addPage()} style={{ height: 28, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', backgroundColor: 'rgba(20,22,28,0.72)' }}>
+                  <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>+ New page</Text>
+                </Pressable>
+              ) : null}
+              {page.count > 1 ? (
+                <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ backgroundColor: 'rgba(20,22,28,0.72)', borderRadius: 14, paddingHorizontal: 10, height: 28, justifyContent: 'center' }}>
+                  <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>{page.page + 1} / {page.count}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          {audioOpen ? (
+            <AudioBar audio={audio} noteId={id} recs={recordings} onStartRec={startRecording} onStopRec={stopRecording} onDelete={setDelRec}
+              onTranscript={() => { closePanels(); setTranscriptOpen(true); }} onClose={() => { audio.unload(); setAudioOpen(false); setTranscriptOpen(false); }} />
+          ) : null}
         </View>
+        {second ? <View style={{ flex: 1 }}><SideNote noteId={second} tool={tool} fingerDraws={!!s.fingerDraws} onSwap={() => setPicking(true)} onClose={() => setSecond(null)} /></View> : null}
+        {find && doc ? (
+          <FindPanel noteId={id} doc={doc} canvas={canvas} absPath={absPath} stale={() => { const d = [...dirtyPages.current]; dirtyPages.current.clear(); return d; }} onRead={() => {}}
+            onHear={(r, sec) => hear(r, sec)} onClose={() => setFind(false)} />
+        ) : null}
+        {transcriptOpen && cur ? (
+          <TranscriptPanel rec={recordings.find((x) => x.id === cur.id) ?? cur} busy={transcribing} pos={position * 1000} onMake={makeTranscript} onSeek={(ms) => { audio.seek(ms); audio.play(); }} onClose={() => setTranscriptOpen(false)} />
+        ) : null}
         {calcLoaded ? (
           <View style={{ width: calc ? Math.min(460, width * 0.42) : 0, overflow: 'hidden', borderLeftWidth: calc ? 1 : 0, borderLeftColor: t.line }}>
             <Desmos compact onClose={() => setCalc(false)} />
@@ -372,14 +577,15 @@ export default function Editor() {
         <>
           <Pressable accessibilityLabel="Close pen options" onPress={() => setOpts(false)} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, top: ins.top + 56 }} />
           <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: ins.top + 52, alignItems: 'center', paddingHorizontal: 12 }}>
-            <ToolStrip floating />
+            <ToolStrip floating onPaste={paste} onTape={(w) => { setOpts(false); if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
           </View>
         </>
       ) : null}
       <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
-        { label: 'Add a page', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
-        ...(canScan() ? [{ label: 'Scan paper into this note', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
-        { label: 'Add photos as pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
+        { label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
+        { label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
+        { label: 'Focus mode', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
+        { label: 'Change this page\'s paper', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
         ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
           { label: 'Fix page quality (keep colours)', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
           { label: 'Make it a clean B&W document', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
@@ -389,12 +595,43 @@ export default function Editor() {
           { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
         { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
+        { label: 'Share this page as a picture', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
         { label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
-        { label: 'Calculator', icon: 'function', checked: calc, onPress: () => { setCalcLoaded(true); setCalc((v) => !v); setStudy(false); } },
-        { label: 'Study with AI', icon: 'sparkles', checked: study, onPress: () => { setStudy((v) => !v); setCalc(false); } },
+        { label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
+        { label: 'Study with AI', icon: 'sparkles', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
         { label: 'Ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
         { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />
+      <MenuSheet visible={insert} onClose={() => setInsert(false)} title="Insert" items={[
+        { label: 'Photo on this page', icon: 'photo', onPress: () => placePhoto('library') },
+        { label: 'Take a photo', icon: 'camera', onPress: () => placePhoto('camera') },
+        { label: 'Paste', icon: 'doc.on.clipboard', onPress: paste },
+        { label: 'Blank page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
+        ...(canScan() ? [{ label: 'Scan paper as new pages', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
+        { label: 'Photos as new pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
+      ]} />
+      <MenuSheet visible={pageMenu != null} onClose={() => setPageMenu(null)} title={`Page ${(pageMenu ?? 0) + 1}`} items={pageMenu == null || !doc ? [] : (() => { const i = pageMenu; const p = doc.pages[i]; return [
+        { label: p?.mark ? 'Remove bookmark' : 'Bookmark', icon: p?.mark ? 'bookmark.slash' : 'bookmark', onPress: () => savePages(doc.pages.map((q, k) => { if (k !== i) return q; const { mark: _m, ...rest } = q; return p?.mark ? rest : { ...rest, mark: 1 as const }; })) },
+        ...(i > 0 ? [{ label: 'Move up', icon: 'arrow.up', onPress: () => movePage(i, i - 1) }] : []),
+        ...(i < doc.pages.length - 1 ? [{ label: 'Move down', icon: 'arrow.down', onPress: () => movePage(i, i + 1) }] : []),
+        { label: 'Duplicate', icon: 'plus.square.on.square', onPress: () => duplicatePage(i) },
+        { label: 'Add a page after', icon: 'doc.badge.plus', onPress: () => addPage(i) },
+        ...(p?.bg.kind === 'paper' ? [{ label: 'Change paper', icon: 'doc.plaintext', onPress: () => setPaperFor(i) }] : []),
+        { label: 'Share as a picture', icon: 'square.and.arrow.up', onPress: () => shareCurrentPage(i) },
+        { label: 'Delete', icon: 'trash', danger: true, onPress: () => { if (doc.pages.length > 1) setDelPage(i); else toast('A note needs at least one page.'); } },
+      ]; })()} />
+      <PaperSheet visible={paperFor != null} title="Paper for this page" confirm="Use this paper"
+        style={paperPageNow?.bg.kind === 'paper' ? paperPageNow.bg.style : undefined} color={paperPageNow?.bg.kind === 'paper' ? paperPageNow.bg.color : undefined}
+        onClose={() => setPaperFor(null)}
+        onDone={(style: PaperStyle, color: PaperColor) => { const i = paperFor; setPaperFor(null); if (doc && i != null) savePages(doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'paper' as const, style, color } } : q))); }} />
+      <NotePicker visible={picking} exclude={id} onClose={() => setPicking(false)} onPick={(n) => { setPicking(false); setSecond(n.id); }} />
+      <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
+        onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />
+      <ConfirmSheet visible={delRec != null} title="Delete this recording?" message="Your writing stays. The audio and its transcript are removed." onCancel={() => setDelRec(null)}
+        onConfirm={() => { const r = delRec; setDelRec(null); if (r) deleteRecording(r); }} />
+      <Sheet visible={!!explain} onClose={() => setExplain(null)} title="Explain" width={520}>
+        {explain?.busy ? <View style={{ padding: 30, alignItems: 'center' }}><ActivityIndicator color={t.accent} /></View> : <Markdown text={explain?.text ?? ''} />}
+      </Sheet>
       <HandInSheet pdf={handInPdf} onClose={() => setHandInPdf(null)}
         onDrive={async () => { if (!handInPdf) return false; try { await ensureGoogle(); await uploadPdf(handInPdf); return true; } catch { return false; } }}
         onSave={() => handInPdf && sendToClassroom(handInPdf.path, handInPdf.title).catch((e) => toast(String(e?.message ?? e)))}

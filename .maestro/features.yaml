@@ -1,0 +1,222 @@
+# Walks through the Notability-style features on an iPad simulator: every step takes
+# a screenshot; steps are optional so one miss doesn't stop the walk.
+appId: com.solyapps.notes
+---
+- launchApp:
+    clearState: true
+    permissions: { all: allow }
+- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- tapOn: { text: "Settings", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Draw with finger", optional: true }
+- takeScreenshot: 01-settings
+- tapOn: { text: "Back to notes", optional: true }
+# New note: the full paper chooser
+- tapOn: "New"
+- tapOn: { text: "More paper.*", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 02-paper-chooser
+- tapOn: { text: "Create", optional: true }
+- extendedWaitUntil: { visible: "More", timeout: 8000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 03-editor-tools
+# Writing, saved pens bar
+- swipe: { start: "25%, 30%", end: "60%, 32%", duration: 500 }
+- swipe: { start: "25%, 36%", end: "55%, 40%", duration: 500 }
+- tapOn: { text: "Saved pen 2", optional: true }
+- swipe: { start: "30%, 46%", end: "60%, 48%", duration: 500 }
+- tapOn: { text: "Saved pen 4", optional: true }
+- swipe: { start: "30%, 30%", end: "60%, 31%", duration: 500 }
+- tapOn: { text: "Saved pen 1", optional: true }
+- takeScreenshot: 04-saved-pens
+# Pen options: save a pen, more colours
+- tapOn: { text: "Pen", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 05-pen-options
+- tapOn: { text: "More colours", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 05b-colour-palette
+- tapOn: { text: "Colour #.*", index: 40, optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Save pen.*", optional: true }
+- takeScreenshot: 05c-saved
+- tapOn: { point: "70%, 80%" }
+# Box lasso on the writing, then each thing the lasso can do
+- tapOn: { text: "Lasso", optional: true }
+- tapOn: { text: "Lasso", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Box", optional: true }
+- takeScreenshot: 06-lasso-options
+- tapOn: { point: "70%, 80%" }
+- swipe: { start: "20%, 26%", end: "66%, 44%", duration: 600 }
+- waitForAnimationToEnd
+- takeScreenshot: 07-selected
+- tapOn: { text: "Colour", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 08-colour-menu
+- tapOn: { text: "Red", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 08b-recoloured
+- tapOn: { text: "Duplicate", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 09-duplicated
+- tapOn: { text: "Copy", optional: true }
+- tapOn: { text: "Delete", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 10-deleted
+- tapOn: { text: "Undo", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 10b-undo
+# Paste
+- tapOn: { text: "Insert", optional: true }
+- tapOn: { text: "Paste", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 11-pasted
+- tapOn: { point: "85%, 85%" }
+# Tape
+- tapOn: { text: "Tape", optional: true }
+- swipe: { start: "24%, 32%", end: "60%, 32%", duration: 500 }
+- waitForAnimationToEnd
+- takeScreenshot: 12-tape
+- tapOn: { point: "40%, 32%" }
+- waitForAnimationToEnd
+- takeScreenshot: 12b-tape-revealed
+- tapOn: { point: "40%, 32%" }
+- tapOn: { text: "Tape", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 12c-tape-options
+- tapOn: { point: "70%, 80%" }
+# Laser (the trail fades, so the picture is taken mid-way)
+- tapOn: { text: "Laser pointer", optional: true }
+- swipe: { start: "30%, 60%", end: "70%, 62%", duration: 700 }
+- takeScreenshot: 13-laser
+# Eraser modes
+- tapOn: { text: "Eraser", optional: true }
+- tapOn: { text: "Eraser", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 14-eraser-options
+- tapOn: { text: "Whole line", optional: true }
+- tapOn: { point: "70%, 85%" }
+# Typed text with a font
+- tapOn: { text: "Text", optional: true }
+- tapOn: { text: "Text", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Hand", optional: true }
+- takeScreenshot: 15-text-options
+- tapOn: { point: "70%, 85%" }
+- tapOn: { point: "40%, 66%" }
+- inputText: "Typed note"
+- tapOn: { point: "75%, 88%" }
+- waitForAnimationToEnd
+- takeScreenshot: 15b-text
+- tapOn: { text: "Pen", optional: true }
+# Audio: record while writing, play it back (ink replays), transcript
+- tapOn: { text: "Audio", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 16-audio-bar
+- tapOn: { text: "Record", optional: true }
+- waitForAnimationToEnd
+- swipe: { start: "30%, 72%", end: "60%, 74%", duration: 800 }
+- swipe: { start: "30%, 76%", end: "60%, 78%", duration: 800 }
+- takeScreenshot: 17-recording
+- tapOn: { text: "Stop recording", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 18-recorded
+- tapOn: { text: "Play", optional: true }
+- takeScreenshot: 19-replay
+- tapOn: { text: "Pause", optional: true }
+- tapOn: { text: "Transcript", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 20-transcript-panel
+- tapOn: { text: "Make transcript", optional: true }
+- waitForAnimationToEnd: { timeout: 8000 }
+- takeScreenshot: 20b-transcript
+- tapOn: { text: "Close transcript", optional: true }
+- tapOn: { text: "Close audio", optional: true }
+# Insert menu, more menu, pages
+- tapOn: { text: "Insert", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 21-insert-menu
+- tapOn: { text: "Blank page after.*", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "New page", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 22-new-page-button
+- tapOn: { text: "Show pages", optional: true }
+- waitForAnimationToEnd
+- longPressOn: { text: "Page 1", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 23-page-menu
+- tapOn: { text: "Bookmark", optional: true }
+- waitForAnimationToEnd
+- longPressOn: { text: "Page 1", optional: true }
+- tapOn: { text: "Move down", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 24-page-moved
+- longPressOn: { text: "Page 2", optional: true }
+- tapOn: { text: "Duplicate", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 25-page-duplicated
+- longPressOn: { text: "Page 3", optional: true }
+- tapOn: { text: "Change paper", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 26-page-paper
+- tapOn: { text: "Use this paper", optional: true }
+- tapOn: { text: "Hide pages", optional: true }
+- tapOn: { text: "More", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 27-more-menu
+- tapOn: { text: "Find in this note", optional: true }
+- waitForAnimationToEnd: { timeout: 6000 }
+- inputText: "Typed"
+- waitForAnimationToEnd
+- takeScreenshot: 28-find
+- tapOn: { text: "Close find", optional: true }
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Focus mode", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 29-focus
+- tapOn: { text: "Leave focus mode", optional: true }
+# A second note, then one beside it
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 30-library
+- tapOn: "New"
+- tapOn: { text: "Grid note", optional: true }
+- extendedWaitUntil: { visible: "More", timeout: 8000, optional: true }
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Open another note beside", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 31-note-picker
+- tapOn: { text: "Note .*", index: 1, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 32-side-by-side
+- tapOn: { text: "Close second note", optional: true }
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+# Library: list view, sort, search, Recently Deleted
+- tapOn: { text: "Show as list", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 33-list
+- tapOn: { text: "Sort", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 34-sort
+- tapOn: { text: "Title", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Search", optional: true }
+- inputText: "Typed"
+- waitForAnimationToEnd: { timeout: 3000 }
+- takeScreenshot: 35-search-found
+- eraseText: 6
+- longPressOn: { text: "Note .*", optional: true }
+- tapOn: { text: "Delete", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Delete", index: 1, optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Recently Deleted", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 36-recently-deleted
+- tapOn: { text: "Note .*", optional: true }
+- tapOn: { text: "Restore", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 37-restored

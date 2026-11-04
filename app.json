@@ -12,7 +12,8 @@
       "requireFullScreen": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "CFBundleDisplayName": "Quill"
+        "CFBundleDisplayName": "Quill",
+        "NSSpeechRecognitionUsageDescription": "Quill turns a recording you made into a transcript you can read and search."
       }
     },
     "web": {
@@ -30,7 +31,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Quill uses the microphone only while you tap Record, to save audio with your notes."
+          "microphonePermission": "Quill uses the microphone only while you tap Record, to save audio with your notes.",
+          "enableBackgroundRecording": true
         }
       ],
       [

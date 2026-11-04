@@ -7,9 +7,10 @@ import UIKit.UIGestureRecognizerSubclass
 struct InkEdit {
   var removed: [InkStroke]
   var added: [InkStroke]
+  var objects: (before: InkObjects, after: InkObjects)? = nil
 }
 
-enum InkMode { case write, erase, lasso }
+enum InkMode { case write, erase, lasso, tape, laser }
 
 /// Reports the Pencil (and a finger, if allowed) the instant it touches, with no waiting.
 final class InkGesture: UIGestureRecognizer {
@@ -72,6 +73,7 @@ final class PenCapture {
   var triedSnap = false
   var snap: (points: [CGPoint], closed: Bool, centre: CGPoint, anchor: CGPoint)?
   var rulerEdge: CGFloat?
+  let startedAt = Date().timeIntervalSince1970   // when it was written, to line up with a recording
 
   init(pen: InkPen, seq: UInt32, zoom: CGFloat, at p: CGPoint, time: TimeInterval) {
     self.pen = pen
@@ -240,6 +242,8 @@ extension QuillCanvasView {
     case .write: beginStroke(t, event, p)
     case .erase: beginErase(p)
     case .lasso: beginLasso(p)
+    case .tape: beginTape(p)
+    case .laser: laserDown = true; beginLaser(p)
     }
   }
 
@@ -249,6 +253,8 @@ extension QuillCanvasView {
     case .write: moveStroke(t, event)
     case .erase: moveErase((event.coalescedTouches(for: t) ?? [t]).map { location($0) })
     case .lasso: moveLasso(location(t))
+    case .tape: moveTape(location(t))
+    case .laser: moveLaser(location(t))
     }
   }
 
@@ -258,6 +264,8 @@ extension QuillCanvasView {
     case .write: endStroke(t, event)
     case .erase: endErase()
     case .lasso: endLasso()
+    case .tape: endTape(location(t))
+    case .laser: laserDown = false
     }
     letPageMove()
   }
@@ -269,6 +277,8 @@ extension QuillCanvasView {
     ink.setNeedsInk()
     if inkMode == .erase { endErase() }
     if inkMode == .lasso { endLasso() }
+    if inkMode == .tape { tapeDraft?.removeFromSuperview(); tapeDraft = nil }
+    laserDown = false
     letPageMove()
   }
 
@@ -282,6 +292,8 @@ extension QuillCanvasView {
   }
 
   private func beginStroke(_ t: UITouch, _ event: UIEvent, _ p: CGPoint) {
+    // A writing finger tapping tape is revealing it, not leaving a dot.
+    if t.type == .direct && tapeAt(p) != nil { return }
     let c = PenCapture(pen: pen, seq: document.nextSeq(), zoom: canvas.zoomScale, at: p, time: t.timestamp)
     if let ruler { c.rulerEdge = ruler.edge(near: ruler.convert(pageHost.convert(p, to: self), from: self)) }
     capture = c
@@ -372,7 +384,7 @@ extension QuillCanvasView {
       c.add(p, force: force, altitude: t.type == .pencil ? Float(t.altitudeAngle) : Float.pi / 2, time: t.timestamp, first: false)
     }
     capture = nil
-    let stroke = InkStroke(pts: c.finishedPoints(), rgb: c.pen.rgb, kind: c.pen.kind, seq: c.wet.seq)
+    let stroke = InkStroke(pts: c.finishedPoints(), rgb: c.pen.rgb, kind: c.pen.kind, seq: c.wet.seq, ts: c.startedAt)
     document.apply(removed: [], added: [stroke])
     record(InkEdit(removed: [], added: [stroke]))
     ink.wet = nil
@@ -383,7 +395,7 @@ extension QuillCanvasView {
 
   // MARK: - Undo
 
-  private func record(_ e: InkEdit) {
+  func record(_ e: InkEdit) {
     undoStack.append(e)
     redoStack.removeAll()
     inkChanged()
@@ -399,6 +411,7 @@ extension QuillCanvasView {
     clearSelection()
     guard let e = undoStack.popLast() else { return }
     document.apply(removed: e.added, added: e.removed)
+    if let o = e.objects { restoreObjects(o.before) }
     redoStack.append(e)
     ink.setNeedsInk(rebuild: true)
     markDirty()
@@ -409,6 +422,7 @@ extension QuillCanvasView {
     clearSelection()
     guard let e = redoStack.popLast() else { return }
     document.apply(removed: e.removed, added: e.added)
+    if let o = e.objects { restoreObjects(o.after) }
     undoStack.append(e)
     ink.setNeedsInk(rebuild: true)
     markDirty()
@@ -437,10 +451,12 @@ extension QuillCanvasView {
     eraseLast = p
     let radius = eraserRadius
     var gone: [InkStroke] = [], parts: [InkStroke] = []
+    eraseTape(at: p, radius: radius)
     for s in document.strokes {
+      if eraserMode == "hl" && s.kind != .marker { continue }
       guard let left = s.erased(from: from, to: p, radius: radius) else { continue }
       gone.append(s)
-      parts.append(contentsOf: left)
+      if eraserMode != "stroke" { parts.append(contentsOf: left) }   // "stroke": the whole line goes
     }
     if gone.isEmpty { return }
     document.apply(removed: gone, added: parts)
@@ -454,6 +470,7 @@ extension QuillCanvasView {
 
   private func endErase() {
     eraserRing.isHidden = true
+    objectsChanged()
     if eraseRemoved.isEmpty && eraseAdded.isEmpty { return }
     record(InkEdit(removed: eraseRemoved, added: eraseAdded))
     eraseRemoved = []
@@ -469,239 +486,6 @@ extension QuillCanvasView {
     eraserRing.path = UIBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)).cgPath
     CATransaction.commit()
   }
-
-  // MARK: - Lasso
-
-  private func beginLasso(_ p: CGPoint) {
-    if !selection.isEmpty {
-      if beginDragSelection(at: p) { return }
-      clearSelection()
-    }
-    lassoPts = [p]
-    lassoLayer.isHidden = false
-    drawLassoLine()
-  }
-
-  private func moveLasso(_ p: CGPoint) {
-    if selDrag != nil { dragSelection(to: p); return }
-    lassoPts.append(p)
-    drawLassoLine()
-  }
-
-  private func endLasso() {
-    if selDrag != nil { selDrag = nil; return }
-    lassoLayer.isHidden = true
-    defer { lassoPts = [] }
-    guard lassoPts.count > 3 else { return }
-    let area = CGMutablePath()
-    area.addLines(between: lassoPts)
-    area.closeSubpath()
-    let box = area.boundingBoxOfPath
-    let picked = document.strokes.filter { s in
-      guard s.bounds.intersects(box) else { return false }
-      let inside = s.pts.reduce(0) { $0 + (area.contains(CGPoint(x: CGFloat($1.x), y: CGFloat($1.y))) ? 1 : 0) }
-      return inside * 2 >= s.pts.count
-    }
-    select(picked)
-  }
-
-  private func drawLassoLine() {
-    let path = CGMutablePath()
-    path.addLines(between: lassoPts.map { pageHost.convert($0, to: self) })
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    lassoLayer.path = path
-    CATransaction.commit()
-  }
-
-  private func select(_ strokes: [InkStroke]) {
-    selection = strokes
-    guard !strokes.isEmpty else { selPan.isEnabled = false; selTap.isEnabled = false; return }
-    strokes.forEach { $0.lifted = true }
-    ink.lifted = strokes
-    selBox = strokes.reduce(CGRect.null) { $0.union($1.bounds) }
-    ink.liftedTransform = .identity
-    selPan.isEnabled = true
-    selTap.isEnabled = true
-    ink.setNeedsInk(rebuild: true)
-    placeSelectionUI()
-  }
-
-  /// Lets go of the selection, leaving it where it was moved to.
-  func clearSelection() {
-    guard !selection.isEmpty else { return }
-    let t = ink.liftedTransform
-    let picked = selection
-    picked.forEach { $0.lifted = false }
-    ink.lifted = []
-    selection = []
-    selDrag = nil
-    ink.liftedTransform = .identity
-    selPan.isEnabled = false
-    selTap.isEnabled = false
-    selOutline.isHidden = true
-    selHandle.isHidden = true
-    selBar.isHidden = true
-    if t != .identity {
-      let moved = picked.map { $0.moved(t) }
-      document.apply(removed: picked, added: moved)
-      record(InkEdit(removed: picked, added: moved))
-    }
-    ink.setNeedsInk(rebuild: true)
-  }
-
-  private func selectionRect() -> CGRect { selBox.applying(ink.liftedTransform) }
-
-  private func handleHit(_ p: CGPoint) -> Bool {
-    let r = selectionRect()
-    return hypot(p.x - r.maxX, p.y - r.maxY) * canvas.zoomScale < 34
-  }
-
-  /// Starts moving (inside the box) or sizing (its corner handle). False if `p` missed both.
-  private func beginDragSelection(at p: CGPoint) -> Bool {
-    let r = selectionRect()
-    if handleHit(p) {
-      selDrag = (p, ink.liftedTransform, true)
-    } else if r.insetBy(dx: -12 / canvas.zoomScale, dy: -12 / canvas.zoomScale).contains(p) {
-      selDrag = (p, ink.liftedTransform, false)
-    } else {
-      return false
-    }
-    return true
-  }
-
-  private func dragSelection(to p: CGPoint) {
-    guard let d = selDrag else { return }
-    if d.sizing {
-      // Sizes from the opposite corner, keeping the proportions.
-      let r = selBox.applying(d.base)
-      let k = max(0.1, max((p.x - r.minX) / max(1, r.width), (p.y - r.minY) / max(1, r.height)))
-      let about = CGPoint(x: r.minX, y: r.minY)
-      ink.liftedTransform = d.base
-        .concatenating(CGAffineTransform(translationX: -about.x, y: -about.y))
-        .concatenating(CGAffineTransform(scaleX: k, y: k))
-        .concatenating(CGAffineTransform(translationX: about.x, y: about.y))
-    } else {
-      ink.liftedTransform = d.base.concatenating(CGAffineTransform(translationX: p.x - d.from.x, y: p.y - d.from.y))
-    }
-    placeSelectionUI()
-    ink.drawNow()
-  }
-
-  /// A finger can move a selection too (fingers otherwise scroll the page).
-  func selectionWantsTouch(at viewPoint: CGPoint) -> Bool {
-    guard !selection.isEmpty else { return false }
-    let p = pageHost.convert(viewPoint, from: self)
-    return handleHit(p) || selectionRect().contains(p)
-  }
-
-  @objc func onSelPan(_ g: UIPanGestureRecognizer) {
-    let p = g.location(in: pageHost)
-    switch g.state {
-    case .began: _ = beginDragSelection(at: p)
-    case .changed: dragSelection(to: p)
-    default: selDrag = nil
-    }
-  }
-
-  @objc func onSelTap(_ g: UITapGestureRecognizer) {
-    if !selectionWantsTouch(at: g.location(in: self)) { clearSelection() }
-  }
-
-  @objc func onSelDelete() {
-    let picked = selection
-    picked.forEach { $0.lifted = false }
-    ink.lifted = []
-    ink.liftedTransform = .identity
-    selection = []
-    clearSelectionUI()
-    document.apply(removed: picked, added: [])
-    record(InkEdit(removed: picked, added: []))
-    ink.setNeedsInk(rebuild: true)
-  }
-
-  @objc func onSelDuplicate() {
-    let picked = selection
-    let t = ink.liftedTransform
-    clearSelection()
-    let source = picked.map { t == .identity ? $0 : $0.moved(t) }
-    let shift = CGAffineTransform(translationX: 24, y: 24)
-    let copies = source.map { s -> InkStroke in
-      let m = s.moved(shift)
-      return InkStroke(pts: m.pts, rgb: m.rgb, kind: m.kind, seq: document.nextSeq())
-    }
-    document.apply(removed: [], added: copies)
-    record(InkEdit(removed: [], added: copies))
-    select(copies)
-  }
-
-  private func clearSelectionUI() {
-    selPan.isEnabled = false
-    selTap.isEnabled = false
-    selOutline.isHidden = true
-    selHandle.isHidden = true
-    selBar.isHidden = true
-  }
-
-  /// Keeps the box, handle and buttons on the selection as it or the page moves.
-  func placeSelectionUI() {
-    guard !selection.isEmpty else { return }
-    let r = pageHost.convert(selectionRect(), to: self).insetBy(dx: -6, dy: -6)
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    selOutline.isHidden = false
-    selOutline.path = UIBezierPath(roundedRect: r, cornerRadius: 6).cgPath
-    selHandle.isHidden = false
-    selHandle.path = UIBezierPath(ovalIn: CGRect(x: r.maxX - 9, y: r.maxY - 9, width: 18, height: 18)).cgPath
-    CATransaction.commit()
-    selBar.isHidden = false
-    bringSubviewToFront(selBar)
-    let size = selBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
-    let x = max(8, min(bounds.width - size.width - 8, r.midX - size.width / 2))
-    let y = r.minY - size.height - 10 > 8 ? r.minY - size.height - 10 : min(bounds.height - size.height - 8, r.maxY + 16)
-    selBar.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
-  }
-
-  func makeSelectionUI() {
-    for l in [lassoLayer, selOutline] {
-      l.fillColor = nil
-      l.strokeColor = tintBlue.cgColor
-      l.lineWidth = 1.5
-      l.lineDashPattern = [6, 5]
-      l.isHidden = true
-      layer.addSublayer(l)
-    }
-    selHandle.fillColor = UIColor.white.cgColor
-    selHandle.strokeColor = tintBlue.cgColor
-    selHandle.lineWidth = 2
-    selHandle.isHidden = true
-    layer.addSublayer(selHandle)
-    eraserRing.fillColor = UIColor(white: 1, alpha: 0.35).cgColor
-    eraserRing.strokeColor = UIColor(white: 0.25, alpha: 0.7).cgColor
-    eraserRing.lineWidth = 1
-    eraserRing.isHidden = true
-    layer.addSublayer(eraserRing)
-
-    selBar.axis = .horizontal
-    selBar.spacing = 4
-    selBar.backgroundColor = UIColor(white: 0.12, alpha: 0.92)
-    selBar.layer.cornerRadius = 18
-    selBar.isLayoutMarginsRelativeArrangement = true
-    selBar.layoutMargins = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
-    selBar.isHidden = true
-    for (title, action) in [("Duplicate", #selector(onSelDuplicate)), ("Delete", #selector(onSelDelete))] {
-      let b = UIButton(type: .system)
-      b.setTitle(title, for: .normal)
-      b.setTitleColor(.white, for: .normal)
-      b.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
-      b.contentEdgeInsets = UIEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
-      b.addTarget(self, action: action, for: .touchUpInside)
-      selBar.addArrangedSubview(b)
-    }
-    addSubview(selBar)
-  }
-
-  private var tintBlue: UIColor { UIColor(red: 0, green: 0.48, blue: 1, alpha: 1) }
 
   // MARK: - Speed readout
 

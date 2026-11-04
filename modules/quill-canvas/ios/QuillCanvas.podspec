@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.source         = { git: '' }
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
-  s.frameworks     = 'Metal', 'QuartzCore', 'PencilKit', 'PDFKit', 'Vision', 'CoreImage'
+  s.frameworks     = 'Metal', 'QuartzCore', 'PencilKit', 'PDFKit', 'Vision', 'CoreImage', 'Speech'
   # Apple's on-device model is only on iOS 26; weak-linked so older iPads still open the app.
   s.weak_frameworks = 'FoundationModels'
   s.pod_target_xcconfig = {

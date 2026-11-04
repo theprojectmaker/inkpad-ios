@@ -42,8 +42,22 @@ public final class QuillCanvasModule: Module {
       return try await OnDevice.ask(instructions: instructions, prompt: prompt)
     }
 
+    // A recording as timed lines of text.
+    AsyncFunction("transcribe") { (path: String, promise: Promise) in
+      Transcriber.run(path) { result in
+        switch result {
+        case .success(let lines): promise.resolve(lines)
+        case .failure(let e): promise.reject("E_TRANSCRIBE", e.localizedDescription)
+        }
+      }
+    }
+
     View(QuillCanvasView.self) {
-      Events("onDrawingChange", "onPageChange")
+      Events("onDrawingChange", "onPageChange", "onPencilTap", "onSelectionAction", "onInkTapped")
+
+      Prop("inkTaps") { (view: QuillCanvasView, on: Bool) in
+        view.setInkTaps(on)
+      }
 
       Prop("pages") { (view: QuillCanvasView, pages: [PageSpec]) in
         view.setPages(pages)
@@ -123,6 +137,38 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("insertPageSpace") { (view: QuillCanvasView, after: Int, height: Double) in
         view.insertPageSpace(after: after, height: height)
+      }.runOnQueue(.main)
+
+      AsyncFunction("movePage") { (view: QuillCanvasView, from: Int, to: Int) in
+        view.movePage(from: from, to: to)
+      }.runOnQueue(.main)
+
+      AsyncFunction("duplicatePage") { (view: QuillCanvasView, index: Int) in
+        view.duplicatePage(index)
+      }.runOnQueue(.main)
+
+      AsyncFunction("addPicture") { (view: QuillCanvasView, file: String, width: Double, height: Double) in
+        view.addPicture(file, width: width, height: height)
+      }.runOnQueue(.main)
+
+      AsyncFunction("paste") { (view: QuillCanvasView) in
+        view.paste()
+      }.runOnQueue(.main)
+
+      AsyncFunction("setAllTape") { (view: QuillCanvasView, shown: Bool) in
+        view.setAllTape(shown: shown)
+      }.runOnQueue(.main)
+
+      AsyncFunction("clearTape") { (view: QuillCanvasView) in
+        view.clearTape()
+      }.runOnQueue(.main)
+
+      AsyncFunction("flash") { (view: QuillCanvasView, page: Int, x: Double, y: Double, w: Double, h: Double) in
+        view.flash(page: page, x: x, y: y, w: w, h: h)
+      }.runOnQueue(.main)
+
+      AsyncFunction("setReplay") { (view: QuillCanvasView, cut: Double, from: Double, to: Double) in
+        view.setReplay(cut: cut, from: from, to: to)
       }.runOnQueue(.main)
 
       AsyncFunction("endTextEdit") { (view: QuillCanvasView) in

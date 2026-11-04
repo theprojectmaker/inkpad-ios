@@ -16,6 +16,8 @@ type Ctx = {
   createNote: (opts: { folderId: string | null; title?: string; kind: NoteKind; paper?: { style: PaperStyle; color: PaperColor; size?: PageSizeId }; pages?: Page[]; id?: string }) => Promise<string>;
   updateNote: (id: string, patch: Partial<NoteMeta>) => void;
   removeNote: (id: string) => Promise<void>;
+  trashNote: (id: string) => void;
+  restoreNote: (id: string) => void;
   duplicateNote: (id: string) => Promise<string | null>;
   meta: (id: string) => NoteMeta | undefined;
   /** Writes the library index now (instead of a moment later). */
@@ -46,6 +48,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       // No readable index: rebuild it from the notes on disk rather than starting empty
       // (a fresh install has none, and gets a couple of starter subjects).
       if (!l) l = await rebuild();
+      // Recently Deleted keeps a note for 30 days.
+      const cutoff = Date.now() - 30 * 86400000;
+      for (const n of l.notes) if (n.trashed && n.trashed < cutoff) deleteNoteFiles(n.id).catch(() => {});
+      l = { ...l, notes: l.notes.filter((n) => !(n.trashed && n.trashed < cutoff)) };
       for (const fn of early.current) l = fn(l);
       early.current = [];
       loaded.current = true;
@@ -115,6 +121,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     await deleteNoteFiles(id);
   }, [commit]);
 
+  const trashNote = useCallback((id: string) => {
+    commit((l) => ({ ...l, notes: l.notes.map((n) => (n.id === id ? { ...n, trashed: Date.now() } : n)) }));
+  }, [commit]);
+
+  const restoreNote = useCallback((id: string) => {
+    commit((l) => ({ ...l, notes: l.notes.map((n) => { if (n.id !== id) return n; const { trashed: _gone, ...keep } = n; return keep as NoteMeta; }) }));
+  }, [commit]);
+
   const duplicateNote = useCallback(async (id: string) => {
     const doc = await loadDoc(id);
     const m = libRef.current.notes.find((n) => n.id === id);
@@ -130,8 +144,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const meta = useCallback((id: string) => libRef.current.notes.find((n) => n.id === id), []);
 
-  const v = useMemo(() => ({ lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, duplicateNote, meta, flush: write }),
-    [lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, duplicateNote, meta, write]);
+  const v = useMemo(() => ({ lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, trashNote, restoreNote, duplicateNote, meta, flush: write }),
+    [lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, trashNote, restoreNote, duplicateNote, meta, write]);
   return <LibCtx.Provider value={v}>{children}</LibCtx.Provider>;
 }
 

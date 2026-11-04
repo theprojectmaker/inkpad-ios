@@ -53,9 +53,10 @@ export type Page = {
   texts: TextItem[];
   images: ImageItem[];
   tapes?: Tape[];
+  mark?: 1;              // bookmarked
 };
 
-export type Recording = { id: string; file: string; dur: number; created: number };
+export type Recording = { id: string; file: string; dur: number; created: number; transcript?: { t: number; text: string }[] };
 
 export type NoteDoc = {
   v: 1;
@@ -81,6 +82,9 @@ export type NoteMeta = {
   text?: string;         // typed text, for search
   pdfText?: string;      // text inside imported PDFs, for search
   audio?: number;        // number of recordings
+  hand?: string;         // handwriting and page words read by the iPad, for search
+  said?: string;         // what was said in its recordings, for search
+  trashed?: number;      // when it went to Recently Deleted
   hw?: Homework;         // the Classroom assignment this note is for
   drive?: { id: string; at: number }; // its PDF in the Quill folder in Google Drive, and when it was saved
 };

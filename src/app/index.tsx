@@ -7,15 +7,16 @@ import { useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PaperSheet } from '@/components/paper-sheet';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
-import { type NoteMeta, type PaperStyle, uid } from '@/lib/model';
+import { type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages } from '@/lib/noteio';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
-import { useTheme } from '@/lib/settings';
+import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
-type Filter = { kind: 'all' } | { kind: 'fav' } | { kind: 'folder'; id: string };
+type Filter = { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'folder'; id: string };
 
 const fmtDate = (t: number) => {
   const d = new Date(t), now = new Date();
@@ -31,10 +32,11 @@ export default function LibraryScreen() {
   const { width } = useWindowDimensions();
   const lib = useLibrary();
   const { toast, busy } = useToast();
+  const { s, set } = useSettings();
 
   const [filter, setFilter] = useState<Filter>({ kind: 'all' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder'>(null);
+  const [sheet, setSheet] = useState<null | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'trashNote' | 'purge' | 'purgeAll'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
 
@@ -44,22 +46,37 @@ export default function LibraryScreen() {
   // Search text per note, lowercased once (not on every keystroke); includes typed text.
   const hays = useMemo(() => new Map(lib.lib.notes.map((n) => [n.id, `${n.title}
 ${n.text ?? ''}
-${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
+${n.pdfText ?? ''}
+${n.hand ?? ''}
+${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
   const hay = (n: NoteMeta) => hays.get(n.id) ?? '';
   const notes = useMemo(() => {
-    let list = lib.lib.notes.slice();
+    let list = filter.kind === 'trash' ? lib.lib.notes.filter((n) => n.trashed) : lib.lib.notes.filter((n) => !n.trashed);
     if (filter.kind === 'fav') list = list.filter((n) => n.fav);
     else if (filter.kind === 'folder') list = list.filter((n) => n.folderId === filter.id);
     const needle = q.trim().toLowerCase();
     if (needle) list = list.filter((n) => hay(n).includes(needle));
-    return list.sort((a, b) => b.updated - a.updated);
-  }, [lib.lib, filter, q]);
+    const by: Record<Sort, (a: NoteMeta, b: NoteMeta) => number> = {
+      updated: (a, b) => b.updated - a.updated,
+      created: (a, b) => b.created - a.created,
+      title: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }),
+    };
+    return list.sort(by[s.sort] ?? by.updated);
+  }, [lib.lib, filter, q, s.sort]);
+  const needle = q.trim().toLowerCase();
+  // Where the words were found, when it isn't the title.
+  const snippet = (n: NoteMeta) => {
+    if (!needle || n.title.toLowerCase().includes(needle)) return '';
+    const h = hay(n);
+    const at = h.indexOf(needle);
+    return at < 0 ? '' : h.slice(Math.max(0, at - 16), at + needle.length + 28).replace(/\s+/g, ' ').trim();
+  };
 
   const open = (id: string) => router.push(`/note/${id}`);
 
-  const newNote = async (style: PaperStyle) => {
+  const newNote = async (style: PaperStyle, color: PaperColor = 'white', size: PageSizeId = 'letter') => {
     try {
-      const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color: 'white', size: 'letter' }, title: defaultTitle() });
+      const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color, size }, title: defaultTitle() });
       open(id);
     } catch (e) { toast("Couldn't make the note: " + String((e as Error)?.message ?? e)); }
   };
@@ -138,7 +155,10 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
   const gapX = 24;
   const cols = Math.max(2, Math.floor((mainW - pad * 2 + gapX) / (160 + gapX)));
   const cardW = (mainW - pad * 2 - (cols - 1) * gapX) / cols;
-  const title = filter.kind === 'all' ? 'All Notes' : filter.kind === 'fav' ? 'Favorites' : folderOf(filter.id)?.name ?? 'Subject';
+  const title = filter.kind === 'all' ? 'All Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : folderOf(filter.id)?.name ?? 'Subject';
+  const live = lib.lib.notes.filter((n) => !n.trashed);
+  const trashed = lib.lib.notes.filter((n) => n.trashed).length;
+  const list = s.view === 'list';
 
   const chip = (label: string, on: boolean, onPress: () => void, color?: string, onLongPress?: () => void) => (
     <Pressable key={label + (color ?? '')} onPress={onPress} onLongPress={onLongPress} delayLongPress={350}
@@ -171,12 +191,34 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     );
   };
 
+  const pressNote = (n: NoteMeta) => { if (n.trashed) { setTarget(n); setSheet('trashNote'); } else open(n.id); };
+  const row = ({ item: n }: { item: NoteMeta }) => {
+    const thumb = n.thumb ? fsx.uri(notePath(n.id, n.thumb)) : '';
+    const f = folderOf(n.folderId);
+    const found = snippet(n);
+    return (
+      <Pressable onPress={() => pressNote(n)} onLongPress={() => { setTarget(n); setSheet(n.trashed ? 'trashNote' : 'note'); }} delayLongPress={350} accessibilityLabel={n.title}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, backgroundColor: pressed ? t.chip : 'transparent' })}>
+        <View style={{ width: 46, height: 60, borderRadius: 5, overflow: 'hidden', backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}>
+          {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : <Icon name="doc" size={18} color="#B8BCC4" />}
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{n.title}</Text>
+          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 13, marginTop: 2 }}>{found ? `…${found}…` : [fmtDate(n.updated), `${n.pages} page${n.pages === 1 ? '' : 's'}`, f?.name].filter(Boolean).join(' · ')}</Text>
+        </View>
+        {n.audio ? <Icon name="waveform" size={15} color={t.faint} /> : null}
+        {n.fav ? <Icon name="star.fill" size={14} color="#F5B400" /> : null}
+      </Pressable>
+    );
+  };
+
   const card = ({ item: n }: { item: NoteMeta }) => {
+    const found = snippet(n);
     const thumb = n.thumb ? fsx.uri(notePath(n.id, n.thumb)) : '';
     const f = folderOf(n.folderId);
     const h = cardW * (792 / 612);
     return (
-      <Pressable onPress={() => open(n.id)} onLongPress={() => { setTarget(n); setSheet('note'); }} delayLongPress={350}
+      <Pressable onPress={() => pressNote(n)} onLongPress={() => { setTarget(n); setSheet(n.trashed ? 'trashNote' : 'note'); }} delayLongPress={350}
         accessibilityLabel={n.title}
         style={({ pressed }) => ({ width: cardW, transform: [{ scale: pressed ? 0.97 : 1 }] })}>
         <View style={{ width: cardW, height: h, borderRadius: 10, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: t.dark ? 0.4 : 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
@@ -189,18 +231,19 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
               ) : paperMock()}
           </View>
           {n.fav ? <View style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="star.fill" size={14} color="#F5B400" /></View> : null}
+          {n.audio ? <View style={{ position: 'absolute', bottom: 8, right: 8, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,22,28,0.6)' }}><Icon name="waveform" size={13} color="#fff" /></View> : null}
         </View>
         <Text numberOfLines={1} style={{ marginTop: 10, color: t.text, fontSize: 14.5, fontWeight: '600' }}>{n.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           {f ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: f.color }} /> : null}
-          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12.5 }}>{fmtDate(n.updated)}</Text>
+          <Text numberOfLines={1} style={{ flex: 1, color: t.faint, fontSize: 12.5 }}>{found ? `…${found}…` : fmtDate(n.updated)}</Text>
         </View>
       </Pressable>
     );
   };
 
   const target2 = target ? lib.lib.notes.find((n) => n.id === target.id) ?? null : null;
-  const count = (fid: string) => lib.lib.notes.filter((n) => n.folderId === fid).length;
+  const count = (fid: string) => live.filter((n) => n.folderId === fid).length;
 
   return (
     <View style={{ flex: 1, flexDirection: 'row', backgroundColor: t.bg }}>
@@ -208,8 +251,8 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         <View style={{ width: sideW, backgroundColor: t.side, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: t.line, paddingTop: ins.top + 18, paddingBottom: ins.bottom + 10 }}>
           <Text style={{ color: t.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.4, paddingHorizontal: 22, marginBottom: 14 }}>Quill</Text>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 2, paddingBottom: 20 }}>
-            {sideRow('All Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'doc.on.doc', count: lib.lib.notes.length })}
-            {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: lib.lib.notes.filter((n) => n.fav).length })}
+            {sideRow('All Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'doc.on.doc', count: live.length })}
+            {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
             <Text style={{ color: t.faint, fontSize: 12, fontWeight: '600', letterSpacing: 0.4, marginTop: 24, marginBottom: 6, paddingHorizontal: 12 }}>Subjects</Text>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
@@ -219,6 +262,7 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             </Pressable>
           </ScrollView>
           <View style={{ paddingHorizontal: 12 }}>
+            {sideRow('Recently Deleted', filter.kind === 'trash', () => setFilter({ kind: 'trash' }), { icon: 'trash', count: trashed })}
             {sideRow('Settings', false, () => router.push('/settings'), { icon: 'gearshape' })}
           </View>
         </View>
@@ -231,6 +275,8 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             <Icon name="magnifyingglass" size={14} color={t.faint} />
             <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={t.faint} style={{ flex: 1, color: t.text, fontSize: 15, height: 38 }} />
           </View>
+          <IconButton name="arrow.up.arrow.down" label="Sort" onPress={() => setSheet('sort')} />
+          <IconButton name={list ? 'square.grid.2x2' : 'list.bullet'} label={list ? 'Show as grid' : 'Show as list'} onPress={() => set({ view: list ? 'grid' : 'list' })} />
           {!wide ? <IconButton name="gearshape" label="Settings" onPress={() => router.push('/settings')} /> : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
             style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
@@ -243,17 +289,28 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             {chip('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }))}
             {lib.lib.folders.map((f) => chip(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }), f.color, () => { setFolderTarget(f.id); setSheet('folder'); }))}
             {chip('+ Subject', false, () => setSheet('newFolder'))}
+            {chip('Recently Deleted', filter.kind === 'trash', () => setFilter({ kind: 'trash' }))}
           </ScrollView>
         ) : null}
 
+        {filter.kind === 'trash' && notes.length ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: pad, marginTop: 4 }}>
+            <Text style={{ flex: 1, color: t.sub, fontSize: 14 }}>Notes stay here for 30 days. Tap one to restore it.</Text>
+            <Pressable accessibilityLabel="Delete all" onPress={() => setSheet('purgeAll')} hitSlop={8}><Text style={{ color: t.danger, fontSize: 14, fontWeight: '600' }}>Delete all</Text></Pressable>
+          </View>
+        ) : null}
         {notes.length ? (
+          list ? (
+            <FlatList key="list" data={notes} keyExtractor={(n) => n.id} renderItem={row} contentContainerStyle={{ paddingHorizontal: pad - 10, paddingTop: 10, paddingBottom: 80 }} />
+          ) : (
           <FlatList key={`grid${cols}`} data={notes} keyExtractor={(n) => n.id} numColumns={cols} renderItem={card}
             columnWrapperStyle={{ gap: gapX }} contentContainerStyle={{ padding: pad, paddingTop: 20, paddingBottom: 80, gap: 30 }} />
+          )
         ) : !lib.ready ? <View style={{ flex: 1 }} /> : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 40, marginTop: -60 }}>
             <Icon name="square.and.pencil" size={40} color={t.faint} />
-            <Text style={{ color: t.sub, fontSize: 17 }}>{q ? 'No notes match.' : 'No notes yet'}</Text>
-            {!q ? (
+            <Text style={{ color: t.sub, fontSize: 17 }}>{q ? 'No notes match.' : filter.kind === 'trash' ? 'Nothing here' : 'No notes yet'}</Text>
+            {!q && filter.kind !== 'trash' ? (
               <Pressable onPress={() => newNote('lined')} style={({ pressed }) => ({ height: 44, paddingHorizontal: 22, borderRadius: 22, backgroundColor: t.accent, justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
                 <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>New note</Text>
               </Pressable>
@@ -266,6 +323,7 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         { label: 'Lined note', icon: 'line.3.horizontal', onPress: () => newNote('lined') },
         { label: 'Blank note', icon: 'square', onPress: () => newNote('blank') },
         { label: 'Grid note', icon: 'grid', onPress: () => newNote('grid') },
+        { label: 'More paper…', icon: 'doc.plaintext', onPress: () => setSheet('paper') },
         ...(canScan() ? [
           { label: 'Scan paper', icon: 'doc.viewfinder', onPress: scanPaper },
           { label: 'Scan into typed notes', icon: 'text.viewfinder', onPress: scanClean },
@@ -280,14 +338,30 @@ ${n.pdfText ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { try { toast((await lib.duplicateNote(target2.id)) ? 'Duplicated' : "Couldn't duplicate that note."); } catch { toast("Couldn't duplicate that note."); } } },
         { label: 'Delete', icon: 'trash', danger: true, onPress: () => setSheet('delete') },
       ] : []} />
+      <PaperSheet visible={sheet === 'paper'} title="New note" confirm="Create" withSize
+        style={s.defaultPaper?.style} color={s.defaultPaper?.color} size={s.defaultPaper?.size} onClose={() => setSheet(null)}
+        onDone={(style, color, size) => { setSheet(null); set({ defaultPaper: { style, color, size } }); newNote(style, color, size ?? 'letter'); }} />
+      <MenuSheet visible={sheet === 'sort'} onClose={() => setSheet(null)} title="Sort by" items={[
+        { label: 'Date edited', icon: 'clock', checked: s.sort === 'updated', onPress: () => set({ sort: 'updated' }) },
+        { label: 'Date created', icon: 'calendar', checked: s.sort === 'created', onPress: () => set({ sort: 'created' }) },
+        { label: 'Title', icon: 'textformat', checked: s.sort === 'title', onPress: () => set({ sort: 'title' }) },
+      ]} />
+      <MenuSheet visible={sheet === 'trashNote'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [
+        { label: 'Restore', icon: 'arrow.uturn.backward', onPress: () => { lib.restoreNote(target2.id); toast('Restored'); } },
+        { label: 'Delete now', icon: 'trash', danger: true, onPress: () => setSheet('purge') },
+      ] : []} />
+      <ConfirmSheet visible={sheet === 'purge'} title={`Delete "${target2?.title ?? ''}" for good?`} message="This can't be undone." onCancel={() => setSheet(null)}
+        onConfirm={async () => { setSheet(null); if (target2) await lib.removeNote(target2.id); }} />
+      <ConfirmSheet visible={sheet === 'purgeAll'} title="Delete everything here for good?" message="This can't be undone." onCancel={() => setSheet(null)}
+        onConfirm={async () => { setSheet(null); for (const n of lib.lib.notes.filter((x) => x.trashed)) await lib.removeNote(n.id); }} />
       <PromptSheet visible={sheet === 'rename'} title="Rename note" initial={target2?.title ?? ''} onCancel={() => setSheet(null)}
         onSubmit={(v) => { if (target2 && v.trim()) lib.updateNote(target2.id, { title: v.trim() }); setSheet(null); }} />
       <MenuSheet visible={sheet === 'move'} onClose={() => setSheet(null)} title="Move to" items={[
         { label: 'No subject', icon: 'doc', checked: !target2?.folderId, onPress: () => target2 && lib.updateNote(target2.id, { folderId: null }) },
         ...lib.lib.folders.map((f) => ({ label: f.name, icon: 'folder', checked: target2?.folderId === f.id, onPress: () => target2 && lib.updateNote(target2.id, { folderId: f.id }) })),
       ]} />
-      <ConfirmSheet visible={sheet === 'delete'} title={`Delete "${target2?.title ?? ''}"?`} message="The note and everything written in it will be removed from this iPad." onCancel={() => setSheet(null)}
-        onConfirm={async () => { setSheet(null); if (target2) await lib.removeNote(target2.id); }} />
+      <ConfirmSheet visible={sheet === 'delete'} title={`Delete "${target2?.title ?? ''}"?`} message="It moves to Recently Deleted for 30 days." onCancel={() => setSheet(null)}
+        onConfirm={() => { setSheet(null); if (target2) lib.trashNote(target2.id); }} />
 
       <PromptSheet visible={sheet === 'newFolder'} title="New subject" placeholder="e.g. Biology" confirm="Add" onCancel={() => setSheet(null)}
         onSubmit={(v) => { if (v.trim()) lib.addFolder(v.trim()); setSheet(null); }} />

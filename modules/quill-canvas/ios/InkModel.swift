@@ -21,10 +21,12 @@ final class InkStroke {
   let kind: InkKind
   let seq: UInt32        // paint order; later strokes sit on top
   let bounds: CGRect
+  let ts: Double         // when it was written (seconds since 1970; 0 = unknown)
   var mesh: InkMeshRef?  // on the GPU once it has been on screen
   var lifted = false     // picked up by the lasso
 
-  init(pts: [InkPoint], rgb: UInt32, kind: InkKind, seq: UInt32) {
+  init(pts: [InkPoint], rgb: UInt32, kind: InkKind, seq: UInt32, ts: Double = 0) {
+    self.ts = ts
     self.pts = pts
     self.rgb = rgb
     self.kind = kind
@@ -43,7 +45,7 @@ final class InkStroke {
       let q = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)).applying(t)
       return InkPoint(x: Float(q.x), y: Float(q.y), r: p.r * k, a: p.a)
     }
-    return InkStroke(pts: moved, rgb: rgb, kind: kind, seq: seq)
+    return InkStroke(pts: moved, rgb: rgb, kind: kind, seq: seq, ts: ts)
   }
 
   /// This stroke with the part under a round eraser moving from `a` to `b` removed.
@@ -64,7 +66,7 @@ final class InkStroke {
       }
     }
     guard hit else { return nil }
-    return parts.filter { $0.count >= 2 }.map { InkStroke(pts: $0, rgb: rgb, kind: kind, seq: seq) }
+    return parts.filter { $0.count >= 2 }.map { InkStroke(pts: $0, rgb: rgb, kind: kind, seq: seq, ts: ts) }
   }
 
   static func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
@@ -164,18 +166,19 @@ extension UIColor {
 
 // MARK: - The ink file
 
-/// "QINK", version, stroke count; then per stroke: colour, kind, point count, points.
+/// "QINK", version, stroke count; then per stroke: colour, kind, point count, when it was written (version 2), points.
 enum InkFile {
   private static let magic: UInt32 = 0x4B4E_4951   // "QINK" read as little-endian
 
   static func encode(_ strokes: [InkStroke]) -> Data {
     var size = 12
-    for s in strokes { size += 12 + s.pts.count * MemoryLayout<InkPoint>.stride }
+    for s in strokes { size += 20 + s.pts.count * MemoryLayout<InkPoint>.stride }
     var d = Data(capacity: size)
     func put(_ v: UInt32) { withUnsafeBytes(of: v) { d.append(contentsOf: $0) } }
-    put(magic); put(1); put(UInt32(strokes.count))
+    put(magic); put(2); put(UInt32(strokes.count))
     for s in strokes {
       put(s.rgb); put(s.kind.rawValue); put(UInt32(s.pts.count))
+      withUnsafeBytes(of: s.ts) { d.append(contentsOf: $0) }
       s.pts.withUnsafeBytes { d.append(contentsOf: $0) }
     }
     return d
@@ -184,17 +187,20 @@ enum InkFile {
   static func decode(_ d: Data) -> [InkStroke]? {
     d.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> [InkStroke]? in
       guard raw.count >= 12, raw.loadUnaligned(as: UInt32.self) == magic else { return nil }
+      let version = raw.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+      let head = version >= 2 ? 20 : 12
       let count = Int(raw.loadUnaligned(fromByteOffset: 8, as: UInt32.self))
       var at = 12
       var out: [InkStroke] = []
       out.reserveCapacity(count)
       let stride = MemoryLayout<InkPoint>.stride
       for i in 0..<count {
-        guard at + 12 <= raw.count else { return nil }
+        guard at + head <= raw.count else { return nil }
         let rgb = raw.loadUnaligned(fromByteOffset: at, as: UInt32.self)
         let kind = InkKind(rawValue: raw.loadUnaligned(fromByteOffset: at + 4, as: UInt32.self)) ?? .pen
         let n = Int(raw.loadUnaligned(fromByteOffset: at + 8, as: UInt32.self))
-        at += 12
+        let ts = version >= 2 ? raw.loadUnaligned(fromByteOffset: at + 12, as: Double.self) : 0
+        at += head
         guard at + n * stride <= raw.count else { return nil }
         let start = at
         let pts = [InkPoint](unsafeUninitializedCapacity: n) { buf, made in
@@ -202,7 +208,7 @@ enum InkFile {
           made = n
         }
         at += n * stride
-        out.append(InkStroke(pts: pts, rgb: rgb, kind: kind, seq: UInt32(i + 1)))
+        out.append(InkStroke(pts: pts, rgb: rgb, kind: kind, seq: UInt32(i + 1), ts: ts))
       }
       return out
     }

@@ -42,7 +42,7 @@ extension QuillCanvasView {
     guard let f = frames.first(where: { $0.insetBy(dx: 0, dy: -4).contains(p) }) else { return }
     let x = max(f.minX + 8, min(p.x, f.maxX - 120))
     let w = max(120, min(360, f.maxX - x - 16))
-    let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(max(f.minY + 4, p.y - CGFloat(textSize) * 0.7)), w: Double(w), text: "", size: textSize, color: textColor)
+    let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(max(f.minY + 4, p.y - CGFloat(textSize) * 0.7)), w: Double(w), text: "", size: textSize, color: textColor, font: textFont, bold: textBold)
     texts.append(b)
     beginEdit(b)
   }
@@ -62,7 +62,7 @@ extension QuillCanvasView {
       texts[i].y += Double(d.y)
       layoutLabel(texts[i])
     default:
-      if dragId != nil { dragId = nil; saveTexts() }
+      if dragId != nil { dragId = nil; saveTexts(); objectsChanged() }
     }
   }
 
@@ -70,12 +70,38 @@ extension QuillCanvasView {
   func panStartsOnBox() -> Bool { box(at: panGR.location(in: textHost)) != nil }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-    g === tapGR || g === inkGesture || other === inkGesture
+    g === tapGR || g === inkGesture || other === inkGesture || g === tapeTap || g === inkTapGR
   }
 
   // MARK: - Editing
 
-  private func font(_ size: Double) -> UIFont { UIFont.systemFont(ofSize: CGFloat(size)) }
+  func font(_ b: TextBox) -> UIFont { QuillCanvasView.makeFont(b.font, size: CGFloat(b.size), bold: b.bold ?? false) }
+
+  static func makeFont(_ name: String?, size: CGFloat, bold: Bool) -> UIFont {
+    let weight: UIFont.Weight = bold ? .bold : .regular
+    let plain = UIFont.systemFont(ofSize: size, weight: weight)
+    switch name {
+    case "serif": return UIFont(name: bold ? "Georgia-Bold" : "Georgia", size: size) ?? plain
+    case "mono": return UIFont.monospacedSystemFont(ofSize: size, weight: weight)
+    case "hand": return UIFont(name: bold ? "Noteworthy-Bold" : "Noteworthy-Light", size: size) ?? plain
+    case "round":
+      if let d = plain.fontDescriptor.withDesign(.rounded) { return UIFont(descriptor: d, size: size) }
+      return plain
+    default: return plain
+    }
+  }
+
+  /// Picking a colour, size or font while typing changes the box being typed in.
+  func restyleEditor() {
+    guard let id = editingId, let ed = editor, let i = texts.firstIndex(where: { $0.id == id }) else { return }
+    texts[i].color = textColor
+    texts[i].size = textSize
+    texts[i].font = textFont
+    texts[i].bold = textBold
+    ed.font = font(texts[i])
+    ed.textColor = UIColor(hex: textColor)
+    textViewDidChange(ed)
+  }
 
   private func beginEdit(_ b: TextBox) {
     editingId = b.id
@@ -87,7 +113,7 @@ extension QuillCanvasView {
     ed.textContainerInset = UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
     ed.textContainer.lineFragmentPadding = 0
     ed.isScrollEnabled = false
-    ed.font = font(b.size)
+    ed.font = font(b)
     ed.textColor = UIColor(hex: b.color)
     ed.text = b.text
     ed.layer.borderColor = UIColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 1).cgColor
@@ -124,6 +150,7 @@ extension QuillCanvasView {
       }
     }
     saveTexts()
+    objectsChanged()
   }
 
   // MARK: - Labels
@@ -144,8 +171,14 @@ extension QuillCanvasView {
     ink.setNeedsInk(rebuild: true)
     markDirty()
     texts = texts.map { b in var n = b; n.x += Double(dx); return n }
+    pics = pics.map { o in var n = o; n.x += Double(dx); return n }
+    tapes = tapes.map { o in var n = o; n.x1 += Double(dx); n.x2 += Double(dx); return n }
+    objBase = currentObjects()
     renderTexts()
+    renderPictures()
+    renderTapes()
     saveTexts()
+    saveExtras()
     saveNow(sync: true)
   }
 
@@ -158,7 +191,7 @@ extension QuillCanvasView {
   func layoutLabel(_ b: TextBox) {
     let l = labels[b.id] ?? UILabel()
     l.numberOfLines = 0
-    l.font = font(b.size)
+    l.font = font(b)
     l.textColor = UIColor(hex: b.color)
     l.text = b.text
     let h = l.sizeThatFits(CGSize(width: CGFloat(b.w), height: 10000)).height
@@ -178,12 +211,12 @@ extension QuillCanvasView {
   }
 
   /// Draws the text boxes that sit on the page with frame `f`, page origin at (0, 0).
-  func drawTexts(onPage f: CGRect, in ctx: CGContext) {
+  func drawTexts(only ids: [String]? = nil, onPage f: CGRect, in ctx: CGContext) {
     UIGraphicsPushContext(ctx)
-    for b in texts where f.contains(CGPoint(x: b.x + 1, y: b.y + 1)) {
+    for b in texts where ids?.contains(b.id) ?? f.contains(CGPoint(x: b.x + 1, y: b.y + 1)) {
       let style = NSMutableParagraphStyle()
       style.lineBreakMode = .byWordWrapping
-      let attrs: [NSAttributedString.Key: Any] = [.font: font(b.size), .foregroundColor: UIColor(hex: b.color), .paragraphStyle: style]
+      let attrs: [NSAttributedString.Key: Any] = [.font: font(b), .foregroundColor: UIColor(hex: b.color), .paragraphStyle: style]
       (b.text as NSString).draw(with: CGRect(x: CGFloat(b.x) - f.minX, y: CGFloat(b.y) - f.minY, width: CGFloat(b.w), height: 10000),
                                 options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
     }
@@ -205,6 +238,7 @@ extension QuillCanvasView {
     let img = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
       ctx.cgContext.scaleBy(x: k, y: k)
       PageArt.draw(p, in: ctx.cgContext)
+      drawPictures(onPage: f, in: ctx.cgContext)
       InkRaster.draw(strokes, rect: f, in: ctx.cgContext)
       drawTexts(onPage: f, in: ctx.cgContext)
     }
@@ -214,49 +248,104 @@ extension QuillCanvasView {
     return (try? data.write(to: url, options: .atomic)) != nil
   }
 
-  /// Makes room for a new page of height `h` right after page `i`: ink and text below it move down.
-  func insertPageSpace(after i: Int, height h: Double) {
-    guard i >= 0, i < frames.count else { return }
+  /// Moves everything on the pages. `shift` takes an item's vertical position in the old
+  /// layout and says how far it moves; nil removes it.
+  private func remapContent(_ shift: (CGFloat) -> CGFloat?) {
     commitEdit()
-    let below = frames[i].maxY + 14
-    let shift = CGFloat(h) + 28
     clearSelection()
-    document.replaceAll(document.strokes.map { $0.bounds.midY >= below ? $0.moved(CGAffineTransform(translationX: 0, y: shift)) : $0 })
+    var kept: [InkStroke] = []
+    kept.reserveCapacity(document.strokes.count)
+    for s in document.strokes {
+      guard let d = shift(s.bounds.midY) else { continue }
+      kept.append(d == 0 ? s : s.moved(CGAffineTransform(translationX: 0, y: d)))
+    }
+    document.replaceAll(kept)
+    texts = texts.compactMap { b in
+      guard let d = shift(CGFloat(b.y)) else { return nil }
+      var n = b; n.y += Double(d); return n
+    }
+    pics = pics.compactMap { o in
+      guard let d = shift(CGFloat(o.y + o.h / 2)) else { return nil }
+      var n = o; n.y += Double(d); return n
+    }
+    tapes = tapes.compactMap { o in
+      guard let d = shift(CGFloat((o.y1 + o.y2) / 2)) else { return nil }
+      var n = o; n.y1 += Double(d); n.y2 += Double(d); return n
+    }
+    contentMoved()
+  }
+
+  private func contentMoved() {
     undoStack.removeAll(); redoStack.removeAll()
+    objBase = currentObjects()
     ink.setNeedsInk(rebuild: true)
     markDirty()
-    texts = texts.map { b in var n = b; if CGFloat(b.y) >= below { n.y += Double(shift) }; return n }
     renderTexts()
+    renderPictures()
+    renderTapes()
     saveTexts()
+    saveExtras()
     saveNow(sync: true)
   }
 
-  /// Removes page `i`'s ink and text and moves everything below it up. The app then drops the page.
+  /// Makes room for a new page of height `h` right after page `i`: everything below it moves down.
+  func insertPageSpace(after i: Int, height h: Double) {
+    guard i >= 0, i < frames.count else { return }
+    let below = frames[i].maxY + 14
+    let d = CGFloat(h) + 28
+    remapContent { $0 >= below ? d : 0 }
+  }
+
+  /// Removes page `i`'s content and moves everything below it up. The app then drops the page.
   func deletePage(_ i: Int) {
     guard i >= 0, i < frames.count else { return }
-    commitEdit()
     let f = frames[i]
-    let shift = f.height + 28
+    let d = f.height + 28
     let top = f.minY - 14, bottom = f.maxY + 14
+    remapContent { y in
+      if y >= top && y < bottom { return nil }
+      return y >= bottom ? -d : 0
+    }
+  }
+
+  /// Moves page `from` so it becomes page `to`, with everything on it. The app then reorders its pages.
+  func movePage(from: Int, to: Int) {
+    guard from >= 0, from < frames.count, to >= 0, to < frames.count, from != to else { return }
+    var order = Array(frames.indices)
+    order.remove(at: from)
+    order.insert(from, at: to)
+    var top = [CGFloat](repeating: 0, count: frames.count)
+    var y: CGFloat = 0
+    for k in order { top[k] = y; y += frames[k].height + 28 }
+    let old = frames
+    remapContent { at in
+      let k = old.firstIndex { at < $0.maxY + 14 } ?? old.count - 1
+      return top[k] - old[k].minY
+    }
+  }
+
+  /// Copies page `i`'s content onto a new page of the same size right after it. The app adds the page.
+  func duplicatePage(_ i: Int) {
+    guard i >= 0, i < frames.count else { return }
+    commitEdit()
     clearSelection()
-    var kept: [InkStroke] = []
-    for s in document.strokes {
-      let c = s.bounds.midY
-      if c >= top && c < bottom { continue }
-      kept.append(c >= bottom ? s.moved(CGAffineTransform(translationX: 0, y: -shift)) : s)
-    }
-    document.replaceAll(kept)
-    undoStack.removeAll(); redoStack.removeAll()
-    ink.setNeedsInk(rebuild: true)
-    markDirty()
-    texts = texts.compactMap { b in
-      if CGFloat(b.y) >= top && CGFloat(b.y) < bottom { return nil }
-      var n = b
-      if CGFloat(b.y) >= bottom { n.y -= Double(shift) }
-      return n
-    }
-    renderTexts()
-    saveTexts()
-    saveNow(sync: true)
+    let f = frames[i]
+    let top = f.minY - 14, bottom = f.maxY + 14
+    let inside = { (y: CGFloat) in y >= top && y < bottom }
+    let d = f.height + 28
+    let strokes = document.strokes.filter { inside($0.bounds.midY) }
+    let tb = texts.filter { inside(CGFloat($0.y)) }
+    let pb = pics.filter { inside(CGFloat($0.y + $0.h / 2)) }
+    let tp = tapes.filter { inside(CGFloat(($0.y1 + $0.y2) / 2)) }
+    insertPageSpace(after: i, height: Double(f.height))
+    let shift = CGAffineTransform(translationX: 0, y: d)
+    document.apply(removed: [], added: strokes.map { s in
+      let m = s.moved(shift)
+      return InkStroke(pts: m.pts, rgb: m.rgb, kind: m.kind, seq: document.nextSeq())
+    })
+    texts += tb.map { b in var n = b; n.id = UUID().uuidString; n.y += Double(d); return n }
+    pics += pb.map { o in var n = o; n.id = UUID().uuidString; n.y += Double(d); return n }
+    tapes += tp.map { o in var n = o; n.id = UUID().uuidString; n.y1 += Double(d); n.y2 += Double(d); return n }
+    contentMoved()
   }
 }

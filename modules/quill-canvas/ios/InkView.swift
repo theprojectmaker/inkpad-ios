@@ -10,7 +10,7 @@ private let shaderSource = """
 using namespace metal;
 
 struct Vtx { float x; float y; float z; uchar4 c; float g; };
-struct View { float4 m; float2 t; float2 s; float2 o; };
+struct View { float4 m; float2 t; float2 s; float2 o; float k; };
 struct Out { float4 pos [[position]]; float4 c; float2 page; float g; };
 
 vertex Out inkV(uint id [[vertex_id]], constant Vtx *v [[buffer(0)]], constant View &u [[buffer(1)]]) {
@@ -19,6 +19,7 @@ vertex Out inkV(uint id [[vertex_id]], constant Vtx *v [[buffer(0)]], constant V
   Out o;
   o.pos = float4(p * u.s + u.o, a.z, 1);
   o.c = float4(a.c) / 255.0;
+  o.c.a *= u.k;
   o.page = float2(a.x, a.y);
   o.g = a.g;
   return o;
@@ -67,6 +68,7 @@ private struct ViewUniform {
   var t: SIMD2<Float>
   var s: SIMD2<Float>
   var o: SIMD2<Float>
+  var k: Float
 }
 
 /// Metal, set up once for the whole app. nil if it can't run (the ink then uses Core Graphics).
@@ -231,6 +233,8 @@ final class InkView: UIView {
   private var link: CADisplayLink?
   private var fallbackSettled: UIImage?
   var onLinkTick: (() -> Void)?
+  private var replay: (cut: Double, from: Double, to: Double)?
+  private var laterCount = 0
 
   init(document: InkDocument) {
     self.document = document
@@ -254,6 +258,25 @@ final class InkView: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil { penUp() } else { matchScreen(); setNeedsInk(rebuild: true) }
+  }
+
+  // MARK: - Replay
+
+  /// While a recording plays, ink written later in it shows faintly and fills in as it plays.
+  func setReplay(_ r: (cut: Double, from: Double, to: Double)?) {
+    let was = replay != nil
+    replay = r
+    var n = 0
+    if let r { for s in document.strokes where s.ts > r.cut && s.ts >= r.from && s.ts <= r.to { n += 1 } }
+    if n != laterCount || was != (r != nil) {
+      laterCount = n
+      setNeedsInk(rebuild: true)
+    }
+  }
+
+  private func isLater(_ s: InkStroke) -> Bool {
+    guard let r = replay else { return false }
+    return s.ts > r.cut && s.ts >= r.from && s.ts <= r.to
   }
 
   // MARK: - What changed
@@ -374,7 +397,15 @@ final class InkView: UIView {
       settledDirty = false
       pendingSettle.removeAll()
       encode(cmd, msaa, depth, into: spare!) { enc in
-        self.drawStrokes(self.visibleStrokes(), enc, gpu, view)
+        let all = self.visibleStrokes()
+        if self.replay == nil {
+          self.drawStrokes(all, enc, gpu, view)
+        } else {
+          self.drawStrokes(all.filter { !self.isLater($0) }, enc, gpu, view)
+          var faint = view
+          faint.k = 0.16
+          self.drawStrokes(all.filter { self.isLater($0) }, enc, gpu, faint)
+        }
       }
       swap(&settled, &spare)
     } else if !pendingSettle.isEmpty {
@@ -464,7 +495,8 @@ final class InkView: UIView {
     return ViewUniform(m: SIMD4(Float(t.a), Float(t.b), Float(t.c), Float(t.d)),
                        t: SIMD2(Float(t.tx), Float(t.ty)),
                        s: SIMD2(2 * z / w, -2 * z / h),
-                       o: SIMD2(-1 - 2 * ox / w, 1 + 2 * oy / h))
+                       o: SIMD2(-1 - 2 * ox / w, 1 + 2 * oy / h),
+                       k: 1)
   }
 
   private func visibleRect() -> CGRect {

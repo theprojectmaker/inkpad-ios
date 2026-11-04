@@ -23,10 +23,18 @@ export type CanvasHandle = {
   deletePage(index: number): Promise<void>;
   endTextEdit(): Promise<void>;
   insertPageSpace(after: number, height: number): Promise<void>;
+  movePage(from: number, to: number): Promise<void>;
+  duplicatePage(index: number): Promise<void>;
+  addPicture(file: string, width: number, height: number): Promise<void>;
+  paste(): Promise<void>;
+  setAllTape(shown: boolean): Promise<void>;
+  clearTape(): Promise<void>;
+  flash(page: number, x: number, y: number, w: number, h: number): Promise<void>;
+  setReplay(cut: number, from: number, to: number): Promise<void>;
 };
 
-export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text';
-export type CanvasTool = { kind: ToolKind; color: string; width: number };
+export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser';
+export type CanvasTool = { kind: ToolKind; color: string; width: number; mode?: string; bold?: boolean };
 
 type Props = ViewProps & {
   pages: CanvasPage[];
@@ -40,6 +48,10 @@ type Props = ViewProps & {
   onPageChange?: (e: { nativeEvent: { page: number; count: number } }) => void;
   legacy?: LegacyStroke[];
   onDrawingChange?: (e: { nativeEvent: CanvasState }) => void;
+  onPencilTap?: (e: { nativeEvent: { action: string } }) => void;
+  onSelectionAction?: (e: { nativeEvent: { action: string; path?: string; text?: string } }) => void;
+  inkTaps?: boolean;         // a finger tapping ink reports when it was written
+  onInkTapped?: (e: { nativeEvent: { ts: number } }) => void;
 };
 
 /** Pages are stacked top to bottom with this gap (must match QuillCanvasView.swift). */
