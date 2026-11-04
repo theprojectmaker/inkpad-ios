@@ -42,7 +42,9 @@ enum ScanFilter {
     let k: CGFloat = 1 / 16
     let small = calm.transformed(by: CGAffineTransform(scaleX: k, y: k))
     let paper = small.clampedToExtent()
-      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 3])
+      // Colourless, so a highlighter can't tint the writing beside it.
+      .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 4])
       .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 5])
       .applyingFilter("CIColorClamp", parameters: [
         "inputMinComponents": CIVector(x: 0.1, y: 0.1, z: 0.1, w: 1), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
@@ -56,7 +58,18 @@ enum ScanFilter {
     //    closes the little gaps in a broken line. The low end is set to keep faint pencil.
     let grey = flat.applyingFilter("CIMinimumComponent")
     let soft = blur(grey, 1.4 * px)
-    let ink = curve(soft, [(0, 1), (0.62, 1), (0.86, 0.92), (0.94, 0.42), (0.98, 0)]).cropped(to: ext)
+    let faint = curve(soft, [(0, 1), (0.6, 1), (0.8, 0.95), (0.9, 0.45), (0.96, 0)]).cropped(to: ext)
+    // Sensitive enough for pencil means grain gets through too, so faint marks only count
+    // beside something definite: a real stroke, or a long ruled line. Specks are neither.
+    let sure = curve(blur(grey, 3 * px), [(0, 1), (0.78, 1), (0.84, 0.6), (0.88, 0), (1, 0)]).cropped(to: ext)
+      .clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 11 * px]).cropped(to: ext)
+    func ruled(_ angle: CGFloat) -> CIImage {
+      curve(grey.clampedToExtent().applyingFilter("CIMotionBlur", parameters: [kCIInputRadiusKey: 50 * px, kCIInputAngleKey: angle]).cropped(to: ext),
+            [(0, 1), (0.955, 1), (0.975, 0.4), (0.99, 0), (1, 0)]).cropped(to: ext)
+    }
+    let allowed = blur(sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
+      .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(.pi / 2)]).cropped(to: ext), 3 * px)
+    let ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
 
     // 5. Where nearly everything nearby counts as ink, it's a picture or a filled shape.
     let crowd = blur(ink, 60 * px)
