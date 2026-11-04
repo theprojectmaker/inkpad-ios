@@ -133,6 +133,7 @@ final class PageTileView: UIView {
   let spec: PageSpec
   private let tiles: PageTiles
   private var wanted = false
+  private let inkShot = CALayer()     // the writing, as a picture, while pinching
   private var drawing = false
   // Two at a time: a long PDF never has every page being drawn at once.
   private static let previews: OperationQueue = {
@@ -153,9 +154,20 @@ final class PageTileView: UIView {
     tiles.frame = bounds
     tiles.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     addSubview(tiles)
+    inkShot.contentsGravity = .resize
+    inkShot.frame = bounds
+    layer.addSublayer(inkShot)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func showInk(_ image: CGImage?) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    inkShot.frame = bounds
+    inkShot.contents = image
+    CATransaction.commit()
+  }
 
   /// Pictures take memory, so only pages near the one you're on keep one.
   func setNear(_ near: Bool) {

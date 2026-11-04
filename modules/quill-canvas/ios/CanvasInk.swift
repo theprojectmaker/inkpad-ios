@@ -610,11 +610,13 @@ extension QuillCanvasView {
   private func testZoomSweep() {
     let f = currentFit()
     let start = CACurrentMediaTime()
+    pinchBegan()
     let steps = 480
     var i = 0
     func step() {
       guard window != nil else { return }
       if i >= steps {
+        pinchEnded()
         canvas.setZoomScale(f * 0.5, animated: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
           self.canvas.setZoomScale(f, animated: true)

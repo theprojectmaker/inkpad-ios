@@ -118,6 +118,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var boxBar: UIStackView?
   lazy var formatBar: UIView = makeFormatBar()
   var zoomWriter: ZoomWriter?
+  var zoomPreviewing = false
+  var inkPictures: [String: (version: Int, image: CGImage?)] = [:]
+  var pageViewList: [PageTileView] { pageViews }
   var measureMode = "length"
   var measureStart: CGPoint = .zero
   let measureLayer = CAShapeLayer()
@@ -410,7 +413,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { dragStartOffset = canvas.contentOffset }
 
-  func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateTextScale() }
+  func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) { pinchBegan() }
+
+  func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+    updateTextScale()
+    pinchEnded()
+  }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer === panGR { return panStartsOnBox() }
@@ -604,7 +612,10 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     } else {
       saveQueue.async {
         write()
-        DispatchQueue.main.async { [weak self] in self?.emitState(strokes: count) }
+        DispatchQueue.main.async { [weak self] in
+          self?.emitState(strokes: count)
+          self?.refreshInkPictures()
+        }
       }
     }
   }

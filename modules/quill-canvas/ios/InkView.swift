@@ -242,6 +242,7 @@ final class InkView: UIView {
   weak var mirror: InkView?       // the zoom window shows the same ink
   private var padOrigin: CGPoint?
   private var pageFrameQueued = false
+  var paused = false            // pinching: the pages carry a picture of the ink instead
 
   init(document: InkDocument) {
     self.document = document
@@ -321,6 +322,13 @@ final class InkView: UIView {
       center = middle
     }
     zoom = z
+    settledDirty = true
+    if !paused { queuePageFrame() }
+  }
+
+  /// Back to drawing the ink, sharp, in the same screen update as the pages.
+  func resume() {
+    paused = false
     settledDirty = true
     queuePageFrame()
   }

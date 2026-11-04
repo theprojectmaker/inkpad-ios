@@ -62,7 +62,7 @@ export default function SettingsScreen() {
 
         <Section title="Look">
           <Row icon="circle.lefthalf.filled" label="Appearance" last
-            right={<Choice value={s.theme} options={[{ id: 'system', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />} />
+            right={<Choice value={s.theme === 'dark' ? 'dark' : 'light'} options={[{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />} />
         </Section>
 
         <Section title="Writing">

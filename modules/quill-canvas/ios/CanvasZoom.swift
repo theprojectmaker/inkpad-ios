@@ -209,3 +209,77 @@ extension QuillCanvasView {
 
   @objc func onZoomPan(_ g: UIPanGestureRecognizer) { zoomWriter?.drag(g) }
 }
+
+// MARK: - Pinching
+
+/// A pinch moves the pages with Core Animation and the ink with Metal, and the two reach the
+/// screen at different moments: the writing lagged behind the page and ran off its edge. So
+/// during a pinch the ink is a picture on each page, and they can't come apart.
+extension QuillCanvasView {
+  private func inkPicture(_ strokes: [InkStroke], page f: CGRect) -> CGImage? {
+    let k: CGFloat = 2
+    let fmt = UIGraphicsImageRendererFormat()
+    fmt.scale = k
+    fmt.opaque = false
+    let inside = strokes.filter { $0.bounds.intersects(f) }
+    if inside.isEmpty { return nil }
+    return UIGraphicsImageRenderer(size: f.size, format: fmt).image { InkRaster.draw(inside, rect: f, in: $0.cgContext) }.cgImage
+  }
+
+  private func nearPages() -> ClosedRange<Int>? {
+    guard !frames.isEmpty else { return nil }
+    let i = currentPage()
+    return max(0, i - 3)...min(frames.count - 1, i + 3)
+  }
+
+  /// Keeps the pictures ready, so a pinch starts without a pause. Called after each save.
+  func refreshInkPictures() {
+    guard let near = nearPages(), !zoomPreviewing else { return }
+    let version = document.version
+    let strokes = document.strokes.filter { !$0.lifted }
+    let jobs = near.filter { inkPictures[specs[$0].id]?.version != version }.map { (specs[$0].id, frames[$0]) }
+    if jobs.isEmpty { return }
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      guard let self else { return }
+      for (id, f) in jobs {
+        let image = autoreleasepool { self.inkPicture(strokes, page: f) }
+        DispatchQueue.main.async {
+          if self.document.version == version { self.inkPictures[id] = (version, image) }
+        }
+      }
+    }
+  }
+
+  func pinchBegan() {
+    guard !zoomPreviewing, let near = nearPages() else { return }
+    zoomPreviewing = true
+    let version = document.version
+    let strokes = document.strokes.filter { !$0.lifted }
+    for i in near where i < pageViewList.count {
+      let id = specs[i].id
+      if inkPictures[id]?.version != version { inkPictures[id] = (version, inkPicture(strokes, page: frames[i])) }
+      pageViewList[i].showInk(inkPictures[id]?.image)
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    ink.paused = true
+    ink.isHidden = true
+    CATransaction.commit()
+  }
+
+  func pinchEnded() {
+    guard zoomPreviewing else { return }
+    if canvas.isZooming || canvas.isZoomBouncing {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in self?.pinchEnded() }
+      return
+    }
+    zoomPreviewing = false
+    ink.isHidden = false
+    ink.resume()
+    // The pictures go once the sharp ink has had time to reach the screen.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+      guard let self, !self.zoomPreviewing else { return }
+      self.pageViewList.forEach { $0.showInk(nil) }
+    }
+  }
+}

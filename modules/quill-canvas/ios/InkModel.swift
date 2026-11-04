@@ -95,15 +95,18 @@ final class InkStroke {
 final class InkDocument {
   private(set) var strokes: [InkStroke] = []
   private var lastSeq: UInt32 = 0
+  private(set) var version = 0     // goes up whenever the ink changes
 
   func nextSeq() -> UInt32 { lastSeq += 1; return lastSeq }
 
   func load(_ s: [InkStroke]) {
     strokes = s
+    version += 1
     lastSeq = s.map(\.seq).max() ?? 0
   }
 
   func apply(removed: [InkStroke], added: [InkStroke]) {
+    version += 1
     if removed.count == 1, strokes.last === removed[0] {
       strokes.removeLast()
     } else if !removed.isEmpty {
@@ -117,7 +120,7 @@ final class InkDocument {
   }
 
   /// Replaces everything (pages moved or removed), keeping the paint order.
-  func replaceAll(_ s: [InkStroke]) { strokes = s }
+  func replaceAll(_ s: [InkStroke]) { strokes = s; version += 1 }
 }
 
 // MARK: - The pens

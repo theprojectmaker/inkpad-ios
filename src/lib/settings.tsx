@@ -131,6 +131,7 @@ const DARK: Theme = {
 export function useTheme(): Theme {
   const { s } = useSettings();
   const sys = useColorScheme();
-  const dark = s.theme === 'dark' || (s.theme === 'system' && sys === 'dark');
+  // The app is light like the recordings, unless Dark is picked on purpose.
+  const dark = s.theme === 'dark' && sys != null;
   return dark ? DARK : LIGHT;
 }
