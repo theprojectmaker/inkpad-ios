@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import UIKit
 import VisionKit
 
 public final class QuillCanvasModule: Module {
@@ -46,6 +47,17 @@ public final class QuillCanvasModule: Module {
     AsyncFunction("pdfInfo") { (path: String, maxText: Int) throws -> [String: Any] in
       return try PdfInfo.read(path, maxText: maxText)
     }
+
+    // Apple's colour picker; resolves with a hex colour, or nothing if closed.
+    AsyncFunction("pickColor") { (start: String, promise: Promise) in
+      guard let vc = self.appContext?.utilities?.currentViewController() else { promise.resolve(""); return }
+      ColorPick.show(start: start, from: vc) { promise.resolve($0) }
+    }.runOnQueue(.main)
+
+    // Puts text on the clipboard.
+    AsyncFunction("copyText") { (text: String) in
+      UIPasteboard.general.string = text
+    }.runOnQueue(.main)
 
     // A recording as timed lines of text.
     AsyncFunction("transcribe") { (path: String, promise: Promise) in
@@ -167,6 +179,10 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("setComment") { (view: QuillCanvasView, id: String, text: String) in
         view.setComment(id: id, text: text)
+      }.runOnQueue(.main)
+
+      AsyncFunction("replaceSelection") { (view: QuillCanvasView, text: String) in
+        view.replaceSelection(text: text)
       }.runOnQueue(.main)
 
       AsyncFunction("movePage") { (view: QuillCanvasView, from: Int, to: Int) in

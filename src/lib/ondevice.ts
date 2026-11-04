@@ -9,6 +9,8 @@ export type LocalAIStatus = 'ready' | 'off' | 'downloading' | 'unsupported';
 
 type NativeOnDevice = {
   readText(path: string): Promise<{ lines: OcrLine[]; width: number; height: number }>;
+  pickColor(start: string): Promise<string>;
+  copyText(text: string): Promise<void>;
   pdfInfo(path: string, maxText: number): Promise<{ pages: [number, number][]; text: string }>;
   enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
   localAIStatus(): LocalAIStatus;
@@ -33,6 +35,13 @@ export async function pdfInfo(uri: string, maxText = 12000) {
   if (!Native?.pdfInfo) return null;
   return Native.pdfInfo(plain(uri), maxText);
 }
+
+/** Apple's colour picker. Empty if closed without picking. */
+export async function pickColor(start: string): Promise<string> {
+  return (await Native?.pickColor?.(start)) ?? '';
+}
+
+export const copyText = (text: string) => Native?.copyText?.(text);
 
 /** The text of a page picture as plain lines (for the offline AI). */
 export async function pageText(uri: string): Promise<string> {

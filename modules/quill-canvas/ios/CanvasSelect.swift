@@ -438,6 +438,34 @@ extension QuillCanvasView {
     onSelectionAction(["action": "share", "path": path])
   }
 
+  /// Asks the app to read the selection and show a preview.
+  private func convert(_ kind: String) {
+    guard let path = selectionFile() else { return }
+    onSelectionAction(["action": "convert", "text": kind, "path": path])
+  }
+
+  /// From the preview: the writing becomes this typed text (Undo brings the writing back).
+  func replaceSelection(text: String) {
+    commitSelection()
+    let picked = selection
+    guard !picked.isEmpty else { return }
+    let box = selBox
+    let lines = max(1, text.components(separatedBy: "\n").count)
+    let size = max(12, min(44, Double(box.height) / Double(lines) * 0.62))
+    let rgb = picked.first?.rgb ?? 0x111111
+    let hex = String(format: "#%02X%02X%02X", rgb & 255, rgb >> 8 & 255, rgb >> 16 & 255)
+    let b = TextBox(id: UUID().uuidString, x: Double(box.minX), y: Double(box.minY), w: Double(max(120, box.width * 1.15)), text: text, size: size, color: hex, font: textFont, bold: textBold)
+    picked.forEach { $0.lifted = false }
+    selection = []; selTexts = []; selPics = []
+    ink.lifted = []
+    clearSelectionUI()
+    document.apply(removed: picked, added: [])
+    texts.append(b)
+    renderTexts()
+    finishObjects(removed: picked, added: [])
+    ink.setNeedsInk(rebuild: true)
+  }
+
   @objc func onSelExplain() {
     guard let path = selectionFile() else { return }
     onSelectionAction(["action": "explain", "path": path])
@@ -624,7 +652,9 @@ extension QuillCanvasView {
     let convert = make("Convert ›")
     convert.accessibilityLabel = "Convert"
     convert.menu = UIMenu(children: [
-      UIAction(title: "Text") { [weak self] _ in self?.onSelToText() },
+      UIAction(title: "Text") { [weak self] _ in self?.convert("text") },
+      UIAction(title: "Math") { [weak self] _ in self?.convert("math") },
+      UIAction(title: "Graph") { [weak self] _ in self?.convert("graph") },
       UIAction(title: "Explain with AI") { [weak self] _ in self?.onSelExplain() },
       UIAction(title: "Share as a picture") { [weak self] _ in self?.onSelShare() },
     ])

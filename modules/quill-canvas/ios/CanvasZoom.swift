@@ -283,3 +283,34 @@ extension QuillCanvasView {
     }
   }
 }
+
+// MARK: - The colour wheel
+
+/// Apple's colour picker, answering with a hex colour (empty if closed without one).
+final class ColorPick: NSObject, UIColorPickerViewControllerDelegate {
+  static var current: ColorPick?
+  private let done: (String) -> Void
+  private var picked = ""
+
+  init(done: @escaping (String) -> Void) { self.done = done }
+
+  static func show(start: String, from vc: UIViewController, done: @escaping (String) -> Void) {
+    let session = ColorPick(done: done)
+    current = session
+    let p = UIColorPickerViewController()
+    p.selectedColor = UIColor(hex: start)
+    p.supportsAlpha = false
+    p.delegate = session
+    vc.present(p, animated: true)
+  }
+
+  func colorPickerViewControllerDidSelectColor(_ c: UIColorPickerViewController) {
+    let rgb = c.selectedColor.inkRGB
+    picked = String(format: "#%02X%02X%02X", rgb & 255, rgb >> 8 & 255, rgb >> 16 & 255)
+  }
+
+  func colorPickerViewControllerDidFinish(_ c: UIColorPickerViewController) {
+    done(picked)
+    ColorPick.current = nil
+  }
+}

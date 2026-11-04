@@ -8,6 +8,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimens
 
 import type { CanvasTool } from '@/components/quill-canvas';
 import { Icon } from '@/components/ui';
+import { pickColor } from '@/lib/ondevice';
 import { type InkTool, type PenLine, type Settings, type ToolKit, useSettings } from '@/lib/settings';
 
 export const KITS: Record<string, ToolKit> = {
@@ -237,6 +238,9 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const k = kitOf(s, kind);
   const color = k.colors[k.color] ?? '#000000';
   const patch = (p: Partial<ToolKit>) => set({ tk: { ...(s.tk ?? {}), [kind]: { ...k, ...p } } });
+  const usePicked = (c: string, adding: boolean) => {
+    if (adding) { const list = k.colors.includes(c) ? k.colors : [...k.colors, c].slice(-8); patch({ colors: list, color: list.indexOf(c) }); } else { const list = k.colors.slice(); list[k.color] = c; patch({ colors: list }); }
+  };
   const pick = (id: InkTool) => {
     setPop(null);
     if (id !== kind) set({ inkKind: id, lastTool: kind as InkTool });
@@ -387,11 +391,15 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         <Pressable accessibilityLabel="Close" style={StyleSheet.absoluteFill} onPress={() => setPop(null)} />
         {pop === 'colors' || pop === 'addColor' ? (
           <Card>
-            <Text style={{ fontSize: 17, fontWeight: '700', color: '#15171C', marginBottom: 12 }}>Colors</Text>
-            <ColorGrid current={color} onPick={(c) => {
-              if (pop === 'addColor') { const list = k.colors.includes(c) ? k.colors : [...k.colors, c].slice(-8); patch({ colors: list, color: list.indexOf(c) }); } else { const list = k.colors.slice(); list[k.color] = c; patch({ colors: list }); }
-              setPop(null);
-            }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: '#15171C' }}>Colors</Text>
+              <Pressable accessibilityLabel="Colour wheel" onPress={() => {
+                const adding = pop === 'addColor';
+                setPop(null);
+                setTimeout(async () => { const c = await pickColor(color); if (c) usePicked(c, adding); }, 300);
+              }} hitSlop={8}><Icon name="paintpalette.fill" size={24} color={BLUE} /></Pressable>
+            </View>
+            <ColorGrid current={color} onPick={(c) => { usePicked(c, pop === 'addColor'); setPop(null); }} />
           </Card>
         ) : pop === 'size' ? (
           <Card width={Math.min(screen - 40, 400)}>

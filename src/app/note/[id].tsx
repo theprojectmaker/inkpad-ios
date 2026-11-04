@@ -22,6 +22,7 @@ import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
 import { askStudy } from '@/lib/ai';
+import { copyText, readText } from '@/lib/ondevice';
 import { loadPageText, pageTextToSearch, readPages, snapPages } from '@/lib/handindex';
 import { dueLabel, handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
 import { ensureGoogle, saveToDrive } from '@/lib/drive';
@@ -115,6 +116,7 @@ export default function Editor() {
   const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
   const [comment, setComment] = useState<{ id: string; text: string } | null>(null);
   const [zoomWin, setZoomWin] = useState(false);
+  const [convert, setConvert] = useState<{ kind: string; busy: boolean; text: string } | null>(null);
   const [calibrate, setCalibrate] = useState<null | { need: boolean; length?: number }>(null);
   const [calValue, setCalValue] = useState('');
   const [calUnit, setCalUnit] = useState('Feet');
@@ -501,6 +503,21 @@ export default function Editor() {
     const { action, path, text } = e.nativeEvent;
     if (action === 'message' && text) toast(text);
     else if (action === 'zoomClosed') setZoomWin(false);
+    else if (action === 'convert' && path) {
+      const kind = text ?? 'text';
+      setConvert({ kind, busy: true, text: '' });
+      try {
+        let out = '';
+        if (kind === 'text') out = (await readText('file://' + path)).map((l) => l.text).join('\n');
+        else {
+          const question = kind === 'math'
+            ? 'Copy this handwritten math exactly as typed text, using plain Unicode math symbols like ², √, ×, ÷, π. Only the math, nothing else.'
+            : 'Read this handwritten function and give only the equation to graph, written like y = x^2 + 1. Nothing else.';
+          out = (await askStudy('ask', ['file://' + path], { question })).text?.trim() ?? '';
+        }
+        setConvert({ kind, busy: false, text: out || "Couldn't read any writing there." });
+      } catch (err) { setConvert({ kind, busy: false, text: String((err as Error)?.message ?? err) }); }
+    }
     else if (action === 'measured') {
       const scale = s.measureScale;
       const mode = text;
@@ -725,6 +742,25 @@ export default function Editor() {
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />
       <ConfirmSheet visible={delRec != null} title="Delete this recording?" message="Your writing stays. The audio and its transcript are removed." onCancel={() => setDelRec(null)}
         onConfirm={() => { const r = delRec; setDelRec(null); if (r) deleteRecording(r); }} />
+      <Sheet visible={!!convert} onClose={() => setConvert(null)} title="Preview" width={560}>
+        {convert?.busy ? <View style={{ padding: 40, alignItems: 'center' }}><ActivityIndicator color={t.accent} /></View> : (
+          <>
+            <TextInput accessibilityLabel="Converted text" multiline value={convert?.text ?? ''} onChangeText={(v) => setConvert((c) => (c ? { ...c, text: v } : c))}
+              style={{ minHeight: 140, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: t.line, color: t.text, fontSize: 18, textAlignVertical: 'top' }} />
+            <Text style={{ color: t.sub, fontSize: 13, marginTop: 8 }}>{convert?.kind === 'graph' ? 'Opens the calculator with this copied, ready to paste.' : 'You can fix anything here first. Undo brings your writing back.'}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
+              <Pressable accessibilityLabel="Cancel convert" onPress={() => setConvert(null)} style={{ height: 40, paddingHorizontal: 16, justifyContent: 'center' }}><Text style={{ color: t.text, fontSize: 16 }}>Cancel</Text></Pressable>
+              <Pressable accessibilityLabel="Convert now" onPress={() => {
+                const c = convert;
+                setConvert(null);
+                if (!c?.text.trim()) return;
+                if (c.kind === 'graph') { copyText(c.text); closePanels(); setCalcLoaded(true); setCalc(true); toast('Copied. Paste it into the calculator.'); }
+                else canvas.current?.replaceSelection(c.text);
+              }} style={{ height: 40, paddingHorizontal: 18, borderRadius: 10, justifyContent: 'center', backgroundColor: '#3F6AF2' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Convert</Text></Pressable>
+            </View>
+          </>
+        )}
+      </Sheet>
       <Sheet visible={!!explain} onClose={() => setExplain(null)} title="Explain" width={520}>
         {explain?.busy ? <View style={{ padding: 30, alignItems: 'center' }}><ActivityIndicator color={t.accent} /></View> : <Markdown text={explain?.text ?? ''} />}
       </Sheet>
