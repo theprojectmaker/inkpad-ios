@@ -127,15 +127,16 @@ struct InkPen {
   var width: Float = 2
 
   var kind: InkKind { type == "marker" ? .marker : type == "pencil" ? .pencil : .pen }
-  /// Pens that thin out as they leave the page.
-  var tapers: Bool { type == "pen" || type == "fountain" }
+  /// Pens that start thin and grow into the line.
+  var tapers: Bool { type != "marker" }
 
   /// Radius and opacity for one moment of the stroke. `p` is pressure 0...1.
   func shape(p: Float, dirX: Float, dirY: Float, altitude: Float) -> (r: Float, a: Float) {
     let half = width / 2
     switch type {
     case "monoline":
-      return (half * (0.92 + 0.16 * p), 1)
+      // Keeps its thin, even character but still answers the hand.
+      return (half * (0.72 + 0.62 * pow(p, 0.8)), 1)
     case "fountain":
       // A nib held at 40 degrees: thin along it, broad across it.
       let across = abs(dirX * -0.643 + dirY * 0.766)

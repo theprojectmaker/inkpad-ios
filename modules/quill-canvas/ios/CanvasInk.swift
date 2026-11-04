@@ -65,7 +65,7 @@ final class PenCapture {
   private var lastT: TimeInterval
   private var r: Float = 0, a: Float = 1
   private var dirX: Float = 1, dirY: Float = 0
-  private var velX: Float = 0, velY: Float = 0
+  private var lastSpeed: Float = 0
   private var storedX: Float, storedY: Float
   var moveAnchor: CGPoint
   var lastMoveTime: TimeInterval
@@ -95,12 +95,10 @@ final class PenCapture {
     let dt = Float(max(0.001, time - lastT))
     let speed = hypot(x - rawX, y - rawY) * zoom / dt
     lastT = time
-    // Holds a slow line steady without making a fast one lag.
-    if !first {
-      velX += ((x - rawX) / dt - velX) * 0.2
-      velY += ((y - rawY) / dt - velY) * 0.2
-    }
-    let tau = 1 / (2 * Float.pi * (7 + 0.08 * speed))
+    // Light enough that the line lands where the tip was drawn: heavier filtering
+    // made the ink visibly shift just after it appeared.
+    if !first { lastSpeed += (speed - lastSpeed) * 0.2 }
+    let tau = 1 / (2 * Float.pi * (24 + 0.2 * speed))
     let k = first ? 1 : 1 / (1 + tau / dt)
     let oldX = fx, oldY = fy
     fx += (x - fx) * k
@@ -132,19 +130,14 @@ final class PenCapture {
   /// Redraws the end of the line, out to the Pencil and where it's heading.
   func refresh(predicted: [CGPoint]) {
     var ahead = [InkPoint(x: rawX, y: rawY, r: r, a: a)]
-    let speed = hypot(velX, velY) * zoom
-    // Barely moving: a guess at where the Pencil is going is only noise.
-    if speed > 80 {
-      let reach = 34 / zoom
+    // Barely moving: a guess at where the Pencil is going is only noise, and it makes the tip flicker.
+    if lastSpeed > 150 {
+      let reach = 20 / zoom
       for p in predicted {
         let x = Float(p.x), y = Float(p.y)
         if hypot(x - rawX, y - rawY) > reach { break }
         ahead.append(InkPoint(x: x, y: y, r: r, a: a))
       }
-      // A little further than iPadOS guesses, to make up for the trip to the screen.
-      let from = ahead[ahead.count - 1]
-      let extra = min(0.012, 14 / (speed + 1))
-      ahead.append(InkPoint(x: from.x + velX * extra, y: from.y + velY * extra, r: r, a: a))
     }
     wet.refresh(ahead: ahead)
   }
@@ -154,16 +147,6 @@ final class PenCapture {
     if snap != nil { return wet.pts }
     var pts = wet.pts
     if let last = pts.last, hypot(last.x - rawX, last.y - rawY) > 0.05 { pts.append(InkPoint(x: rawX, y: rawY, r: r, a: a)) }
-    if pen.tapers && pts.count > 2 {
-      let reach = max(4, pen.width * 3)
-      var run: Float = 0
-      var i = pts.count - 1
-      while i > 0 && run < reach {
-        pts[i].r *= 0.35 + 0.65 * run / reach
-        run += hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-        i -= 1
-      }
-    }
     return pts
   }
 }
@@ -245,7 +228,8 @@ extension QuillCanvasView {
       self?.canvas.pinchGestureRecognizer?.isEnabled = true
     }
     scrollBack = w
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
+    // Long enough to cover the pause between words, when a resting hand would move the page.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
   }
 
   func inkBegan(_ t: UITouch, _ event: UIEvent) {
@@ -393,7 +377,7 @@ extension QuillCanvasView {
     record(InkEdit(removed: [], added: [stroke]))
     ink.wet = nil
     ink.settle([stroke])
-    ink.drawNow()
+    ink.drawNow(finishing: true)
     ink.penUp()
   }
 

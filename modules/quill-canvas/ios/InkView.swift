@@ -219,6 +219,7 @@ final class InkView: UIView {
   private var msaa: MTLTexture?
   private var depth: MTLTexture?
   private var unshown = 0               // frames sent that aren't on screen yet
+  private var drewThisRefresh = false
   private var sentAt: CFTimeInterval = 0
   private var lastCommand: MTLCommandBuffer?
   private var framePending = false
@@ -299,6 +300,7 @@ final class InkView: UIView {
   }
 
   @objc private func tick() {
+    drewThisRefresh = false
     onLinkTick?()
     if framePending { drawNow() }
   }
@@ -336,21 +338,28 @@ final class InkView: UIView {
 
   /// withPages: goes out in the same screen update as the pages moving under it (scrolling).
   /// Otherwise it goes straight out, the quickest path, for the Pencil.
-  func drawNow(withPages: Bool = false) {
+  func drawNow(withPages: Bool = false, finishing: Bool = false) {
     guard window != nil, bounds.width > 1 else { return }
     guard let gpu else { drawFallback(); return }
     if withPages {
       lastCommand?.waitUntilCompleted()     // ink and pages have to move together
-    } else if unshown >= 1 && CACurrentMediaTime() - sentAt < 0.1 {
-      // One frame waiting for the screen at a time: a queue of them would put the ink
-      // behind the Pencil, and asking for a drawable could stall the main thread.
+    } else if link != nil && drewThisRefresh && !finishing {
+      framePending = true       // one frame per screen refresh; the next refresh picks this up
+      return
+    } else if unshown >= 2 && CACurrentMediaTime() - sentAt < 0.1 {
+      // A frame takes two refreshes to reach the screen, so two may be on their way (one
+      // would halve the frame rate). More would put the ink behind the Pencil, and asking
+      // for a drawable could stall the main thread.
       framePending = true
       if stats.on { stats.skipped += 1 }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-        if self?.framePending == true { self?.drawNow() }
+      if link == nil {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+          if self?.framePending == true { self?.drawNow() }
+        }
       }
       return
     }
+    drewThisRefresh = true
     framePending = false
     let began = CACurrentMediaTime()
     guard let m = layer as? CAMetalLayer, let msaa, let depth, settled != nil else { return }
