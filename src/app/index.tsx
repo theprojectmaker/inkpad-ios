@@ -93,6 +93,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     } catch (e) {
       busy(null);
       await fsx.remove(`inkpad/n/${id}`);
+      if (stay) throw e;
       toast(String((e as Error)?.message ?? e));
     }
   };
@@ -101,17 +102,26 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     if (!lib.ready || Platform.OS !== 'ios') return;
     const dir = 'quill-test-import';
     (async () => {
-      for (const f of fsx.list(dir)) {
+      let log = '';
+      const note = async (line: string) => { log += `${line}\n`; await fsx.writeText('quill-test-import.log', log); };
+      const files = fsx.list(dir).sort((a, b) => Number(b.endsWith('.jpg')) - Number(a.endsWith('.jpg')));
+      await note('files: ' + files.join(', '));
+      for (const f of files) {
         const path = `${dir}/${f}`;
+        const start = Date.now();
+        try {
         if (f.endsWith('.jpg')) {
           const id = uid('n');
           const pages = await imagePages(id, [fsx.uri(path)]);
           await lib.createNote({ id, folderId: null, kind: 'image', title: f.replace(/.jpg$/, ''), pages, paper: { style: 'blank', color: 'white' } });
           await fsx.remove(path);
+          await note(`${f}: ok in ${Date.now() - start} ms`);
           continue;
         }
         await importPdfUri(fsx.uri(path), f, true);
         await fsx.remove(path);
+        await note(`${f}: ok in ${Date.now() - start} ms`);
+        } catch (e) { await note(`${f}: FAILED after ${Date.now() - start} ms: ${String((e as Error)?.message ?? e)}`); }
       }
     })().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps

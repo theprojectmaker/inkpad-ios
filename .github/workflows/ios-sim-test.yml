@@ -72,6 +72,8 @@ jobs:
           find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ ; 2>/dev/null || true
           kill -INT $(cat out/rec.pid) || true; sleep 3
           kill $(cat out/log.pid) || true
+          cp "$DOCS/quill-test-import.log" out/ 2>/dev/null || echo "no import log"
+          cat out/quill-test-import.log 2>/dev/null || true
 
       - name: Crash reports
         if: always()
