@@ -387,6 +387,16 @@ final class InkView: UIView {
     unshown += 1
     sentAt = CACurrentMediaTime()
     lastCommand = cmd
+    #if targetEnvironment(simulator)
+    // The simulator can't report when a frame reaches the screen.
+    cmd.addCompletedHandler { [weak self] _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.unshown = max(0, self.unshown - 1)
+        if self.framePending { self.drawNow() }
+      }
+    }
+    #else
     let input = wet == nil ? 0 : lastInputTime
     drawable.addPresentedHandler { [weak self] shown in
       let at = shown.presentedTime
@@ -401,6 +411,7 @@ final class InkView: UIView {
         if self.framePending { self.drawNow() }
       }
     }
+    #endif
     cmd.addCompletedHandler { [weak self] done in
       if let e = done.error { NSLog("Quill ink frame failed: %@", String(describing: e)) }
       let gpuTime = done.gpuEndTime - done.gpuStartTime
