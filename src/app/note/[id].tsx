@@ -561,7 +561,7 @@ export default function Editor() {
   return (
     <View style={{ flex: 1, backgroundColor: '#F4F5F8' }}>
       <StatusBar hidden />
-      <Stack.Screen options={{ gestureEnabled: false }} />
+      <Stack.Screen options={{ gestureEnabled: false, statusBarHidden: true }} />
       <View style={{ flex: 1, flexDirection: 'row' }}>
         {sidebar && doc ? (
           <PageSidebar noteId={id} pages={doc.pages} current={page.page} ver={ver} canvas={canvas} absPath={absPath}

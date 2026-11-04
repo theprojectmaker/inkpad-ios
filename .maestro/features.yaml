@@ -42,9 +42,8 @@ appId: com.solyapps.notes
 - tapOn: { text: "More colours", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 05b-colour-palette
-- tapOn: { text: "Colour #.*", index: 40, optional: true }
+- tapOn: { text: "Colour #0A7A38", optional: true }
 - waitForAnimationToEnd
-- tapOn: { text: "Save pen.*", optional: true }
 - takeScreenshot: 05c-saved
 - tapOn: { point: "70%, 80%" }
 # Box lasso on the writing, then each thing the lasso can do
@@ -81,6 +80,7 @@ appId: com.solyapps.notes
 - takeScreenshot: 11-pasted
 - tapOn: { point: "85%, 85%" }
 # Tape
+- tapOn: { text: "More tools", optional: true }
 - tapOn: { text: "Tape", optional: true }
 - swipe: { start: "24%, 32%", end: "60%, 32%", duration: 500 }
 - waitForAnimationToEnd
@@ -98,7 +98,6 @@ appId: com.solyapps.notes
 - swipe: { start: "30%, 60%", end: "70%, 62%", duration: 700 }
 - takeScreenshot: 13-laser
 # A comment
-- tapOn: { text: "More tools", optional: true }
 - tapOn: { text: "Comment", optional: true }
 - tapOn: { point: "60%, 70%" }
 - waitForAnimationToEnd
@@ -110,16 +109,15 @@ appId: com.solyapps.notes
 - tapOn: { text: "Back to the main tools", optional: true }
 # Eraser modes
 - tapOn: { text: "Eraser", optional: true }
-- tapOn: { text: "Eraser", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 14-eraser-options
-- tapOn: { text: "Whole line", optional: true }
+- tapOn: { text: "Whole", optional: true }
 - tapOn: { point: "70%, 85%" }
 # Typed text with a font
 - tapOn: { text: "Text", optional: true }
 - tapOn: { text: "Text", optional: true }
 - waitForAnimationToEnd
-- tapOn: { text: "Hand", optional: true }
+- tapOn: { text: "Font", optional: true }
 - takeScreenshot: 15-text-options
 - tapOn: { point: "70%, 85%" }
 - tapOn: { point: "40%, 66%" }
@@ -174,9 +172,7 @@ appId: com.solyapps.notes
 - takeScreenshot: 21-insert-menu
 - tapOn: { text: "Blank page after.*", optional: true }
 - waitForAnimationToEnd
-- tapOn: { text: "New page", optional: true }
-- waitForAnimationToEnd
-- takeScreenshot: 22-new-page-button
+- takeScreenshot: 22-page-added
 - tapOn: { text: "Show pages", optional: true }
 - waitForAnimationToEnd
 - longPressOn: { text: "Page 1", optional: true }
