@@ -80,7 +80,9 @@ enum ScanFilter {
     let lumSmall = shrink(lum, q)
     let around = grow(blur(maximum(lumSmall, 14 * px * q), 4 * px * q), q)
     let grey = around.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: lum]).cropped(to: ext)
-    let faint = curve(blur(grey, 0.55 * soft), [(0, 1), (0.66, 1), (0.87, 0.97), (0.94, 0.5), (0.98, 0)])
+    // A sharp scan has clean edges and needs less reach; reaching further only leaves smudges around letters.
+    let edge: [(CGFloat, CGFloat)] = soft < 1.25 ? [(0, 1), (0.62, 1), (0.82, 0.97), (0.89, 0.45), (0.93, 0)] : [(0, 1), (0.66, 1), (0.87, 0.97), (0.94, 0.5), (0.98, 0)]
+    let faint = curve(blur(grey, 0.55 * soft), edge)
 
     // Sensitive enough for pencil means grain gets through too, so faint marks only count
     // beside something definite: a real stroke, or a long ruled line. Specks are neither.
