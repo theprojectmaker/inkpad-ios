@@ -23,7 +23,7 @@ jobs:
           public class AppContext {}
           open class ExpoView: UIView {
             public required init(appContext: AppContext? = nil) { super.init(frame: .zero) }
-            public required init?(coder: NSCoder) { fatalError() }
+            @available(*, unavailable) public required init?(coder: NSCoder) { fatalError() }
           }
           public class EventDispatcher { public init() {}; public func callAsFunction(_ d: [String: Any]) {} }
           SWIFT
