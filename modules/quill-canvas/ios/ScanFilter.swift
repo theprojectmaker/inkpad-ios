@@ -56,7 +56,11 @@ enum ScanFilter {
     // 3. The ink. Darkest channel, so blue or red pen counts as fully as black. A small blur
     //    followed by a steep curve is what turns jagged edges into smooth ones, and it
     //    closes the little gaps in a broken line. The low end is set to keep faint pencil.
-    let grey = flat.applyingFilter("CIMinimumComponent")
+    let lum = flat.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
+    // How much darker than the paper right around it. A wide highlighter band isn't
+    // darker than its surroundings, so it's never mistaken for ink; text on it still is.
+    let around = blur(lum.clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 14 * px]).cropped(to: ext), 4 * px)
+    let grey = around.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: lum]).cropped(to: ext)
     let soft = blur(grey, 1.4 * px)
     let faint = curve(soft, [(0, 1), (0.6, 1), (0.8, 0.95), (0.9, 0.45), (0.96, 0)]).cropped(to: ext)
     // Sensitive enough for pencil means grain gets through too, so faint marks only count
@@ -72,8 +76,9 @@ enum ScanFilter {
     let ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
 
     // 5. Where nearly everything nearby counts as ink, it's a picture or a filled shape.
-    let crowd = blur(ink, 60 * px)
-    let picture = curve(crowd, [(0, 0), (0.3, 0), (0.42, 0.2), (0.55, 0.85), (0.65, 1)]).cropped(to: ext)
+    let dark = curve(blur(flat.applyingFilter("CIMinimumComponent"), 2 * px), [(0, 1), (0.6, 1), (0.8, 0.8), (0.9, 0.2), (0.96, 0)]).cropped(to: ext)
+    let crowd = blur(dark, 110 * px)
+    let picture = curve(crowd, [(0, 0), (0.45, 0), (0.58, 0.2), (0.72, 0.85), (0.82, 1)]).cropped(to: ext)
 
     var out: CIImage
     if mode == "document" {
@@ -86,7 +91,7 @@ enum ScanFilter {
       // 4. Paper: nearly white becomes pure white; a highlighter's colour stays. Ink is removed
       //    from it first by keeping the brightest nearby colour.
       let bright = flat.clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 7 * px]).cropped(to: ext)
-      let sheet = curve(blur(bright, 7 * px), [(0, 0), (0.4, 0.42), (0.75, 0.84), (0.9, 1), (1, 1)]).cropped(to: ext)
+      let sheet = curve(blur(bright, 14 * px), [(0, 0), (0.4, 0.46), (0.7, 0.88), (0.82, 1), (1, 1)]).cropped(to: ext)
       // The ink's colour, read from inside the strokes (their edges are paler), deepened.
       let pen = blur(flat.clampedToExtent().applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": 2.5 * px]).cropped(to: ext), 2.5 * px)
       let deep = curve(pen.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.35]), [(0, 0), (0.3, 0.08), (0.6, 0.28), (0.85, 0.52), (1, 0.85)]).cropped(to: ext)
