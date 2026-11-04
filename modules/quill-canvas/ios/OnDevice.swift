@@ -11,7 +11,7 @@ import FoundationModels
 #endif
 
 enum OnDevice {
-  private static let ci = CIContext()
+  private static let ci = CIContext(options: [.cacheIntermediates: false])
 
   /// Every line of text in the picture, top to bottom: text plus where it sits
   /// (0...1 of the picture, top-left origin) and how sure Vision is.
@@ -39,8 +39,8 @@ enum OnDevice {
   static func fix(_ input: UIImage, mode: String) -> UIImage {
     let img = upright(input)
     guard let image = CIImage(image: img) else { return input }
-    let out = ScanFilter.clean(image, mode: mode)
-    guard let cg = ci.createCGImage(out, from: out.extent) else { return input }
+    defer { ci.clearCaches() }
+    guard let cg = ScanFilter.render(image, mode: mode, context: ci) else { return input }
     return UIImage(cgImage: cg, scale: 1, orientation: .up)
   }
 

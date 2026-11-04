@@ -1,103 +1,126 @@
 // Makes a scanned page look like a clean original, on the iPad. Nothing is retyped or
 // guessed: every letter stays exactly where and how it was written; only the picture
 // gets better. Works on the ink separately from the paper:
-//   1. Enlarge, so there's room for smooth edges.
+//   1. Size it: small scans are enlarged so there's room for smooth edges.
 //   2. Find the paper's lighting and remove it (shadows and grey paper become even white).
 //   3. Make a clean mask of the ink: grain is gone, and rough pixel edges become smooth curves.
 //   4. Redraw: the ink's own colour, through that mask, on the paper (highlighter kept).
 //   5. Pictures and solid dark areas aren't ink: those keep their real detail.
+// Only the ink's edges are worked on at full size. Everything wide (lighting, paper,
+// speckle checks, finding pictures) is worked out on a small copy: it looks the same and
+// takes a fraction of the memory.
 import CoreImage
 
 enum ScanFilter {
-  /// `mode` "color" keeps pen and highlighter colours; "document" is crisp black on white.
-  static func clean(_ input: CIImage, mode: String) -> CIImage {
-    var image = input
-    let side = max(image.extent.width, image.extent.height)
+  /// The cleaned page, or nil if it couldn't be made even at the smaller size.
+  static func render(_ input: CIImage, mode: String, context: CIContext) -> CGImage? {
+    for target: CGFloat in [3200, 2400] {
+      let out = clean(input, mode: mode, target: target)
+      if let cg = context.createCGImage(out, from: out.extent) { return cg }
+      context.clearCaches()
+    }
+    return nil
+  }
 
-    // 1. Room for smooth edges: small scans are enlarged to about 3600 on the long side.
-    let target: CGFloat = 3600
-    if side < target {
-      image = image.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: min(3, target / side), kCIInputAspectRatioKey: 1.0])
+  /// `mode` "color" keeps pen and highlighter colours; "document" is crisp black on white.
+  static func clean(_ input: CIImage, mode: String, target: CGFloat = 3200) -> CIImage {
+    var image = input
+    // 1. The working size. `soft` says how much the page was enlarged: the more it was, the
+    //    softer its edges are, and the more smoothing they can take. A sharp, full-size
+    //    scan gets very little, so small print stays open and readable.
+    let scale = min(3, target / max(image.extent.width, image.extent.height))
+    let soft = max(1, scale)
+    if abs(scale - 1) > 0.01 {
+      image = image.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0])
     }
     // Everything below is judged the way the eye sees it, not in raw light values.
     image = image.settingAlphaOne(in: image.extent).applyingFilter("CILinearToSRGBToneCurve")
     let ext = image.extent
-    let px = max(ext.width, ext.height) / target    // 1 at the working size
+    let px = max(ext.width, ext.height) / 3600
 
     func blur(_ i: CIImage, _ r: CGFloat) -> CIImage {
-      i.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: r]).cropped(to: ext)
+      i.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: r]).cropped(to: i.extent)
     }
     func curve(_ i: CIImage, _ p: [(CGFloat, CGFloat)]) -> CIImage {
       i.applyingFilter("CIToneCurve", parameters: [
         "inputPoint0": CIVector(x: p[0].0, y: p[0].1), "inputPoint1": CIVector(x: p[1].0, y: p[1].1), "inputPoint2": CIVector(x: p[2].0, y: p[2].1),
         "inputPoint3": CIVector(x: p[3].0, y: p[3].1), "inputPoint4": CIVector(x: p[4].0, y: p[4].1),
-      ])
+      ]).cropped(to: i.extent)
     }
+    func shrink(_ i: CIImage, _ q: CGFloat) -> CIImage {
+      i.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: q, kCIInputAspectRatioKey: 1.0])
+    }
+    func grow(_ i: CIImage, _ q: CGFloat) -> CIImage {
+      i.clampedToExtent().transformed(by: CGAffineTransform(scaleX: 1 / q, y: 1 / q)).cropped(to: ext)
+    }
+    func maximum(_ i: CIImage, _ r: CGFloat) -> CIImage {
+      i.clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": max(1, r)]).cropped(to: i.extent)
+    }
+    func colourless(_ i: CIImage) -> CIImage { i.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0]) }
 
-    // Grain off first, or it would be read as ink: each step keeps the edges of pen lines.
-    let calm = blur(image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.04, "inputSharpness": 0.5]).cropped(to: ext), 1.2 * px)
+    // Grain off first, or it would be read as ink.
+    let calm = blur(image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.03, "inputSharpness": 0.6]).cropped(to: ext), 0.6 * soft)
 
     // 2. The paper's lighting: at 1/16 size writing nearly vanishes; keep the brightest
-    //    nearby colour, soften it, and divide the page by it.
+    //    nearby value, soften it, and divide the page by it. Colourless, so a highlighter
+    //    can't tint the writing beside it.
     let k: CGFloat = 1 / 16
-    let small = calm.transformed(by: CGAffineTransform(scaleX: k, y: k))
-    let paper = small.clampedToExtent()
-      // Colourless, so a highlighter can't tint the writing beside it.
-      .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
-      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 4])
-      .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 5])
-      .applyingFilter("CIColorClamp", parameters: [
-        "inputMinComponents": CIVector(x: 0.1, y: 0.1, z: 0.1, w: 1), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
-      ])
-      .cropped(to: small.extent).clampedToExtent()
-      .transformed(by: CGAffineTransform(scaleX: 1 / k, y: 1 / k)).cropped(to: ext)
-    let flat = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: calm]).cropped(to: ext)
+    let litSmall = maximum(colourless(shrink(calm, k)), 4)
+    let lit = blur(litSmall, 5).applyingFilter("CIColorClamp", parameters: [
+      "inputMinComponents": CIVector(x: 0.1, y: 0.1, z: 0.1, w: 1), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
+    ])
+    let flat = grow(lit, k).applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: calm]).cropped(to: ext)
 
-    // 3. The ink. Darkest channel, so blue or red pen counts as fully as black. A small blur
-    //    followed by a steep curve is what turns jagged edges into smooth ones, and it
-    //    closes the little gaps in a broken line. The low end is set to keep faint pencil.
-    let lum = flat.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
-    // How much darker than the paper right around it. A wide highlighter band isn't
-    // darker than its surroundings, so it's never mistaken for ink; text on it still is.
-    let around = blur(lum.clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 14 * px]).cropped(to: ext), 4 * px)
+    // 3. The ink: how much darker it is than the paper right around it. A wide highlighter
+    //    band isn't darker than its surroundings, so it's never mistaken for ink; text on it
+    //    still is. A small blur then a steep curve turns jagged edges into smooth ones and
+    //    closes little gaps in a broken line. The low end keeps faint pencil.
+    let q: CGFloat = 1 / 4
+    let lum = colourless(flat)
+    let lumSmall = shrink(lum, q)
+    let around = grow(blur(maximum(lumSmall, 14 * px * q), 4 * px * q), q)
     let grey = around.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: lum]).cropped(to: ext)
-    let soft = blur(grey, 1.4 * px)
-    let faint = curve(soft, [(0, 1), (0.66, 1), (0.87, 0.97), (0.94, 0.5), (0.98, 0)]).cropped(to: ext)
+    let faint = curve(blur(grey, 0.55 * soft), [(0, 1), (0.66, 1), (0.87, 0.97), (0.94, 0.5), (0.98, 0)])
+
     // Sensitive enough for pencil means grain gets through too, so faint marks only count
     // beside something definite: a real stroke, or a long ruled line. Specks are neither.
-    let sure = curve(blur(grey, 3 * px), [(0, 1), (0.84, 1), (0.89, 0.6), (0.93, 0), (1, 0)]).cropped(to: ext)
-      .clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 11 * px]).cropped(to: ext)
+    let greySmall = shrink(grey, q)
+    let sure = maximum(curve(greySmall, [(0, 1), (0.84, 1), (0.89, 0.6), (0.93, 0), (1, 0)]), 11 * px * q)
     func ruled(_ angle: CGFloat) -> CIImage {
-      curve(grey.clampedToExtent().applyingFilter("CIMotionBlur", parameters: [kCIInputRadiusKey: 50 * px, kCIInputAngleKey: angle]).cropped(to: ext),
-            [(0, 1), (0.955, 1), (0.975, 0.4), (0.99, 0), (1, 0)]).cropped(to: ext)
+      curve(greySmall.clampedToExtent().applyingFilter("CIMotionBlur", parameters: [kCIInputRadiusKey: 50 * px * q, kCIInputAngleKey: angle]).cropped(to: greySmall.extent),
+            [(0, 1), (0.955, 1), (0.975, 0.4), (0.99, 0), (1, 0)])
     }
-    let allowed = blur(sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
-      .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(.pi / 2)]).cropped(to: ext), 3 * px)
+    let near = sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
+      .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(.pi / 2)]).cropped(to: greySmall.extent)
+    let allowed = grow(blur(near, 3 * px * q), q)
     let ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
 
-    // 5. Where nearly everything nearby counts as ink, it's a picture or a filled shape.
-    let dark = curve(blur(lum, 2 * px), [(0, 1), (0.6, 1), (0.8, 0.8), (0.9, 0.2), (0.96, 0)]).cropped(to: ext)
-    let crowd = blur(dark, 110 * px)
-    let picture = curve(crowd, [(0, 0), (0.3, 0), (0.4, 0.5), (0.48, 0.92), (0.55, 1)]).cropped(to: ext)
+    // 5. Where nearly everything nearby is dark, it's a picture or a filled shape. A page
+    //    of text never gets close to this.
+    let p: CGFloat = 1 / 8
+    let dark = curve(shrink(lum, p), [(0, 1), (0.6, 1), (0.8, 0.8), (0.9, 0.2), (0.96, 0)])
+    let picture = grow(curve(blur(dark, 110 * px * p), [(0, 0), (0.3, 0), (0.4, 0.5), (0.48, 0.92), (0.55, 1)]), p)
 
     var out: CIImage
     if mode == "document" {
       let white = CIImage(color: .white).cropped(to: ext)
       let black = CIImage(color: CIColor(red: 0.05, green: 0.05, blue: 0.06)).cropped(to: ext)
       out = black.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: white, kCIInputMaskImageKey: ink]).cropped(to: ext)
-      let photo = curve(flat.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0]), [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)])
+      let photo = curve(lum, [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)])
       out = photo.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: out, kCIInputMaskImageKey: picture]).cropped(to: ext)
     } else {
       // 4. Paper: nearly white becomes pure white; a highlighter's colour stays. Ink is removed
       //    from it first by keeping the brightest nearby colour.
-      let bright = flat.clampedToExtent().applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 7 * px]).cropped(to: ext)
-      let sheet = curve(blur(bright, 14 * px), [(0, 0), (0.4, 0.46), (0.7, 0.88), (0.82, 1), (1, 1)]).cropped(to: ext)
+      let sheetSmall = blur(maximum(shrink(flat, q), 7 * px * q), 14 * px * q)
+      let sheet = grow(curve(sheetSmall, [(0, 0), (0.4, 0.46), (0.7, 0.88), (0.82, 1), (1, 1)]), q)
       // The ink's colour, read from inside the strokes (their edges are paler), deepened.
-      let pen = blur(flat.clampedToExtent().applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": 2.5 * px]).cropped(to: ext), 2.5 * px)
-      let deep = curve(pen.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.35]), [(0, 0), (0.3, 0.07), (0.6, 0.22), (0.85, 0.4), (1, 0.8)]).cropped(to: ext)
+      let half: CGFloat = 1 / 2
+      let penSmall = shrink(flat, half).clampedToExtent().applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": max(1, 2.5 * px * half)]).cropped(to: shrink(flat, half).extent)
+      let pen = grow(blur(penSmall, 2.5 * px * half), half)
+      let deep = curve(pen.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.35]), [(0, 0), (0.3, 0.07), (0.6, 0.22), (0.85, 0.4), (1, 0.8)])
       out = deep.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: sheet, kCIInputMaskImageKey: ink]).cropped(to: ext)
       // Pictures keep their own detail, with the lighting fixed.
-      let photo = curve(flat, [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)]).cropped(to: ext)
+      let photo = curve(flat, [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)])
       out = photo.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: out, kCIInputMaskImageKey: picture]).cropped(to: ext)
     }
     return out.applyingFilter("CISRGBToneCurveToLinear").cropped(to: ext)
