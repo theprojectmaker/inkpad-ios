@@ -50,7 +50,9 @@ final class InkGesture: UIGestureRecognizer {
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
     guard let a = active, touches.contains(a) else { return }
-    owner?.inkCancelled()
+    // The system took the Pencil's touch back: what was written stays. (A cancelled finger
+    // is usually the start of a two-finger scroll, so that one is dropped.)
+    if a.type == .direct { owner?.inkCancelled() } else { owner?.inkEnded(a, event) }
     state = .cancelled
   }
 
@@ -512,7 +514,41 @@ extension QuillCanvasView {
 
   // MARK: - Ruler
 
+  /// Automated tests only (launch argument -QuillTestPinch 1): turning on the ruler runs
+  /// the zoom in and out, the way a pinch does, about the middle of the screen.
+  private func testZoomSweep() {
+    let f = currentFit()
+    let start = CACurrentMediaTime()
+    let steps = 480
+    var i = 0
+    func step() {
+      guard window != nil else { return }
+      if i >= steps {
+        canvas.setZoomScale(f * 0.5, animated: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+          self.canvas.setZoomScale(f, animated: true)
+          DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            NSLog("Quill zoom sweep done in %.1f s", CACurrentMediaTime() - start)
+            self.onSelectionAction(["action": "message", "text": "Zoom sweep done"])
+          }
+        }
+        return
+      }
+      let t = Double(i) / Double(steps) * 3 * 2 * .pi
+      let z = f * CGFloat(0.5 + 1.75 * (1 - cos(t)))   // 0.5x to 4x, three times
+      let w = canvas.bounds.size
+      let cx = (canvas.contentOffset.x + w.width / 2) / canvas.zoomScale
+      let cy = (canvas.contentOffset.y + w.height / 2) / canvas.zoomScale
+      canvas.setZoomScale(z, animated: false)
+      canvas.contentOffset = CGPoint(x: cx * z - w.width / 2, y: cy * z - w.height / 2)
+      i += 1
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60) { step() }
+    }
+    step()
+  }
+
   func setRuler(_ on: Bool) {
+    if on && UserDefaults.standard.double(forKey: "QuillTestPinch") > 0 { testZoomSweep() }
     if !on { ruler?.removeFromSuperview(); ruler = nil; return }
     guard ruler == nil else { return }
     let r = RulerView()

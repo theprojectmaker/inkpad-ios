@@ -1,0 +1,87 @@
+# Long PDFs and zooming. The workflow puts PDFs in the app's folder, and the app imports
+# them when it starts (titles show how the old import path did, for comparison).
+# Turning on the Ruler with -QuillTestPinch runs a zoom sweep; run.mp4 records it.
+appId: com.solyapps.notes
+---
+- launchApp:
+    arguments:
+      QuillTestPinch: "1"
+- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- extendedWaitUntil: { visible: "THeavy60.*", timeout: 400000 }
+- extendedWaitUntil: { visible: "T200.*", timeout: 200000 }
+- extendedWaitUntil: { visible: "T5 .*", timeout: 200000 }
+- takeScreenshot: a01-imported
+- tapOn: { text: "Settings", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Draw with finger", optional: true }
+- tapOn: { text: "Back to notes", optional: true }
+# Short PDF: write on it, then sweep the zoom
+- tapOn: { text: "T5 .*" }
+- extendedWaitUntil: { visible: "More", timeout: 15000 }
+- waitForAnimationToEnd
+- takeScreenshot: a02-t5
+- swipe: { start: "20%, 22%", end: "70%, 24%", duration: 500 }
+- swipe: { start: "20%, 28%", end: "70%, 30%", duration: 500 }
+- swipe: { start: "20%, 34%", end: "70%, 38%", duration: 500 }
+- swipe: { start: "30%, 42%", end: "55%, 60%", duration: 500 }
+- tapOn: { text: "Saved pen 4", optional: true }
+- swipe: { start: "20%, 25%", end: "70%, 27%", duration: 500 }
+- tapOn: { text: "Saved pen 1", optional: true }
+- takeScreenshot: a03-written
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Ruler", optional: true }
+- takeScreenshot: a04-sweep-start
+- takeScreenshot: a05-sweep-2
+- takeScreenshot: a06-sweep-3
+- takeScreenshot: a07-sweep-4
+- takeScreenshot: a08-sweep-5
+- takeScreenshot: a09-sweep-6
+- takeScreenshot: a10-sweep-7
+- takeScreenshot: a11-sweep-8
+- extendedWaitUntil: { visible: "Zoom sweep done", timeout: 30000, optional: true }
+- takeScreenshot: a12-after-sweep
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Ruler", optional: true }
+- swipe: { start: "20%, 60%", end: "70%, 62%", duration: 500 }
+- takeScreenshot: a13-write-after-sweep
+- tapOn: { text: "Undo", optional: true }
+- takeScreenshot: a14-undo-after-sweep
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+# 200 pages: scroll and jump
+- tapOn: { text: "T200.*" }
+- extendedWaitUntil: { visible: "More", timeout: 20000 }
+- waitForAnimationToEnd
+- takeScreenshot: a20-t200
+- tapOn: { text: "Go to page", optional: true }
+- waitForAnimationToEnd
+- eraseText: 4
+- inputText: "150"
+- tapOn: { text: "Go", optional: true }
+- waitForAnimationToEnd: { timeout: 4000 }
+- takeScreenshot: a21-t200-page150
+- swipe: { start: "85%, 80%", end: "85%, 20%", duration: 200 }
+- swipe: { start: "85%, 80%", end: "85%, 20%", duration: 200 }
+- swipe: { start: "85%, 80%", end: "85%, 20%", duration: 200 }
+- waitForAnimationToEnd: { timeout: 4000 }
+- takeScreenshot: a22-t200-scrolled
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+# 60 heavy pages: scroll quickly through them
+- tapOn: { text: "THeavy60.*" }
+- extendedWaitUntil: { visible: "More", timeout: 30000 }
+- waitForAnimationToEnd
+- takeScreenshot: a30-heavy
+- swipe: { start: "85%, 85%", end: "85%, 15%", duration: 150 }
+- swipe: { start: "85%, 85%", end: "85%, 15%", duration: 150 }
+- swipe: { start: "85%, 85%", end: "85%, 15%", duration: 150 }
+- swipe: { start: "85%, 85%", end: "85%, 15%", duration: 150 }
+- swipe: { start: "85%, 85%", end: "85%, 15%", duration: 150 }
+- swipe: { start: "85%, 85%", end: "85%, 15%", duration: 150 }
+- waitForAnimationToEnd: { timeout: 5000 }
+- takeScreenshot: a31-heavy-scrolled
+- swipe: { start: "20%, 40%", end: "70%, 44%", duration: 500 }
+- takeScreenshot: a32-heavy-written
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: a40-library-end

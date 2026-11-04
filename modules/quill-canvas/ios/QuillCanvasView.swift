@@ -393,6 +393,11 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     let i = currentPage()
     if i == lastPage { return }
     lastPage = i
+    // Zoomed all the way out, about four pages show.
+    for (k, v) in pageViews.enumerated() {
+      let away = abs(k - i)
+      if away <= 3 { v.setNear(true) } else if away > 7 { v.setNear(false) }
+    }
     onPageChange(["page": i, "count": frames.count])
   }
 

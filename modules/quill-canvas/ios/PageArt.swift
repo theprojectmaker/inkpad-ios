@@ -132,6 +132,15 @@ final class PageTiles: UIView {
 final class PageTileView: UIView {
   let spec: PageSpec
   private let tiles: PageTiles
+  private var wanted = false
+  private var drawing = false
+  // Two at a time: a long PDF never has every page being drawn at once.
+  private static let previews: OperationQueue = {
+    let q = OperationQueue()
+    q.maxConcurrentOperationCount = 2
+    q.qualityOfService = .userInitiated
+    return q
+  }()
 
   init(spec: PageSpec) {
     self.spec = spec
@@ -144,15 +153,26 @@ final class PageTileView: UIView {
     tiles.frame = bounds
     tiles.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     addSubview(tiles)
-    drawPreview()
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  /// Pictures take memory, so only pages near the one you're on keep one.
+  func setNear(_ near: Bool) {
+    wanted = near
+    if !near { layer.contents = nil; return }
+    if layer.contents == nil && !drawing { drawPreview() }
+  }
+
   private func drawPreview() {
+    drawing = true
     let s = spec
-    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-      let k = min(2.0, 1600.0 / max(s.w, s.h))
+    PageTileView.previews.addOperation { [weak self] in
+      guard self?.wanted == true else {
+        DispatchQueue.main.async { self?.drawing = false }
+        return
+      }
+      let k = min(1.5, 1200.0 / max(s.w, s.h))
       let fmt = UIGraphicsImageRendererFormat()
       fmt.scale = 1
       fmt.opaque = true
@@ -160,7 +180,11 @@ final class PageTileView: UIView {
         ctx.cgContext.scaleBy(x: k, y: k)
         PageArt.draw(s, in: ctx.cgContext)
       }
-      DispatchQueue.main.async { self?.layer.contents = img.cgImage }
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.drawing = false
+        if self.wanted { self.layer.contents = img.cgImage }
+      }
     }
   }
 }

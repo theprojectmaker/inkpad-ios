@@ -3,7 +3,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,6 +13,7 @@ import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages } from '@/lib/noteio';
+import { engine } from '@/lib/pdf-engine';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
@@ -81,7 +82,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     } catch (e) { toast("Couldn't make the note: " + String((e as Error)?.message ?? e)); }
   };
 
-  const importPdfUri = async (uri: string, name: string) => {
+  const importPdfUri = async (uri: string, name: string, stay = false) => {
     const id = uid('n');
     busy('Importing PDF…');
     try {
@@ -89,13 +90,31 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
       await lib.createNote({ id, folderId: currentFolderId, kind: 'pdf', title: name.replace(/\.pdf$/i, ''), pages, paper: { style: 'blank', color: 'white' } });
       if (text) lib.updateNote(id, { pdfText: text });
       busy(null);
-      open(id);
+      if (!stay) open(id);
     } catch (e) {
       busy(null);
       await fsx.remove(`inkpad/n/${id}`);
       toast(String((e as Error)?.message ?? e));
     }
   };
+  // Automated tests only: PDFs the simulator test put in this folder, compared with the old way in.
+  useEffect(() => {
+    if (!lib.ready || Platform.OS !== 'ios') return;
+    const dir = 'quill-test-import';
+    (async () => {
+      for (const f of fsx.list(dir)) {
+        const path = `${dir}/${f}`;
+        const started = Date.now();
+        let old = 'ok';
+        try { await Promise.race([engine.info(`test/${f}`, path), new Promise((_, no) => setTimeout(() => no(new Error('timed out')), 150000))]); }
+        catch (e) { old = String((e as Error)?.message ?? e).slice(0, 30); }
+        const name = `${f.replace(/\.pdf$/, '')} old:${old} ${Math.round((Date.now() - started) / 1000)}s`;
+        await importPdfUri(fsx.uri(path), name, true);
+        await fsx.remove(path);
+      }
+    })().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lib.ready]);
   if (__DEV__ && Platform.OS === 'web') (globalThis as any).__importPdf = importPdfUri;
 
   const importPdf = async () => {

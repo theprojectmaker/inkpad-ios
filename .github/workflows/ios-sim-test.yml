@@ -64,6 +64,8 @@ jobs:
           xcrun simctl io "$SIM" recordVideo --codec=h264 --force out/run.mp4 &
           echo $! > out/rec.pid
           xcrun simctl addmedia "$SIM" .maestro/media/*.jpg || true
+          DOCS="$(xcrun simctl get_app_container "$SIM" com.solyapps.notes data)/Documents"
+          node scripts/make-test-pdfs.cjs "$DOCS/quill-test-import"
           sleep 2
           maestro test "${{ inputs.flow }}" --test-output-dir shots --debug-output out/maestro 2>&1 | tee out/maestro.txt
           find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ ; 2>/dev/null || true

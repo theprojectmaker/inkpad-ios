@@ -42,6 +42,11 @@ public final class QuillCanvasModule: Module {
       return try await OnDevice.ask(instructions: instructions, prompt: prompt)
     }
 
+    // A PDF's page sizes and some of its text, straight from the file.
+    AsyncFunction("pdfInfo") { (path: String, maxText: Int) throws -> [String: Any] in
+      return try PdfInfo.read(path, maxText: maxText)
+    }
+
     // A recording as timed lines of text.
     AsyncFunction("transcribe") { (path: String, promise: Promise) in
       Transcriber.run(path) { result in

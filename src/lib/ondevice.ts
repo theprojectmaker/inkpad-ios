@@ -9,6 +9,7 @@ export type LocalAIStatus = 'ready' | 'off' | 'downloading' | 'unsupported';
 
 type NativeOnDevice = {
   readText(path: string): Promise<{ lines: OcrLine[]; width: number; height: number }>;
+  pdfInfo(path: string, maxText: number): Promise<{ pages: [number, number][]; text: string }>;
   enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
   localAIStatus(): LocalAIStatus;
   localAI(instructions: string, prompt: string): Promise<string>;
@@ -25,6 +26,12 @@ export async function readText(uri: string): Promise<OcrLine[]> {
   if (!Native?.readText) throw new Error('Reading pages works in the iPad app.');
   const r = await Native.readText(plain(uri));
   return [...r.lines].sort((a, b) => a.y - b.y || a.x - b.x);
+}
+
+/** A PDF's page sizes and some text, read directly from the file. null where that can't be done (the browser preview). */
+export async function pdfInfo(uri: string, maxText = 12000) {
+  if (!Native?.pdfInfo) return null;
+  return Native.pdfInfo(plain(uri), maxText);
 }
 
 /** The text of a page picture as plain lines (for the offline AI). */

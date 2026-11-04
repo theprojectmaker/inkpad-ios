@@ -7,6 +7,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 
 import { fsx } from './fsx';
 import { LETTER, type NoteDoc, type Page, uid } from './model';
+import { pdfInfo } from './ondevice';
 import { engine } from './pdf-engine';
 
 export const LIB_PATH = 'inkpad/library.json';
@@ -15,7 +16,7 @@ export const notePath = (id: string, name: string) => `${noteDir(id)}/${name}`;
 export const renderDir = (id: string) => `inkpad/r/${id}`;
 export const pdfKey = (id: string, file: string) => `${id}/${file}`;
 
-export const MAX_PDF_PAGES = 600;
+export const MAX_PDF_PAGES = 3000;
 
 export async function loadDoc(id: string): Promise<NoteDoc | null> {
   try {
@@ -76,12 +77,17 @@ export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: st
   await fsx.copyIn(srcUri, path);
   onStep?.('Reading pages…');
   let sizes: [number, number][];
-  try { sizes = await engine.info(pdfKey(noteId, file), path); }
-  catch (e) { await fsx.remove(path); throw e; }
+  let text = '';
+  try {
+    const info = await pdfInfo(fsx.uri(path));
+    if (info) { sizes = info.pages; text = info.text; }
+    else {   // the browser preview
+      sizes = await engine.info(pdfKey(noteId, file), path);
+      text = await engine.text(pdfKey(noteId, file), path).catch(() => '');
+    }
+  } catch (e) { await fsx.remove(path); throw e; }
   if (!sizes.length) { await fsx.remove(path); throw new Error('That PDF has no pages.'); }
   if (sizes.length > MAX_PDF_PAGES) { await fsx.remove(path); throw new Error(`PDFs up to ${MAX_PDF_PAGES} pages are supported.`); }
-  let text = '';
-  try { onStep?.('Indexing text…'); text = await engine.text(pdfKey(noteId, file), path); } catch {}
   const pages: Page[] = sizes.map(([w, h], index) => ({
     id: uid('p'), w: w > 0 ? w : LETTER.w, h: h > 0 ? h : LETTER.h,
     bg: { kind: 'pdf', file, index }, strokes: [], texts: [], images: [],

@@ -235,6 +235,7 @@ final class InkView: UIView {
   var onLinkTick: (() -> Void)?
   private var replay: (cut: Double, from: Double, to: Double)?
   private var laterCount = 0
+  private var pageFrameQueued = false
 
   init(document: InkDocument) {
     self.document = document
@@ -297,11 +298,28 @@ final class InkView: UIView {
   func scrolled(to visible: CGRect, zoom z: CGFloat) {
     let middle = CGPoint(x: visible.midX, y: visible.midY)
     if bounds.size == visible.size && center == middle && zoom == z { return }
-    if bounds.size != visible.size { bounds.size = visible.size; matchScreen() }
-    center = middle
+    UIView.performWithoutAnimation {
+      if bounds.size != visible.size { bounds.size = visible.size; matchScreen() }
+      center = middle
+    }
     zoom = z
     settledDirty = true
-    drawNow(withPages: true)
+    queuePageFrame()
+  }
+
+  /// A zoom step changes the scale, the inset and the offset one after another, each
+  /// reporting here. Drawing at each one put out frames with half-updated positions, so
+  /// the ink is drawn once, just before the screen update that carries the pages.
+  private func queuePageFrame() {
+    if pageFrameQueued { return }
+    pageFrameQueued = true
+    let order = 1_000_000   // Core Animation commits at 2,000,000
+    let watcher = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, order) { [weak self] _, _ in
+      guard let self else { return }
+      self.pageFrameQueued = false
+      self.drawNow(withPages: true)
+    }
+    CFRunLoopAddObserver(CFRunLoopGetMain(), watcher, .commonModes)
   }
 
   /// A finished stroke joins the settled ink in the same frame the wet one leaves, so nothing flashes.
@@ -388,7 +406,13 @@ final class InkView: UIView {
     guard let m = layer as? CAMetalLayer, let msaa, let depth, settled != nil else { return }
     if m.presentsWithTransaction != withPages { m.presentsWithTransaction = withPages }
     guard let drawable = m.nextDrawable(), let cmd = gpu.queue.makeCommandBuffer() else {
+      // No frame to draw into right now. Without another try the screen would keep showing old ink.
       framePending = true
+      if link == nil {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+          if self?.framePending == true { self?.drawNow() }
+        }
+      }
       return
     }
     let view = uniform(.identity)
