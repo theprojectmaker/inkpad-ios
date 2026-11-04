@@ -17,20 +17,18 @@ final class ScanSession: NSObject, VNDocumentCameraViewControllerDelegate {
     self.onDone = onDone
   }
 
-  /// Makes a scan look like a clean original: white paper, dark crisp ink, no shadows.
-  /// Only the picture is cleaned up; nothing on the page is changed or retyped.
-  static func cleanUp(_ img: UIImage) -> UIImage { OnDevice.fix(img, mode: "color") }
-
   func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
     var paths: [String] = []
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("quill-scans", isDirectory: true)
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let stamp = Int(Date().timeIntervalSince1970 * 1000)
     for i in 0..<scan.pageCount {
-      var img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: enhance ? 3200 : 2800)   // sharp enough to read small print
-      if enhance { img = ScanSession.cleanUp(img) }
-      let url = dir.appendingPathComponent("scan_\(stamp)_\(i).jpg")
-      if let data = img.jpegData(compressionQuality: 0.92), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
+      // Full quality here; the app cleans the pages up afterwards, one at a time, showing its progress.
+      autoreleasepool {
+        let img = ScanSession.downscale(scan.imageOfPage(at: i), maxSide: 4200)
+        let url = dir.appendingPathComponent("scan_\(stamp)_\(i).jpg")
+        if let data = img.jpegData(compressionQuality: 0.95), (try? data.write(to: url, options: .atomic)) != nil { paths.append(url.path) }
+      }
     }
     controller.dismiss(animated: true) { [self] in
       promise.resolve(paths)

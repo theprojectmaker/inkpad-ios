@@ -4,6 +4,7 @@
 //   inkpad/n/<id>/pdf_*.pdf        imported PDFs   img_*.jpg  photos   thumb_*.jpg
 //   inkpad/r/<id>/...              rendered PDF page images (a cache, safe to delete)
 import * as ImageManipulator from 'expo-image-manipulator';
+import { Image } from 'react-native';
 
 import { fsx } from './fsx';
 import { LETTER, type NoteDoc, type Page, uid } from './model';
@@ -45,6 +46,7 @@ export function docFiles(doc: NoteDoc): string[] {
   for (const r of doc.recordings ?? []) s.add(r.file);
   for (const p of doc.pages) {
     if (p.bg.kind === 'pdf' || p.bg.kind === 'image') s.add(p.bg.file);
+    if (p.bg.kind === 'image' && p.bg.orig) s.add(p.bg.orig);
     for (const im of p.images) s.add(im.file);
   }
   return [...s];
@@ -108,6 +110,23 @@ export async function saveImage(noteId: string, uri: string, maxSide = 2800): Pr
   const file = `img_${uid()}.jpg`;
   await fsx.copyIn(r.uri, notePath(noteId, file));
   return { file, w: r.width || 1000, h: r.height || 1000 };
+}
+
+const sizeOf = (uri: string) => new Promise<{ w: number; h: number }>((ok, no) => Image.getSize(uri, (w, h) => ok({ w, h }), no));
+
+/** Scanned pages, kept exactly as they are (no shrinking, no second round of compression), with their originals. */
+export async function scanPages(noteId: string, scans: { uri: string; raw: string }[]): Promise<Page[]> {
+  const out: Page[] = [];
+  for (const sc of scans) {
+    const { w: iw, h: ih } = await sizeOf(sc.uri);
+    const file = `img_${uid()}.jpg`;
+    await fsx.copyIn(sc.uri, notePath(noteId, file));
+    let orig: string | undefined;
+    if (sc.raw !== sc.uri) { orig = `img_${uid()}.jpg`; await fsx.copyIn(sc.raw, notePath(noteId, orig)); }
+    const h = Math.max(100, Math.min(4000, Math.round((LETTER.w * ih) / Math.max(1, iw))));
+    out.push({ id: uid('p'), w: LETTER.w, h, bg: { kind: 'image', file, orig }, strokes: [], texts: [], images: [] });
+  }
+  return out;
 }
 
 /** One page per photo, page width = Letter width. */

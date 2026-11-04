@@ -12,7 +12,7 @@ import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
-import { imagePages, notePath, pdfPages } from '@/lib/noteio';
+import { imagePages, notePath, pdfPages, scanPages } from '@/lib/noteio';
 import { engine } from '@/lib/pdf-engine';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
@@ -130,10 +130,10 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
   const scanPaper = async () => {
     const id = uid('n');
     try {
-      const uris = await scanEnhanced();
-      if (!uris.length) return;
+      const scans = await scanEnhanced((m) => busy(m || null));
+      if (!scans.length) return;
       busy('Adding your pages…');
-      const pages = await imagePages(id, uris);
+      const pages = await scanPages(id, scans);
       await lib.createNote({ id, folderId: currentFolderId, kind: 'image', title: `Scan ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`, pages, paper: { style: 'blank', color: 'white' } });
       busy(null);
       open(id);
@@ -345,7 +345,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         { label: 'More paper…', icon: 'doc.plaintext', onPress: () => setSheet('paper') },
         ...(canScan() ? [
           { label: 'Scan paper', icon: 'doc.viewfinder', onPress: scanPaper },
-          { label: 'Scan into typed notes', icon: 'text.viewfinder', onPress: scanClean },
+          { label: 'Retype a scan with AI (can make mistakes)', icon: 'text.viewfinder', onPress: scanClean },
         ] : []),
         { label: 'Import a PDF', icon: 'doc.richtext', onPress: importPdf },
         { label: 'Import photos', icon: 'photo', onPress: importPhotos },

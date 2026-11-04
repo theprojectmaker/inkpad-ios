@@ -30,7 +30,7 @@ import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
 import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
-import { imagePages, loadDoc, notePath, renderDir, saveDoc, saveImage } from '@/lib/noteio';
+import { imagePages, loadDoc, notePath, renderDir, saveDoc, saveImage, scanPages } from '@/lib/noteio';
 import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -75,7 +75,7 @@ export default function Editor() {
   const t = useTheme();
   const ins = useSafeAreaInsets();
   const lib = useLibrary();
-  const { toast } = useToast();
+  const { toast, busy: tbusy } = useToast();
   const canvas = useRef<CanvasHandle>(null);
   const [doc, setDoc] = useState<NoteDoc | null>(null);
   const [legacy, setLegacy] = useState<LegacyStroke[]>([]);
@@ -236,17 +236,21 @@ export default function Editor() {
   /** Scanned paper or photos as new pages after the one you're on. */
   const addPictures = async (from: 'scan' | 'photos') => {
     try {
-      let uris: string[] = [];
-      if (from === 'scan') uris = await scanEnhanced();
-      else {
+      let add: Page[] = [];
+      if (from === 'scan') {
+        const scans = await scanEnhanced((m) => tbusy(m || null));
+        tbusy(scans.length ? 'Adding your pages…' : null);
+        add = await scanPages(id, scans);
+      } else {
         const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, quality: 1, selectionLimit: 20 });
-        if (!r.canceled) uris = r.assets.map((x) => x.uri);
+        if (!r.canceled) add = await imagePages(id, r.assets.map((x) => x.uri));
       }
-      if (!uris.length) return;
-      const first = await insertPages(await imagePages(id, uris), page.page);
-      toast(uris.length === 1 ? `Page ${(first ?? 0) + 1} added` : `${uris.length} pages added`);
+      tbusy(null);
+      if (!add.length) return;
+      const first = await insertPages(add, page.page);
+      toast(add.length === 1 ? `Page ${(first ?? 0) + 1} added` : `${add.length} pages added`);
       if (first != null) setTimeout(() => canvas.current?.scrollToPage(first), 400);
-    } catch (e) { toast("Couldn't add that: " + String((e as Error)?.message ?? e)); }
+    } catch (e) { tbusy(null); toast("Couldn't add that: " + String((e as Error)?.message ?? e)); }
   };
 
   /** A blank page like the one it follows, added at the end or right after page `after`. */
@@ -306,18 +310,33 @@ export default function Editor() {
     const p = doc?.pages[i];
     if (!doc || !p || p.bg.kind !== 'image' || busy) return;
     setBusy(true);
+    tbusy('Cleaning up this page…');
     try {
-      const old = p.bg.file, name = `img_${uid()}.jpg`;
-      await enhanceImage(fsx.uri(notePath(id, old)), fsx.uri(notePath(id, name)), mode);
-      const next = { ...doc, pages: doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'image' as const, file: name } } : q)) };
+      // Always works from the original photo, so cleaning up twice never makes it worse.
+      const old = p.bg.file, source = p.bg.orig ?? old, name = `img_${uid()}.jpg`;
+      await enhanceImage(fsx.uri(notePath(id, source)), fsx.uri(notePath(id, name)), mode);
+      const next = { ...doc, pages: doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'image' as const, file: name, orig: source } } : q)) };
       setDoc(next);
       await saveDoc(next);
       lib.updateNote(id, { updated: Date.now() });
       setVer((v) => v + 1);
-      if (!next.pages.some((q) => q.bg.kind === 'image' && q.bg.file === old)) fsx.remove(notePath(id, old));
-      toast(mode === 'document' ? `Page ${i + 1} is now a clean black & white document` : `Page ${i + 1} cleaned up`);
+      if (old !== source && !next.pages.some((q) => q.bg.kind === 'image' && (q.bg.file === old || q.bg.orig === old))) fsx.remove(notePath(id, old));
+      toast(mode === 'document' ? `Page ${i + 1} is now black and white` : `Page ${i + 1} cleaned up`);
     } catch (e) { toast("Couldn't improve that page: " + String((e as Error)?.message ?? e)); }
-    finally { setBusy(false); }
+    finally { tbusy(null); setBusy(false); }
+  };
+
+  /** Puts a cleaned-up page back to the photo it came from. */
+  const restorePhoto = async (i: number) => {
+    const p = doc?.pages[i];
+    if (!doc || !p || p.bg.kind !== 'image' || !p.bg.orig) return;
+    const old = p.bg.file, file = p.bg.orig;
+    const next = { ...doc, pages: doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'image' as const, file } } : q)) };
+    setDoc(next);
+    await saveDoc(next);
+    setVer((v) => v + 1);
+    if (!next.pages.some((q) => q.bg.kind === 'image' && (q.bg.file === old || q.bg.orig === old))) fsx.remove(notePath(id, old));
+    toast(`Page ${i + 1} is back to the original`);
   };
 
   const removePage = async (i: number) => {
@@ -587,8 +606,9 @@ export default function Editor() {
         { label: 'Focus mode', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
         { label: 'Change this page\'s paper', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
         ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
-          { label: 'Fix page quality (keep colours)', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
-          { label: 'Make it a clean B&W document', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
+          { label: 'Clean up this page', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
+          { label: 'Make it black and white', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
+          ...(doc?.pages[page.page]?.bg.kind === 'image' && (doc.pages[page.page].bg as { orig?: string }).orig ? [{ label: 'Back to the original photo', icon: 'arrow.uturn.backward', onPress: () => restorePhoto(page.page) }] : []),
         ] : []),
         ...(meta?.hw ? [
           { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },

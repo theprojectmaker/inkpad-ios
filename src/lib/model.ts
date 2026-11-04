@@ -42,7 +42,7 @@ export type FavPen = { type: PenType; color: string; width: number };
 export type PageBg =
   | { kind: 'paper'; style: PaperStyle; color: PaperColor }
   | { kind: 'pdf'; file: string; index: number }   // file = a PDF inside the note folder
-  | { kind: 'image'; file: string };
+  | { kind: 'image'; file: string; orig?: string };   // orig = the photo before it was cleaned up
 
 export type Page = {
   id: string;

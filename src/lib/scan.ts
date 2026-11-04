@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 
 import { aiOnline, askAi, imageDataUrl } from './ai';
 import { fsx } from './fsx';
-import { type OcrLine, readText } from './ondevice';
+import { enhanceImage, type OcrLine, readText } from './ondevice';
 
 type NativeScan = { scanDocument(enhance: boolean): Promise<string[]>; htmlToPdf(html: string, path: string): Promise<number> };
 let Native: NativeScan | null = null;
@@ -17,12 +17,23 @@ if (Platform.OS === 'ios') {
 export const canScan = () => !!Native;
 
 /**
- * Scans paper pages and cleans up the pictures (white paper, crisp ink, no
- * shadows) without changing anything on them. Returns file:// uris, empty if cancelled.
+ * Scans paper pages and cleans up each picture on the iPad: white paper, no shadows, smooth
+ * dark ink, highlighter kept. Nothing is retyped, so nothing can be misread. Keeps each
+ * original too. Empty if cancelled.
  */
-export async function scanEnhanced(): Promise<string[]> {
+export async function scanEnhanced(onStep?: (msg: string) => void): Promise<{ uri: string; raw: string }[]> {
   if (!Native) throw new Error("Scanning works in the iPad app.");
-  return (await Native.scanDocument(true)).map((p) => 'file://' + p);
+  const paths = await Native.scanDocument(false);
+  const out: { uri: string; raw: string }[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    onStep?.(paths.length > 1 ? `Cleaning up page ${i + 1} of ${paths.length}…` : 'Cleaning up your page…');
+    const raw = 'file://' + paths[i];
+    const clean = raw.replace(/\.jpg$/, '_clean.jpg');
+    try { await enhanceImage(raw, clean, 'color'); out.push({ uri: clean, raw }); }
+    catch { out.push({ uri: raw, raw }); }   // never lose a page because the cleanup failed
+  }
+  onStep?.('');
+  return out;
 }
 
 const CSS = `

@@ -1,5 +1,5 @@
 # The scan fixer: import a dim, grainy, unevenly lit photo of a worksheet,
-# then "Fix page quality" (keeps colours) and "clean B&W document".
+# then "Clean up this page", "Make it black and white", and back to the original.
 appId: com.solyapps.notes
 ---
 - launchApp:
@@ -19,10 +19,14 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - takeScreenshot: f02-imported
 - tapOn: { text: "More", optional: true }
-- tapOn: { text: "Fix page quality.*", optional: true }
+- tapOn: { text: "Clean up this page", optional: true }
 - waitForAnimationToEnd: { timeout: 8000 }
 - takeScreenshot: f03-fixed-color
 - tapOn: { text: "More", optional: true }
-- tapOn: { text: "Make it a clean B&W document", optional: true }
+- tapOn: { text: "Make it black and white", optional: true }
 - waitForAnimationToEnd: { timeout: 8000 }
 - takeScreenshot: f04-fixed-bw
+- tapOn: { text: "More", optional: true }
+- tapOn: { text: "Back to the original photo", optional: true }
+- waitForAnimationToEnd: { timeout: 5000 }
+- takeScreenshot: f05-original

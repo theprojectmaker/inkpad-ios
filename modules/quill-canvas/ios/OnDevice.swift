@@ -35,76 +35,12 @@ enum OnDevice {
     return ["lines": lines, "width": w, "height": h]
   }
 
-  /// Makes a phone photo or scan of a page look like a clean file, on the iPad:
-  /// small photos are enlarged, the lighting is flattened (shadows and grey paper
-  /// become even white), and the writing becomes dark and sharp.
-  /// mode "color" keeps colours (pens, highlighter); "document" is crisp black and white.
+  /// A scan or photo of a page, cleaned up (see ScanFilter). Nothing on the page is changed or retyped.
   static func fix(_ input: UIImage, mode: String) -> UIImage {
     let img = upright(input)
-    guard var image = CIImage(image: img) else { return input }
-    let full = image.extent
-
-    // 1. Too small to read well: enlarge with a high-quality filter.
-    let side = max(full.width, full.height)
-    if side < 2200, let f = CIFilter(name: "CILanczosScaleTransform") {
-      f.setValue(image, forKey: kCIInputImageKey)
-      f.setValue(2200 / side, forKey: kCIInputScaleKey)
-      f.setValue(1.0, forKey: kCIInputAspectRatioKey)
-      if let o = f.outputImage { image = o }
-    }
-    let ext = image.extent
-
-    // 2. Smooth out the camera's grain first, so evening out the light can't blow it up.
-    image = image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.05, "inputSharpness": 0.4])
-      .applyingFilter("CIMedianFilter").cropped(to: ext)
-
-    // 3. The paper's lighting: shrink (the writing almost vanishes), keep the brightest
-    //    nearby value (the paper), soften a little; then divide the page by it so the
-    //    paper turns even white. Tight on purpose: a wide blur lets the bright middle
-    //    leak into dark corners and turns them black.
-    let k: CGFloat = 0.125
-    let small = image.transformed(by: CGAffineTransform(scaleX: k, y: k))
-    let paper = small.clampedToExtent()
-      .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0])
-      .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 1])
-      .applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 1.5])
-      .applyingFilter("CIColorClamp", parameters: [
-        "inputMinComponents": CIVector(x: 0.05, y: 0.05, z: 0.05, w: 0), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
-      ])
-      .cropped(to: small.extent)
-      .clampedToExtent()
-      .transformed(by: CGAffineTransform(scaleX: 1 / k, y: 1 / k))
-      .cropped(to: ext)
-    image = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image])
-      .applyingFilter("CIMedianFilter").cropped(to: ext)
-
-    // 4. Clean, dark, sharp writing; nearly-white paper becomes pure white.
-    if mode == "document" {
-      // Grey from the darkest colour channel, so blue or red pen turns as dark as pencil
-      // (plain brightness would make blue ink faint and broken).
-      image = image.applyingFilter("CIMinimumComponent")
-      image = image.applyingFilter("CIToneCurve", parameters: [
-        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.4, y: 0.1),
-        "inputPoint2": CIVector(x: 0.62, y: 0.6), "inputPoint3": CIVector(x: 0.8, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
-      ])
-    } else {
-      // Colour grain gets boosted along with the light: keep the sharp brightness, but
-      // take the colour from a smoothed copy (pen and highlighter colours survive).
-      let soft = image.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: ["inputRadius": 6]).cropped(to: ext)
-        .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.85])
-      image = soft.applyingFilter("CIColorBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: ext)
-      image = image.applyingFilter("CIToneCurve", parameters: [
-        "inputPoint0": CIVector(x: 0, y: 0), "inputPoint1": CIVector(x: 0.45, y: 0.3),
-        "inputPoint2": CIVector(x: 0.65, y: 0.62), "inputPoint3": CIVector(x: 0.82, y: 1), "inputPoint4": CIVector(x: 1, y: 1),
-      ])
-    }
-    // A slightly blurry scan: a wide unsharp mask rebuilds soft letter edges, then a
-    // fine sharpen crisps the detail (wide first, so it doesn't amplify grain).
-    image = image.clampedToExtent()
-      .applyingFilter("CIUnsharpMask", parameters: [kCIInputRadiusKey: 3.0 * max(1, ext.width / 2200), kCIInputIntensityKey: 0.7])
-      .cropped(to: ext)
-    image = image.applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.45]).cropped(to: ext)
-    guard let cg = ci.createCGImage(image, from: ext) else { return input }
+    guard let image = CIImage(image: img) else { return input }
+    let out = ScanFilter.clean(image, mode: mode)
+    guard let cg = ci.createCGImage(out, from: out.extent) else { return input }
     return UIImage(cgImage: cg, scale: 1, orientation: .up)
   }
 
@@ -123,7 +59,7 @@ enum OnDevice {
     guard let img = UIImage(contentsOfFile: src) else {
       throw NSError(domain: "Quill", code: 1, userInfo: [NSLocalizedDescriptionKey: "Couldn't open that picture."])
     }
-    guard let data = fix(img, mode: mode).jpegData(compressionQuality: 0.92) else { return false }
+    guard let data = autoreleasepool(invoking: { fix(img, mode: mode).jpegData(compressionQuality: 0.93) }) else { return false }
     let url = URL(fileURLWithPath: dst)
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try data.write(to: url, options: .atomic)
