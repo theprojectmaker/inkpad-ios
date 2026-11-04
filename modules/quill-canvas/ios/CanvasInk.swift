@@ -232,7 +232,7 @@ extension QuillCanvasView {
 
   func inkBegan(_ t: UITouch, _ event: UIEvent) {
     guard isLoaded else { return }
-    holdPageStill()
+    if t.type != .direct { holdPageStill() }   // a writing finger still lets two fingers scroll
     let p = location(t)
     switch inkMode {
     case .write: beginStroke(t, event, p)

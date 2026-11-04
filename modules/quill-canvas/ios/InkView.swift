@@ -190,6 +190,7 @@ final class InkView: UIView {
   private var wetBuffer: MTLBuffer?
   private var wetUploaded = 0
   private var wetGeneration = -1
+  private weak var wetOwner: WetInk?
   private var link: CADisplayLink?
   private var fallbackSettled: UIImage?
   var onLinkTick: (() -> Void)?
@@ -431,7 +432,8 @@ final class InkView: UIView {
     var u = view
     enc.setVertexBytes(&u, length: MemoryLayout<ViewUniform>.stride, index: 1)
     let stride = MemoryLayout<Vtx>.stride
-    if wetGeneration != wet.generation {
+    if wetOwner !== wet || wetGeneration != wet.generation {
+      wetOwner = wet
       wetGeneration = wet.generation
       wetBuffer = nil
       wetUploaded = 0
