@@ -1,4 +1,4 @@
-// Quill's tools for the PencilKit canvas, laid out like Notability:
+// Quill's tools for the canvas, laid out like Notability:
 // ToolButtons sit in the middle of the top bar (line icons, the pen and
 // highlighter show their colour underneath), and ToolStrip is a thin row under
 // the bar with the current tool's options: pen style, colours and sizes.
@@ -41,9 +41,8 @@ export function currentTool(s: { inkKind?: InkTool; penStyle?: PenStyle; inkSize
   const kind = s.inkKind ?? 'pen';
   const i = Math.max(0, Math.min(2, s.inkSize ?? 1));
   if (kind === 'pen') {
-    // Ballpoint = an even, thin line (Apple's 'monoline' ink): no swelling where you press
-    // hard or slow down, so no blotches. Gel = Apple's pressure pen, for a line that
-    // thickens with pressure.
+    // Ballpoint = an even, thin line: no swelling where you press hard or slow down.
+    // Gel = a line that thickens with pressure.
     const st = s.penStyle ?? 'pen';
     const kind = st === 'pen' ? 'monoline' : st === 'felt' ? 'pen' : st;
     return { kind, color: s.penColor, width: WIDTHS[st][i] };

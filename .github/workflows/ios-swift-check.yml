@@ -1,0 +1,34 @@
+# A quick compile of the ink engine's Swift and its Metal shaders (about a minute),
+# so mistakes show up before a full app build.
+name: Ink engine compile check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Type-check
+        run: |
+          mkdir -p stub
+          cat > stub/ExpoModulesCore.swift <<'SWIFT'
+          import UIKit
+          public protocol Record {}
+          @propertyWrapper public struct Field<T> { public var wrappedValue: T; public init(wrappedValue: T) { self.wrappedValue = wrappedValue } }
+          public class AppContext {}
+          open class ExpoView: UIView {
+            public required init(appContext: AppContext? = nil) { super.init(frame: .zero) }
+            public required init?(coder: NSCoder) { fatalError() }
+          }
+          public class EventDispatcher { public init() {}; public func callAsFunction(_ d: [String: Any]) {} }
+          SWIFT
+          SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          T=arm64-apple-ios16.4-simulator
+          xcrun swiftc -emit-module -module-name ExpoModulesCore -parse-as-library -sdk "$SDK" -target $T -emit-module-path stub/ExpoModulesCore.swiftmodule stub/ExpoModulesCore.swift
+          cd modules/quill-canvas/ios
+          xcrun swiftc -typecheck -module-name QuillCanvas -sdk "$SDK" -target $T -I ../../../stub QuillCanvasView.swift CanvasInk.swift CanvasTextAndPages.swift InkModel.swift InkMesh.swift InkView.swift ShapeSnap.swift PageArt.swift

@@ -1,6 +1,6 @@
-// The writing canvas: Apple's PencilKit (see modules/quill-canvas). Ink,
+// The writing canvas: Quill's own ink engine (see modules/quill-canvas). Ink,
 // eraser, lasso, ruler, palm rejection, scrolling and zoom are all native.
-// The browser preview has no PencilKit, so it shows a note instead.
+// The browser preview has none of that, so it shows a note instead.
 import { requireNativeViewManager } from 'expo-modules-core';
 import { forwardRef, type ComponentType, type Ref } from 'react';
 import { Platform, Text, View, type ViewProps } from 'react-native';

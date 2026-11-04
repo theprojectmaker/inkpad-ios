@@ -1,0 +1,503 @@
+// Puts the ink on screen with Metal. Settled ink is kept as a picture of the screen
+// so each new frame only adds the stroke being written; a frame goes out as soon as
+// the Pencil moves. Sits inside the scroll view, covering just the visible part.
+import Metal
+import QuartzCore
+import UIKit
+
+private let shaderSource = """
+#include <metal_stdlib>
+using namespace metal;
+
+struct Vtx { float x; float y; float z; uchar4 c; float g; };
+struct View { float4 m; float2 t; float2 s; float2 o; };
+struct Out { float4 pos [[position]]; float4 c; float2 page; float g; };
+
+vertex Out inkV(uint id [[vertex_id]], constant Vtx *v [[buffer(0)]], constant View &u [[buffer(1)]]) {
+  Vtx a = v[id];
+  float2 p = float2(a.x * u.m.x + a.y * u.m.z + u.t.x, a.x * u.m.y + a.y * u.m.w + u.t.y);
+  Out o;
+  o.pos = float4(p * u.s + u.o, a.z, 1);
+  o.c = float4(a.c) / 255.0;
+  o.page = float2(a.x, a.y);
+  o.g = a.g;
+  return o;
+}
+
+static float hash21(float2 p) {
+  p = fract(p * float2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+static float noise(float2 p) {
+  float2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + float2(1, 0)), f.x), mix(hash21(i + float2(0, 1)), hash21(i + float2(1, 1)), f.x), f.y);
+}
+
+fragment float4 inkF(Out in [[stage_in]]) {
+  float a = in.c.a;
+  if (in.g > 0.5) {
+    float2 q = fmod(in.page, 2048.0);
+    float n = noise(q * 2.6) * 0.65 + noise(q * 6.1) * 0.35;
+    a *= smoothstep(0.26, 0.62, n) * 0.85 + 0.15;
+  }
+  return float4(in.c.rgb * a, a);
+}
+
+struct Sheet { float4 pos [[position]]; float2 uv; };
+
+vertex Sheet sheetV(uint id [[vertex_id]]) {
+  float2 uv = float2((id << 1) & 2, id & 2);
+  Sheet o;
+  o.pos = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0, 1);
+  o.uv = uv;
+  return o;
+}
+
+fragment float4 sheetF(Sheet in [[stage_in]], texture2d<float> t [[texture(0)]]) {
+  constexpr sampler s(filter::nearest, address::clamp_to_edge);
+  return t.sample(s, in.uv);
+}
+"""
+
+private struct ViewUniform {
+  var m: SIMD4<Float>
+  var t: SIMD2<Float>
+  var s: SIMD2<Float>
+  var o: SIMD2<Float>
+}
+
+/// Metal, set up once for the whole app. nil if it can't run (the ink then uses Core Graphics).
+final class InkGPU {
+  static let shared: InkGPU? = {
+    let g = InkGPU()
+    NSLog("Quill ink engine: %@", g == nil ? "Core Graphics" : "Metal")
+    return g
+  }()
+
+  let device: MTLDevice
+  let queue: MTLCommandQueue
+  let ink: MTLRenderPipelineState
+  let sheet: MTLRenderPipelineState
+  let inkDepth: MTLDepthStencilState
+  let noDepth: MTLDepthStencilState
+  let samples = 4
+
+  private init?() {
+    guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return nil }
+    self.device = device
+    self.queue = queue
+    do {
+      let lib = try device.makeLibrary(source: shaderSource, options: nil)
+      let make = { (v: String, f: String) throws -> MTLRenderPipelineState in
+        let d = MTLRenderPipelineDescriptor()
+        d.vertexFunction = lib.makeFunction(name: v)
+        d.fragmentFunction = lib.makeFunction(name: f)
+        d.rasterSampleCount = 4
+        d.depthAttachmentPixelFormat = .depth32Float
+        let c = d.colorAttachments[0]!
+        c.pixelFormat = .bgra8Unorm
+        c.isBlendingEnabled = true
+        c.rgbBlendOperation = .add
+        c.alphaBlendOperation = .add
+        c.sourceRGBBlendFactor = .one
+        c.sourceAlphaBlendFactor = .one
+        c.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+        return try device.makeRenderPipelineState(descriptor: d)
+      }
+      ink = try make("inkV", "inkF")
+      sheet = try make("sheetV", "sheetF")
+    } catch {
+      NSLog("Quill ink shaders failed: %@", String(describing: error))
+      return nil
+    }
+    // Each sample takes a stroke once, so a see-through stroke never darkens where it crosses itself.
+    let a = MTLDepthStencilDescriptor()
+    a.depthCompareFunction = .greater
+    a.isDepthWriteEnabled = true
+    let b = MTLDepthStencilDescriptor()
+    b.depthCompareFunction = .always
+    b.isDepthWriteEnabled = false
+    guard let da = device.makeDepthStencilState(descriptor: a), let db = device.makeDepthStencilState(descriptor: b) else { return nil }
+    inkDepth = da
+    noDepth = db
+  }
+}
+
+/// Where a stroke's triangles are on the GPU.
+struct InkMeshRef {
+  let buffer: MTLBuffer
+  let offset: Int
+  let count: Int
+}
+
+/// Hands out room for triangles from big blocks.
+private final class MeshArena {
+  private let device: MTLDevice
+  private var block: MTLBuffer?
+  private var used = 0
+  private(set) var total = 0
+  private let blockSize = 4 << 20
+
+  init(device: MTLDevice) { self.device = device }
+
+  func store(_ v: [Vtx]) -> InkMeshRef? {
+    let bytes = v.count * MemoryLayout<Vtx>.stride
+    if bytes == 0 { return nil }
+    if block == nil || used + bytes > blockSize {
+      if bytes > blockSize {
+        total += bytes
+        return v.withUnsafeBytes { raw in
+          device.makeBuffer(bytes: raw.baseAddress!, length: bytes, options: .storageModeShared).map { InkMeshRef(buffer: $0, offset: 0, count: v.count) }
+        }
+      }
+      block = device.makeBuffer(length: blockSize, options: .storageModeShared)
+      used = 0
+      total += blockSize
+    }
+    guard let block else { return nil }
+    v.withUnsafeBytes { block.contents().advanced(by: used).copyMemory(from: $0.baseAddress!, byteCount: bytes) }
+    let ref = InkMeshRef(buffer: block, offset: used, count: v.count)
+    used += bytes
+    return ref
+  }
+
+  func reset() { block = nil; used = 0; total = 0 }
+}
+
+final class InkView: UIView {
+  override class var layerClass: AnyClass { InkGPU.shared != nil ? CAMetalLayer.self : CALayer.self }
+
+  let document: InkDocument
+  var wet: WetInk?
+  var zoom: CGFloat = 1
+  var liftedTransform: CGAffineTransform = .identity
+
+  private let gpu = InkGPU.shared
+  private lazy var arena: MeshArena? = gpu.map { MeshArena(device: $0.device) }
+  private var settledDirty = true
+  private var pendingSettle: [InkStroke] = []
+  private var settled: MTLTexture?
+  private var spare: MTLTexture?
+  private var msaa: MTLTexture?
+  private var depth: MTLTexture?
+  private var inFlight = 0
+  private var framePending = false
+  private var frameQueued = false
+  private var wetBuffer: MTLBuffer?
+  private var wetUploaded = 0
+  private var wetGeneration = -1
+  private var link: CADisplayLink?
+  private var fallbackSettled: UIImage?
+  var onLinkTick: (() -> Void)?
+
+  init(document: InkDocument) {
+    self.document = document
+    super.init(frame: .zero)
+    isOpaque = false
+    backgroundColor = .clear
+    isUserInteractionEnabled = false
+    contentMode = .topLeft
+    if let m = layer as? CAMetalLayer, let gpu {
+      m.device = gpu.device
+      m.pixelFormat = .bgra8Unorm
+      m.isOpaque = false
+      m.framebufferOnly = true
+      m.maximumDrawableCount = 3
+      m.presentsWithTransaction = true
+      m.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+    }
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil { penUp() } else { matchScreen(); setNeedsInk(rebuild: true) }
+  }
+
+  // MARK: - What changed
+
+  /// Ask for a new frame (several asks in one go become one frame).
+  func setNeedsInk(rebuild: Bool = false) {
+    if rebuild { settledDirty = true }
+    if frameQueued { return }
+    frameQueued = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.frameQueued = false
+      self.drawNow()
+    }
+  }
+
+  /// The scroll position or zoom moved: keep up in this very frame.
+  func scrolled(to visible: CGRect, zoom z: CGFloat) {
+    let middle = CGPoint(x: visible.midX, y: visible.midY)
+    if bounds.size == visible.size && center == middle && zoom == z { return }
+    if bounds.size != visible.size { bounds.size = visible.size; matchScreen() }
+    center = middle
+    zoom = z
+    settledDirty = true
+    drawNow()
+  }
+
+  /// A finished stroke joins the settled ink in the same frame the wet one leaves, so nothing flashes.
+  func settle(_ strokes: [InkStroke]) {
+    pendingSettle.append(contentsOf: strokes)
+  }
+
+  func penDown() {
+    (layer as? CAMetalLayer)?.presentsWithTransaction = false
+    guard link == nil else { return }
+    let l = CADisplayLink(target: self, selector: #selector(tick))
+    l.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
+    l.add(to: .main, forMode: .common)
+    link = l
+  }
+
+  func penUp() {
+    link?.invalidate()
+    link = nil
+    (layer as? CAMetalLayer)?.presentsWithTransaction = true
+  }
+
+  @objc private func tick() {
+    onLinkTick?()
+    if framePending { drawNow() }
+  }
+
+  // MARK: - Targets
+
+  private func matchScreen() {
+    let scale = window?.screen.scale ?? UIScreen.main.scale
+    contentScaleFactor = scale
+    layer.contentsScale = scale
+    let w = Int(bounds.width * scale), h = Int(bounds.height * scale)
+    guard let m = layer as? CAMetalLayer, let gpu, w > 0, h > 0 else { return }
+    let size = CGSize(width: w, height: h)
+    if m.drawableSize != size { m.drawableSize = size }
+    if settled?.width == w && settled?.height == h { return }
+    let make = { (format: MTLPixelFormat, samples: Int, usage: MTLTextureUsage, memoryless: Bool) -> MTLTexture? in
+      let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: w, height: h, mipmapped: false)
+      d.textureType = samples > 1 ? .type2DMultisample : .type2D
+      d.sampleCount = samples
+      d.usage = usage
+      d.storageMode = .private
+      #if !targetEnvironment(simulator)
+      if memoryless { d.storageMode = .memoryless }
+      #endif
+      return gpu.device.makeTexture(descriptor: d)
+    }
+    settled = make(.bgra8Unorm, 1, [.renderTarget, .shaderRead], false)
+    spare = make(.bgra8Unorm, 1, [.renderTarget, .shaderRead], false)
+    msaa = make(.bgra8Unorm, gpu.samples, [.renderTarget], true)
+    depth = make(.depth32Float, gpu.samples, [.renderTarget], true)
+    settledDirty = true
+  }
+
+  // MARK: - A frame
+
+  func drawNow() {
+    guard window != nil, bounds.width > 1 else { return }
+    guard let gpu else { drawFallback(); return }
+    if inFlight >= 2 { framePending = true; return }   // never wait on the GPU here
+    framePending = false
+    guard let m = layer as? CAMetalLayer, let msaa, let depth, settled != nil, let drawable = m.nextDrawable(),
+          let cmd = gpu.queue.makeCommandBuffer() else { return }
+    let view = uniform(.identity)
+
+    if settledDirty {
+      settledDirty = false
+      pendingSettle.removeAll()
+      encode(cmd, msaa, depth, into: spare!) { enc in
+        self.drawStrokes(self.visibleStrokes(), enc, gpu, view)
+      }
+      swap(&settled, &spare)
+    } else if !pendingSettle.isEmpty {
+      let adding = pendingSettle
+      pendingSettle.removeAll()
+      encode(cmd, msaa, depth, into: spare!) { enc in
+        self.drawSheet(enc, gpu)
+        self.drawStrokes(adding, enc, gpu, view)
+      }
+      swap(&settled, &spare)
+    }
+
+    encode(cmd, msaa, depth, into: drawable.texture) { enc in
+      self.drawSheet(enc, gpu)
+      let lifted = self.document.strokes.filter(\.lifted)
+      if !lifted.isEmpty { self.drawStrokes(lifted, enc, gpu, self.uniform(self.liftedTransform)) }
+      if let wet = self.wet { self.drawWet(wet, enc, gpu, view) }
+    }
+
+    inFlight += 1
+    cmd.addCompletedHandler { [weak self] _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.inFlight -= 1
+        if self.framePending { self.drawNow() }
+      }
+    }
+    if m.presentsWithTransaction {
+      cmd.commit()
+      cmd.waitUntilScheduled()
+      drawable.present()
+    } else {
+      cmd.present(drawable)
+      cmd.commit()
+    }
+  }
+
+  private func encode(_ cmd: MTLCommandBuffer, _ msaa: MTLTexture, _ depth: MTLTexture, into target: MTLTexture, _ body: (MTLRenderCommandEncoder) -> Void) {
+    let pass = MTLRenderPassDescriptor()
+    let c = pass.colorAttachments[0]!
+    c.texture = msaa
+    c.resolveTexture = target
+    c.loadAction = .clear
+    c.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+    c.storeAction = .multisampleResolve
+    pass.depthAttachment.texture = depth
+    pass.depthAttachment.loadAction = .clear
+    pass.depthAttachment.clearDepth = 0
+    pass.depthAttachment.storeAction = .dontCare
+    guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
+    body(enc)
+    enc.endEncoding()
+  }
+
+  private func uniform(_ t: CGAffineTransform) -> ViewUniform {
+    let w = Float(max(1, bounds.width)), h = Float(max(1, bounds.height))
+    let z = Float(zoom)
+    let ox = Float(center.x - bounds.width / 2), oy = Float(center.y - bounds.height / 2)
+    return ViewUniform(m: SIMD4(Float(t.a), Float(t.b), Float(t.c), Float(t.d)),
+                       t: SIMD2(Float(t.tx), Float(t.ty)),
+                       s: SIMD2(2 * z / w, -2 * z / h),
+                       o: SIMD2(-1 - 2 * ox / w, 1 + 2 * oy / h))
+  }
+
+  private func visibleRect() -> CGRect {
+    let z = max(0.01, zoom)
+    return CGRect(x: (center.x - bounds.width / 2) / z, y: (center.y - bounds.height / 2) / z, width: bounds.width / z, height: bounds.height / z)
+  }
+
+  private func visibleStrokes() -> [InkStroke] {
+    let r = visibleRect()
+    return document.strokes.filter { !$0.lifted && $0.bounds.intersects(r) }
+  }
+
+  private func drawSheet(_ enc: MTLRenderCommandEncoder, _ gpu: InkGPU) {
+    enc.setRenderPipelineState(gpu.sheet)
+    enc.setDepthStencilState(gpu.noDepth)
+    enc.setFragmentTexture(settled, index: 0)
+    enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+  }
+
+  private func drawStrokes(_ strokes: [InkStroke], _ enc: MTLRenderCommandEncoder, _ gpu: InkGPU, _ view: ViewUniform) {
+    enc.setRenderPipelineState(gpu.ink)
+    enc.setDepthStencilState(gpu.inkDepth)
+    var u = view
+    enc.setVertexBytes(&u, length: MemoryLayout<ViewUniform>.stride, index: 1)
+    if let arena, arena.total > 192 << 20 {
+      // Too much kept on the GPU: drop it all, what's on screen comes straight back.
+      for s in document.strokes { s.mesh = nil }
+      arena.reset()
+    }
+    let stride = MemoryLayout<Vtx>.stride
+    var buffer: MTLBuffer?, start = 0, count = 0
+    let flush = {
+      guard let buffer, count > 0 else { return }
+      enc.setVertexBuffer(buffer, offset: start, index: 0)
+      enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+    }
+    for s in strokes {
+      if s.mesh == nil { s.mesh = arena?.store(InkMesh.triangles(s)) }
+      guard let m = s.mesh else { continue }
+      if m.buffer === buffer && m.offset == start + count * stride {
+        count += m.count   // next to the last one in memory: one draw covers both
+      } else {
+        flush()
+        buffer = m.buffer; start = m.offset; count = m.count
+      }
+    }
+    flush()
+  }
+
+  private func drawWet(_ wet: WetInk, _ enc: MTLRenderCommandEncoder, _ gpu: InkGPU, _ view: ViewUniform) {
+    enc.setRenderPipelineState(gpu.ink)
+    enc.setDepthStencilState(gpu.inkDepth)
+    var u = view
+    enc.setVertexBytes(&u, length: MemoryLayout<ViewUniform>.stride, index: 1)
+    let stride = MemoryLayout<Vtx>.stride
+    if wetGeneration != wet.generation {
+      wetGeneration = wet.generation
+      wetBuffer = nil
+      wetUploaded = 0
+    }
+    if wet.stable.count > wetUploaded {
+      let need = wet.stable.count * stride
+      if wetBuffer == nil || wetBuffer!.length < need {
+        guard let bigger = gpu.device.makeBuffer(length: max(1 << 18, need * 2), options: .storageModeShared) else { return }
+        if let old = wetBuffer { bigger.contents().copyMemory(from: old.contents(), byteCount: wetUploaded * stride) }
+        wetBuffer = bigger
+      }
+      wet.stable.withUnsafeBytes { raw in
+        wetBuffer!.contents().advanced(by: wetUploaded * stride)
+          .copyMemory(from: raw.baseAddress!.advanced(by: wetUploaded * stride), byteCount: (wet.stable.count - wetUploaded) * stride)
+      }
+      wetUploaded = wet.stable.count
+    }
+    if let wetBuffer, wetUploaded > 0 {
+      enc.setVertexBuffer(wetBuffer, offset: 0, index: 0)
+      enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: wetUploaded)
+    }
+    let tail = wet.tail
+    if tail.isEmpty { return }
+    let bytes = tail.count * stride
+    tail.withUnsafeBytes { raw in
+      if bytes <= 4096 {
+        enc.setVertexBytes(raw.baseAddress!, length: bytes, index: 0)
+      } else if let b = gpu.device.makeBuffer(bytes: raw.baseAddress!, length: bytes, options: .storageModeShared) {
+        enc.setVertexBuffer(b, offset: 0, index: 0)
+      }
+    }
+    enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tail.count)
+  }
+
+  // MARK: - Without Metal
+
+  private func drawFallback() {
+    let rect = visibleRect()
+    let z = max(0.01, zoom)
+    let fmt = UIGraphicsImageRendererFormat()
+    fmt.scale = 1
+    fmt.opaque = false
+    if settledDirty || !pendingSettle.isEmpty || fallbackSettled == nil {
+      settledDirty = false
+      pendingSettle.removeAll()
+      let strokes = visibleStrokes()
+      fallbackSettled = UIGraphicsImageRenderer(size: bounds.size, format: fmt).image { c in
+        c.cgContext.scaleBy(x: z, y: z)
+        InkRaster.draw(strokes, rect: rect, in: c.cgContext)
+      }
+    }
+    let lifted = document.strokes.filter(\.lifted)
+    let top = UIGraphicsImageRenderer(size: bounds.size, format: fmt).image { c in
+      fallbackSettled?.draw(at: .zero)
+      c.cgContext.scaleBy(x: z, y: z)
+      c.cgContext.translateBy(x: -rect.minX, y: -rect.minY)
+      c.cgContext.saveGState()
+      c.cgContext.concatenate(liftedTransform)
+      for s in lifted { InkRaster.draw(s, in: c.cgContext) }
+      c.cgContext.restoreGState()
+      if let wet {
+        let alpha = CGFloat(wet.pts.last?.a ?? 1)
+        InkRaster.fill(wet.stable, rgb: wet.rgb, alpha: alpha, in: c.cgContext)
+        InkRaster.fill(wet.tail, rgb: wet.rgb, alpha: alpha, in: c.cgContext)
+      }
+    }
+    layer.contents = top.cgImage
+  }
+}

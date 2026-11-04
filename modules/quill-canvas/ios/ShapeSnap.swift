@@ -1,23 +1,17 @@
 // Shape lock (like Procreate's QuickShape): draw a line, circle, oval, rectangle
 // or triangle and hold the Pencil still at the end - the stroke snaps to a clean shape.
-import PencilKit
 import UIKit
 
 enum ShapeSnap {
-  /// How long the Pencil has to rest at the end of a stroke to snap it.
+  /// How long the Pencil has to rest to snap the stroke.
   static let holdTime: TimeInterval = 0.45
 
-  /// The clean shape for a stroke that ended in a hold, or nil (keep it as drawn).
-  /// `held`: how long the Pencil rested without moving before it lifted (timed live).
-  static func snap(_ stroke: PKStroke, held: TimeInterval) -> PKStroke? {
-    guard held >= holdTime else { return nil }
-    let all = Array(stroke.path)
-    guard all.count >= 4 else { return nil }
-    let t = stroke.transform
-    let pts = all.map { $0.location.applying(t) }
-    let end = pts[pts.count - 1]
+  /// The clean outline for what was drawn, or nil (keep it as drawn). A line has two points;
+  /// `closed` shapes end where they started.
+  static func outline(_ pts: [CGPoint]) -> (points: [CGPoint], closed: Bool)? {
+    guard pts.count >= 4, let end = pts.last else { return nil }
     // Leave out the resting points at the end.
-    var holdStart = all.count - 1
+    var holdStart = pts.count - 1
     while holdStart > 0 && dist(pts[holdStart - 1], end) < 5 { holdStart -= 1 }
     let shape = Array(pts[0...max(1, holdStart)])
     guard shape.count >= 3 else { return nil }
@@ -27,57 +21,45 @@ enum ShapeSnap {
     let diag = hypot(box.width, box.height)
     guard diag > 12 else { return nil }
 
-    var outline: [CGPoint]
     let length = zip(shape, shape.dropFirst()).reduce(0) { $0 + dist($1.0, $1.1) }
-    let closed = dist(start, last) < max(14, diag * 0.22)
-    if !closed {
+    if dist(start, last) >= max(14, diag * 0.22) {
       // A line: every point close to the straight line from start to end.
       let worst = shape.map { lineDistance($0, start, last) }.max() ?? 0
       guard worst < max(6, dist(start, last) * 0.09), length < dist(start, last) * 1.25 else { return nil }
-      outline = [start, last]
-    } else {
-      let corners = simplify(shape + [start], tolerance: diag * 0.07)
-      let n = corners.count - 1   // the closing point repeats the first
-      if n == 3 {
-        outline = Array(corners.prefix(3)) + [corners[0]]
-      } else if n == 4 {
-        outline = squareUp(Array(corners.prefix(4)), box: box) + []
-        outline.append(outline[0])
-      } else {
-        // An ellipse (a circle if it's nearly round), from the drawn bounds.
-        var r = box
-        if abs(r.width - r.height) < max(r.width, r.height) * 0.15 {
-          let s = (r.width + r.height) / 2
-          r = CGRect(x: r.midX - s / 2, y: r.midY - s / 2, width: s, height: s)
-        }
-        let steps = max(36, Int((r.width + r.height) / 4))
-        outline = (0...steps).map { i in
-          let a = CGFloat(i) / CGFloat(steps) * 2 * .pi - .pi / 2
-          return CGPoint(x: r.midX + cos(a) * r.width / 2, y: r.midY + sin(a) * r.height / 2)
-        }
-      }
+      return ([start, last], false)
     }
-    return make(outline, like: all, ink: stroke.ink)
+    let corners = simplify(shape + [start], tolerance: diag * 0.07)
+    let n = corners.count - 1   // the closing point repeats the first
+    if n == 3 { return (Array(corners.prefix(3)) + [corners[0]], true) }
+    if n == 4 {
+      let square = squareUp(Array(corners.prefix(4)), box: box)
+      return (square + [square[0]], true)
+    }
+    // An ellipse (a circle if it's nearly round), from the drawn bounds.
+    var r = box
+    if abs(r.width - r.height) < max(r.width, r.height) * 0.15 {
+      let s = (r.width + r.height) / 2
+      r = CGRect(x: r.midX - s / 2, y: r.midY - s / 2, width: s, height: s)
+    }
+    let steps = max(36, Int((r.width + r.height) / 4))
+    return ((0...steps).map { i in
+      let a = CGFloat(i) / CGFloat(steps) * 2 * .pi - .pi / 2
+      return CGPoint(x: r.midX + cos(a) * r.width / 2, y: r.midY + sin(a) * r.height / 2)
+    }, true)
   }
 
-  /// A new stroke along `outline` (dense points, same ink and pen size as the original).
-  private static func make(_ outline: [CGPoint], like orig: [PKStrokePoint], ink: PKInk) -> PKStroke {
-    let mid = orig[orig.count / 2]
-    var pts: [PKStrokePoint] = []
-    var tOff: TimeInterval = 0
+  /// Points along an outline, close together so the corners stay sharp in the curve drawn through them.
+  static func dense(_ outline: [CGPoint]) -> [CGPoint] {
+    var out: [CGPoint] = []
     for (a, b) in zip(outline, outline.dropFirst()) {
       let n = max(1, Int(dist(a, b) / 3))
       for i in 0..<n {
         let k = CGFloat(i) / CGFloat(n)
-        let p = CGPoint(x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k)
-        pts.append(PKStrokePoint(location: p, timeOffset: tOff, size: mid.size, opacity: mid.opacity, force: mid.force, azimuth: mid.azimuth, altitude: mid.altitude))
-        tOff += 0.004
+        out.append(CGPoint(x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k))
       }
     }
-    if let e = outline.last {
-      pts.append(PKStrokePoint(location: e, timeOffset: tOff, size: mid.size, opacity: mid.opacity, force: mid.force, azimuth: mid.azimuth, altitude: mid.altitude))
-    }
-    return PKStroke(ink: ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()), transform: .identity, mask: nil)
+    if let e = outline.last { out.append(e) }
+    return out
   }
 
   /// A drawn 4-corner shape: a neat rectangle if its sides are close to straight up and across.
@@ -94,7 +76,7 @@ enum ShapeSnap {
 
   // MARK: geometry
 
-  private static func dist(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
+  static func dist(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
 
   private static func bounds(_ p: [CGPoint]) -> CGRect {
     let xs = p.map(\.x), ys = p.map(\.y)

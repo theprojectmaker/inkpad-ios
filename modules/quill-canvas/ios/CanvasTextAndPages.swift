@@ -1,5 +1,4 @@
 // Typed text boxes on the canvas, and page tools (thumbnails, delete).
-import PencilKit
 import UIKit
 
 extension QuillCanvasView {
@@ -8,7 +7,8 @@ extension QuillCanvasView {
   func setTextMode(_ on: Bool) {
     if textMode == on { return }
     textMode = on
-    canvas.drawingGestureRecognizer.isEnabled = !on
+    inkGesture.isEnabled = !on
+    updatePanFingers()
     textHost.isUserInteractionEnabled = on
     tapGR.isEnabled = on
     panGR.isEnabled = on
@@ -17,7 +17,7 @@ extension QuillCanvasView {
   }
 
   /// Typed text sits above the ink only while you type. When you write, nothing covers
-  /// the ink layer, so iPadOS can draw the wet ink on its fastest path (no lag or stutter).
+  /// the ink.
   func placeTextHost() {
     if textMode {
       if canvas.subviews.last !== textHost { canvas.bringSubviewToFront(textHost) }
@@ -70,7 +70,7 @@ extension QuillCanvasView {
   func panStartsOnBox() -> Bool { box(at: panGR.location(in: textHost)) != nil }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-    g === tapGR || g === undoTap || g === redoTap
+    g === tapGR || g === inkGesture || other === inkGesture
   }
 
   // MARK: - Editing
@@ -138,9 +138,11 @@ extension QuillCanvasView {
 
   /// Moves all ink and text sideways (when the pages are re-centred).
   func shiftAll(dx: CGFloat) {
-    var strokes: [PKStroke] = []
-    for var s in canvas.drawing.strokes { s.transform = s.transform.concatenating(CGAffineTransform(translationX: dx, y: 0)); strokes.append(s) }
-    canvas.drawing = PKDrawing(strokes: strokes)
+    clearSelection()
+    document.replaceAll(document.strokes.map { $0.moved(CGAffineTransform(translationX: dx, y: 0)) })
+    undoStack.removeAll(); redoStack.removeAll()
+    ink.setNeedsInk(rebuild: true)
+    markDirty()
     texts = texts.map { b in var n = b; n.x += Double(dx); return n }
     renderTexts()
     saveTexts()
@@ -197,16 +199,13 @@ extension QuillCanvasView {
     let p = specs[i], f = frames[i]
     let k = CGFloat(width) / CGFloat(p.w)
     let size = CGSize(width: CGFloat(p.w) * k, height: CGFloat(p.h) * k)
-    var ink: UIImage?
-    UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-      ink = canvas.drawing.image(from: f, scale: k * 2)
-    }
+    let strokes = document.strokes
     let fmt = UIGraphicsImageRendererFormat()
     fmt.scale = 2
     let img = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
       ctx.cgContext.scaleBy(x: k, y: k)
       PageArt.draw(p, in: ctx.cgContext)
-      ink?.draw(in: CGRect(x: 0, y: 0, width: p.w, height: p.h))
+      InkRaster.draw(strokes, rect: f, in: ctx.cgContext)
       drawTexts(onPage: f, in: ctx.cgContext)
     }
     guard let data = img.jpegData(compressionQuality: 0.8) else { return false }
@@ -221,12 +220,11 @@ extension QuillCanvasView {
     commitEdit()
     let below = frames[i].maxY + 14
     let shift = CGFloat(h) + 28
-    var strokes: [PKStroke] = []
-    for var s in canvas.drawing.strokes {
-      if s.renderBounds.midY >= below { s.transform = s.transform.concatenating(CGAffineTransform(translationX: 0, y: shift)) }
-      strokes.append(s)
-    }
-    canvas.drawing = PKDrawing(strokes: strokes)
+    clearSelection()
+    document.replaceAll(document.strokes.map { $0.bounds.midY >= below ? $0.moved(CGAffineTransform(translationX: 0, y: shift)) : $0 })
+    undoStack.removeAll(); redoStack.removeAll()
+    ink.setNeedsInk(rebuild: true)
+    markDirty()
     texts = texts.map { b in var n = b; if CGFloat(b.y) >= below { n.y += Double(shift) }; return n }
     renderTexts()
     saveTexts()
@@ -240,14 +238,17 @@ extension QuillCanvasView {
     let f = frames[i]
     let shift = f.height + 28
     let top = f.minY - 14, bottom = f.maxY + 14
-    var kept: [PKStroke] = []
-    for var s in canvas.drawing.strokes {
-      let c = s.renderBounds.midY
+    clearSelection()
+    var kept: [InkStroke] = []
+    for s in document.strokes {
+      let c = s.bounds.midY
       if c >= top && c < bottom { continue }
-      if c >= bottom { s.transform = s.transform.concatenating(CGAffineTransform(translationX: 0, y: -shift)) }
-      kept.append(s)
+      kept.append(c >= bottom ? s.moved(CGAffineTransform(translationX: 0, y: -shift)) : s)
     }
-    canvas.drawing = PKDrawing(strokes: kept)
+    document.replaceAll(kept)
+    undoStack.removeAll(); redoStack.removeAll()
+    ink.setNeedsInk(rebuild: true)
+    markDirty()
     texts = texts.compactMap { b in
       if CGFloat(b.y) >= top && CGFloat(b.y) < bottom { return nil }
       var n = b

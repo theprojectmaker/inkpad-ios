@@ -51,8 +51,10 @@ export function docFiles(doc: NoteDoc): string[] {
 
 export async function duplicateDoc(doc: NoteDoc, newId: string): Promise<NoteDoc> {
   for (const f of docFiles(doc)) await fsx.copy(notePath(doc.id, f), notePath(newId, f));
-  // The PencilKit ink lives next to note.json.
-  if (fsx.exists(notePath(doc.id, 'drawing.pkd'))) await fsx.copy(notePath(doc.id, 'drawing.pkd'), notePath(newId, 'drawing.pkd'));
+  // The ink lives next to note.json (drawing.pkd: notes from before Quill's own ink engine).
+  for (const ink of ['drawing.qink', 'drawing.pkd']) {
+    if (fsx.exists(notePath(doc.id, ink))) await fsx.copy(notePath(doc.id, ink), notePath(newId, ink));
+  }
   const copy: NoteDoc = JSON.parse(JSON.stringify(doc));
   copy.id = newId;
   await saveDoc(copy);

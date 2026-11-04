@@ -1,6 +1,5 @@
-// The writing surface: Apple's PencilKit canvas (ink, eraser, lasso, ruler,
-// palm rejection, scrolling and pinch-zoom are all PencilKit's), with the
-// note's pages stacked underneath and scaled with the zoom.
+// The writing surface: a scroll view with the note's pages stacked inside, scaled
+// with the zoom, and Quill's own ink on top (see InkView and CanvasInk).
 import ExpoModulesCore
 import PencilKit
 import UIKit
@@ -29,10 +28,59 @@ struct TextBox: Codable {
   var color: String
 }
 
-final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
-  let canvas = PKCanvasView()
+/// Fingers scroll and zoom; a finger on a lasso selection moves that instead.
+final class InkScrollView: UIScrollView {
+  var blocksPan: ((CGPoint) -> Bool)?
+
+  override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+    if g === panGestureRecognizer, let blocksPan, blocksPan(g.location(in: self)) { return false }
+    return super.gestureRecognizerShouldBegin(g)
+  }
+}
+
+final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
+  let canvas = InkScrollView()
+  private let zoomView = UIView()          // what the scroll view zooms; pages and ink follow its scale
   let pageHost = UIView()                  // page backgrounds, in canvas coordinates
   let textHost = UIView()                  // typed text (under the ink except while typing), same coordinates
+  let document = InkDocument()
+  lazy var ink = InkView(document: document)
+  lazy var inkGesture: InkGesture = { let g = InkGesture(target: nil, action: nil); g.owner = self; return g }()
+  var pen = InkPen()
+  var inkMode = InkMode.write
+  var eraserWidth: CGFloat = 20
+  var capture: PenCapture?
+  var undoStack: [InkEdit] = []
+  var redoStack: [InkEdit] = []
+  var eraseLast: CGPoint = .zero
+  var eraseRemoved: [InkStroke] = []
+  var eraseAdded: [InkStroke] = []
+  let eraserRing = CAShapeLayer()
+  var lassoPts: [CGPoint] = []
+  let lassoLayer = CAShapeLayer()
+  var selection: [InkStroke] = []
+  var selBox: CGRect = .null
+  var selDrag: (from: CGPoint, base: CGAffineTransform, sizing: Bool)?
+  let selOutline = CAShapeLayer()
+  let selHandle = CAShapeLayer()
+  let selBar = UIStackView()
+  lazy var selPan: UIPanGestureRecognizer = {
+    let g = UIPanGestureRecognizer(target: self, action: #selector(onSelPan(_:)))
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    g.delegate = self
+    g.isEnabled = false
+    return g
+  }()
+  lazy var selTap: UITapGestureRecognizer = {
+    let g = UITapGestureRecognizer(target: self, action: #selector(onSelTap(_:)))
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    g.cancelsTouchesInView = false
+    g.delegate = self
+    g.isEnabled = false
+    return g
+  }()
+  var ruler: RulerView?
+  var dragStartOffset: CGPoint = .zero
   var texts: [TextBox] = []
   var labels: [String: UILabel] = [:]
   var textsPath: String?
@@ -44,15 +92,9 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   var dragId: String?
   var dragStart: CGPoint = .zero
   private var lastPage = -1
-  /// Where the user last scrolled to. An undo/redo (ours or Apple's 3-finger
-  /// gesture) must never move the page, so we put the view back here.
-  private var stableOffset: CGPoint?
   let onPageChange = EventDispatcher()
   lazy var tapGR = UITapGestureRecognizer(target: self, action: #selector(onTextTap(_:)))
   lazy var panGR = UIPanGestureRecognizer(target: self, action: #selector(onTextPan(_:)))
-  lazy var undoTap: UITapGestureRecognizer = { let g = UITapGestureRecognizer(target: self, action: #selector(onUndoTap)); g.numberOfTouchesRequired = 2; return g }()
-  lazy var redoTap: UITapGestureRecognizer = { let g = UITapGestureRecognizer(target: self, action: #selector(onRedoTap)); g.numberOfTouchesRequired = 3; return g }()
-  private let hud = UILabel()
   private var pageViews: [PageTileView] = []
   private(set) var specs: [PageSpec] = []
   private(set) var frames: [CGRect] = []
@@ -62,16 +104,10 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   var keyboardInset: CGFloat = 0             // room for the keyboard while typing in a text box
   private let saveQueue = DispatchQueue(label: "quill.canvas.save")  // every drawing write, in order
   private var pageViewsById: [String: (key: String, view: PageTileView)] = [:]
-  private var lastEmit: CFTimeInterval = 0
-  private var scrollBack: DispatchWorkItem?
+  var lastEmit: CFTimeInterval = 0
+  var scrollBack: DispatchWorkItem?
   var shapeSnap = true
-  private var snapping = false
-  private var strokeOpen = false     // a Pencil stroke started and isn't settled yet
-  private var strokeEnded = false
-  private var strokeAdded = false
-  private var lastMovePoint: CGPoint = .zero
-  private var lastMoveTime: CFTimeInterval = 0
-  private var heldTime: CFTimeInterval = 0
+  private var fingerDraws = false
   private var contentH: CGFloat = 792
   private let gap: CGFloat = 28
   private var lastWidth: CGFloat = 0
@@ -80,6 +116,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   var drawingPath: String?
   var legacy: [LegacyStroke] = []
   private var loaded = false
+  var isLoaded: Bool { loaded }
   private var saveWork: DispatchWorkItem?
   private var dirty = false
 
@@ -88,28 +125,35 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
     clipsToBounds = true
+    isMultipleTouchEnabled = true
     backgroundColor = UIColor(red: 0.925, green: 0.925, blue: 0.935, alpha: 1)
 
     canvas.delegate = self
     canvas.backgroundColor = .clear
-    canvas.isOpaque = false
-    canvas.overrideUserInterfaceStyle = .light      // black ink stays black on the paper
-    canvas.drawingPolicy = .pencilOnly              // Pencil draws, fingers scroll and zoom
     canvas.alwaysBounceVertical = true
     canvas.contentInsetAdjustmentBehavior = .never
     canvas.showsVerticalScrollIndicator = true
     canvas.scrollsToTop = false                    // tapping the top of the screen must never jump to page 1
-    canvas.tool = PKInkingTool(.pen, color: .black, width: 3)
+    canvas.delaysContentTouches = false
+    canvas.blocksPan = { [weak self] p in
+      guard let self else { return false }
+      return self.selectionWantsTouch(at: self.canvas.convert(p, to: self))
+    }
     addSubview(canvas)
-    canvas.drawingGestureRecognizer.addTarget(self, action: #selector(onInk(_:)))
+
+    zoomView.isUserInteractionEnabled = false
+    canvas.addSubview(zoomView)
 
     pageHost.isUserInteractionEnabled = false
     pageHost.layer.anchorPoint = .zero
-    canvas.insertSubview(pageHost, at: 0)
+    canvas.addSubview(pageHost)
 
     textHost.layer.anchorPoint = .zero
     textHost.isUserInteractionEnabled = false
     canvas.addSubview(textHost)
+    canvas.addSubview(ink)
+    ink.onLinkTick = { [weak self] in self?.inkTick() }
+
     tapGR.isEnabled = false
     tapGR.delegate = self
     canvas.addGestureRecognizer(tapGR)
@@ -117,46 +161,31 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     panGR.delegate = self
     panGR.maximumNumberOfTouches = 1
     textHost.addGestureRecognizer(panGR)
-    // No finger-tap undo: a hand resting on the screen while writing counted as a
-    // two-finger tap and undid what was just written. Undo/redo are the buttons only.
-    hud.font = .systemFont(ofSize: 15, weight: .semibold)
-    hud.textColor = .white
-    hud.textAlignment = .center
-    hud.backgroundColor = UIColor(white: 0.1, alpha: 0.78)
-    hud.layer.cornerRadius = 17
-    hud.layer.masksToBounds = true
-    hud.alpha = 0
-    addSubview(hud)
+
+    // The Pencil only ever writes; scrolling and zooming are for fingers.
+    // (The pinch recognizer only exists once there's a zoom range.)
+    canvas.minimumZoomScale = 0.5
+    canvas.maximumZoomScale = 6
+    let fingers = [UITouch.TouchType.direct, .indirect, .indirectPointer].map { NSNumber(value: $0.rawValue) }
+    canvas.panGestureRecognizer.allowedTouchTypes = fingers
+    canvas.pinchGestureRecognizer?.allowedTouchTypes = fingers
+
+    inkGesture.cancelsTouchesInView = false
+    inkGesture.delaysTouchesBegan = false
+    inkGesture.delaysTouchesEnded = false
+    inkGesture.delegate = self
+    inkGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+    addGestureRecognizer(inkGesture)
+    addGestureRecognizer(selPan)
+    addGestureRecognizer(selTap)
+    makeSelectionUI()
+
     NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
   }
 
   deinit { NotificationCenter.default.removeObserver(self) }
-
-  @objc private func onUndoTap() {
-    let can = canvas.undoManager?.canUndo ?? false
-    if can { undo() }
-    flash(can ? "Undo" : "Nothing to undo")
-  }
-
-  @objc private func onRedoTap() {
-    let can = canvas.undoManager?.canRedo ?? false
-    if can { redo() }
-    flash(can ? "Redo" : "Nothing to redo")
-  }
-
-  /// A small "Undo" / "Redo" bubble, so a finger tap gives feedback.
-  private func flash(_ text: String) {
-    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    hud.text = text
-    let w = hud.intrinsicContentSize.width + 34
-    hud.frame = CGRect(x: (bounds.width - w) / 2, y: 18, width: w, height: 34)
-    bringSubviewToFront(hud)
-    hud.layer.removeAllAnimations()
-    hud.alpha = 1
-    UIView.animate(withDuration: 0.35, delay: 0.7, options: [.beginFromCurrentState], animations: { self.hud.alpha = 0 })
-  }
 
   /// Leaving the app saves everything, including a text box still being typed.
   @objc private func appBackground() { saveNow(sync: true) }
@@ -172,7 +201,6 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     if overlap > 0, let ed = editor, ed.superview != nil {
       let r = textHost.convert(ed.frame, to: canvas).insetBy(dx: 0, dy: -24)
       canvas.scrollRectToVisible(r, animated: true)
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in if let s = self { s.stableOffset = s.canvas.contentOffset } }
     }
   }
 
@@ -182,11 +210,14 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     super.layoutSubviews()
     canvas.frame = bounds
     placeTextHost()
+    syncInk()
     if bounds.width > 1 && abs(bounds.width - lastWidth) > 0.5 {
       lastWidth = bounds.width
       refit(keepZoom: true)
     }
   }
+
+  func currentFit() -> CGFloat { fitScale() }
 
   private func fitScale() -> CGFloat { max(0.05, (bounds.width - 40) / max(1, contentW)) }
 
@@ -218,7 +249,6 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
           self.canvas.setZoomScale(f * CGFloat(testZoom), animated: false)
           self.applyZoom()
           self.canvas.contentOffset = CGPoint(x: self.canvas.contentSize.width * 0.12, y: self.canvas.contentSize.height * 0.04)
-          self.stableOffset = self.canvas.contentOffset
         }
       }
     } else {
@@ -228,17 +258,14 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
       let x = min(maxX, max(-canvas.contentInset.left, canvas.contentOffset.x))
       canvas.contentOffset = CGPoint(x: x, y: y)
     }
-    stableOffset = canvas.contentOffset
     updateTextScale()
     lastPage = -1
     reportPage()
+    syncInk()
   }
 
   private func applyZoom() {
     let z = canvas.zoomScale
-    // Only touch the layers when the zoom really changed: setting a view's transform
-    // (even to the same value) makes the canvas lay itself out again, which landed
-    // between strokes and made the next one start late.
     let tf = CGAffineTransform(scaleX: z, y: z)
     if pageHost.transform != tf || pageHost.layer.position != .zero {
       pageHost.transform = tf
@@ -248,41 +275,50 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
       textHost.transform = tf
       textHost.layer.position = .zero
     }
+    let content = CGRect(x: 0, y: 0, width: contentW, height: contentH)
+    if zoomView.bounds != content { zoomView.bounds = content }
+    let middle = CGPoint(x: contentW * z / 2, y: contentH * z / 2)
+    if zoomView.center != middle { zoomView.center = middle }
     let size = CGSize(width: contentW * z, height: contentH * z)
     if canvas.contentSize != size { canvas.contentSize = size }
     let padX = max(0, (bounds.width - size.width) / 2)
     let inset = UIEdgeInsets(top: 20, left: padX, bottom: 160 + keyboardInset, right: padX)
     if canvas.contentInset != inset { canvas.contentInset = inset }
+    syncInk()
   }
+
+  /// The ink covers exactly what's on screen, and moves with the pages in the same frame.
+  private func syncInk() {
+    ink.scrolled(to: canvas.bounds, zoom: canvas.zoomScale)
+    placeSelectionUI()
+  }
+
+  func viewForZooming(in scrollView: UIScrollView) -> UIView? { zoomView }
 
   func scrollViewDidZoom(_ scrollView: UIScrollView) { applyZoom() }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    if scrollView === canvas && (canvas.isTracking || canvas.isDecelerating || canvas.isZooming || canvas.isZoomBouncing) {
-      stableOffset = canvas.contentOffset
-    }
+    syncInk()
     reportPage()
   }
 
-  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-    if scrollView === canvas { stableOffset = canvas.contentOffset }
-  }
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { dragStartOffset = canvas.contentOffset }
 
-  func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-    if scrollView === canvas { stableOffset = canvas.contentOffset; updateTextScale() }
-  }
-
-  /// Puts the view back where the user had it if something other than the user moved it.
-  func holdScroll() {
-    applyZoom()
-    guard let off = stableOffset, !canvas.isTracking, !canvas.isDecelerating, !canvas.isZooming else { return }
-    let d = abs(canvas.contentOffset.y - off.y) + abs(canvas.contentOffset.x - off.x)
-    if d > 2 { canvas.setContentOffset(off, animated: false) }
-  }
+  func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateTextScale() }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer === panGR { return panStartsOnBox() }
+    if gestureRecognizer === selPan { return selectionWantsTouch(at: selPan.location(in: self)) }
     return super.gestureRecognizerShouldBegin(gestureRecognizer)
+  }
+
+  /// Buttons stay buttons, and a finger on the ruler moves the ruler.
+  func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if g === inkGesture {
+      if touch.view is UIControl { return false }
+      if touch.type == .direct && touch.view is RulerView { return false }
+    }
+    return true
   }
 
   /// Which page is in the middle of the screen.
@@ -306,7 +342,6 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
     let z = canvas.zoomScale
     let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
     let y = min(maxY, frames[i].minY * z - 16)
-    stableOffset = CGPoint(x: canvas.contentOffset.x, y: y)
     canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
   }
 
@@ -366,98 +401,44 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   // MARK: - Drawing file
 
-  /// Called once every prop has arrived: load the saved drawing (or convert old ink).
+  /// Called once every prop has arrived: load the saved ink (or convert older ink).
   func loadIfReady() {
     guard !loaded, let path = drawingPath, !path.isEmpty, !specs.isEmpty else { return }
     loaded = true
-    if let data = FileManager.default.contents(atPath: path), let d = try? PKDrawing(data: data) {
-      canvas.drawing = d
+    if let data = FileManager.default.contents(atPath: inkPath(path)), let saved = InkFile.decode(data) {
+      document.load(saved)
+    } else if let data = FileManager.default.contents(atPath: path), let d = try? PKDrawing(data: data) {
+      // Written before this ink engine. The old file is left as it was.
+      document.load(InkImport.strokes(from: d))
+      markDirty()
     } else if !legacy.isEmpty {
-      canvas.drawing = QuillCanvasView.drawing(from: legacy)
-      dirty = true
-      scheduleSave()
+      document.load(InkImport.strokes(from: legacy))
+      markDirty()
     }
     legacy = []
+    ink.setNeedsInk(rebuild: true)
     if let tp = textsPath, let data = FileManager.default.contents(atPath: tp), let boxes = try? JSONDecoder().decode([TextBox].self, from: data) {
       texts = boxes
       renderTexts()
     }
   }
 
-  // MARK: - While the Pencil is down
-
-  /// The page never moves while writing: a palm or finger resting on the screen
-  /// used to scroll the page under the Pencil. Scrolling comes back right after.
-  func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
-    scrollBack?.cancel()
-    scrollBack = nil
-    canvas.panGestureRecognizer.isEnabled = false
-    canvas.pinchGestureRecognizer?.isEnabled = false
+  /// Where the ink is kept, next to the drawing file of older notes.
+  private func inkPath(_ path: String) -> String {
+    URL(fileURLWithPath: path).deletingPathExtension().appendingPathExtension("qink").path
   }
 
-  func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
-    scrollBack?.cancel()
-    let w = DispatchWorkItem { [weak self] in
-      self?.canvas.panGestureRecognizer.isEnabled = true
-      self?.canvas.pinchGestureRecognizer?.isEnabled = true
-    }
-    scrollBack = w
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
-  }
-
-  /// Times how long the Pencil rested still at the end of a stroke (for shape lock).
-  @objc private func onInk(_ g: UIGestureRecognizer) {
-    let p = g.location(in: canvas)
-    let now = CACurrentMediaTime()
-    switch g.state {
-    case .began:
-      lastMovePoint = p; lastMoveTime = now; heldTime = 0
-      strokeOpen = true; strokeEnded = false; strokeAdded = false
-    case .changed:
-      if hypot(p.x - lastMovePoint.x, p.y - lastMovePoint.y) > 4 { lastMovePoint = p; lastMoveTime = now }
-    case .ended:
-      heldTime = now - lastMoveTime
-      strokeEnded = true
-      trySnap()
-    default:
-      strokeOpen = false
-    }
-  }
-
-  /// Shape lock: a stroke that ended in a hold becomes a clean line or shape.
-  /// Runs once the stroke has both ended and been added to the drawing (PencilKit
-  /// reports those in either order). Only touches the drawing when there was a
-  /// hold, so normal writing does no extra work between strokes.
-  private func trySnap() {
-    guard strokeOpen, strokeEnded, strokeAdded else { return }
-    strokeOpen = false
-    guard shapeSnap, heldTime >= ShapeSnap.holdTime,
-          let ink = canvas.tool as? PKInkingTool, ink.inkType != .marker else { return }
-    var d = canvas.drawing
-    guard let last = d.strokes.last, let shape = ShapeSnap.snap(last, held: heldTime) else { return }
-    d.strokes[d.strokes.count - 1] = shape
-    snapping = true
-    canvas.drawing = d
-    snapping = false
-    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-  }
-
-  func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-    guard loaded else { return }
-    if !snapping && strokeOpen { strokeAdded = true; trySnap() }
+  func markDirty() {
     dirty = true
     scheduleSave()
-    let now = CACurrentMediaTime()
-    if now - lastEmit > 0.25 { lastEmit = now; emitState() }
   }
 
-  /// Saving copies the whole drawing on the main thread, so it waits for a real
-  /// pause (never between two quick strokes) and never runs while the Pencil is down.
+  /// Saving waits for a real pause (never between two quick strokes).
   private func scheduleSave() {
     saveWork?.cancel()
     let w = DispatchWorkItem { [weak self] in
       guard let self else { return }
-      if !self.canvas.panGestureRecognizer.isEnabled { self.scheduleSave(); return }   // Pencil still down
+      if self.capture != nil { self.scheduleSave(); return }   // Pencil still down
       self.saveNow(sync: false)
     }
     saveWork = w
@@ -467,14 +448,15 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
   func saveNow(sync: Bool) {
     saveWork?.cancel()
     saveWork = nil
-    if sync { commitEdit() }
+    if sync { commitEdit(); clearSelection() }
     guard loaded, dirty, let path = drawingPath, !path.isEmpty else { return }
     dirty = false
-    let drawing = canvas.drawing          // a value copy; turned into bytes off the main thread
-    let count = drawing.strokes.count
+    let strokes = document.strokes         // strokes never change once made; turned into bytes off the main thread
+    let count = strokes.count
+    let file = inkPath(path)
     let write = {
-      let data = drawing.dataRepresentation()
-      let url = URL(fileURLWithPath: path)
+      let data = InkFile.encode(strokes)
+      let url = URL(fileURLWithPath: file)
       try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try? data.write(to: url, options: .atomic)
     }
@@ -491,9 +473,9 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   func emitState(strokes: Int? = nil) {
     onDrawingChange([
-      "canUndo": canvas.undoManager?.canUndo ?? false,
-      "canRedo": canvas.undoManager?.canRedo ?? false,
-      "strokes": strokes ?? -1,   // reading canvas.drawing copies every stroke; only saves report it
+      "canUndo": !undoStack.isEmpty,
+      "canRedo": !redoStack.isEmpty,
+      "strokes": strokes ?? document.strokes.count,
     ])
   }
 
@@ -506,9 +488,8 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   func focusCanvas() {}
 
-  /// The app's own toolbar picks the tool (no Apple tool palette).
+  /// The app's own toolbar picks the tool.
   func setTool(_ t: ToolSpec) {
-    let color = UIColor(hex: t.color)
     let w = CGFloat(t.width)
     setTextMode(t.kind == "text")
     if t.kind == "text" {
@@ -516,47 +497,28 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
       textSize = t.width
       return
     }
-    switch t.kind {
-    case "eraser":
-      canvas.tool = PKEraserTool(.bitmap, width: max(4, w))
-    case "lasso":
-      canvas.tool = PKLassoTool()
-    case "pencil":
-      canvas.tool = PKInkingTool(.pencil, color: color, width: w)
-    case "marker":
-      canvas.tool = PKInkingTool(.marker, color: color, width: w)
-    case "fountain":
-      if #available(iOS 17.0, *) { canvas.tool = PKInkingTool(.fountainPen, color: color, width: w) }
-      else { canvas.tool = PKInkingTool(.pen, color: color, width: w) }
-    case "felt":
-      canvas.tool = PKInkingTool(.pen, color: color, width: w)
-    case "monoline":
-      if #available(iOS 17.0, *) { canvas.tool = PKInkingTool(.monoline, color: color, width: w) }
-      else { canvas.tool = PKInkingTool(.pen, color: color, width: w) }
-    default:
-      canvas.tool = PKInkingTool(.pen, color: color, width: w)
-    }
+    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : .write
+    if mode != .lasso { clearSelection() }
+    inkMode = mode
+    if mode == .erase { eraserWidth = max(4, w) }
+    if mode == .write { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w)) }
   }
 
-  func setFingerDraws(_ on: Bool) { canvas.drawingPolicy = on ? .anyInput : .pencilOnly }
-  func setRuler(_ on: Bool) { canvas.isRulerActive = on }
-
-  func undo() { keepingScroll { canvas.undoManager?.undo() } }
-  func redo() { keepingScroll { canvas.undoManager?.redo() } }
-
-  private func keepingScroll(_ action: () -> Void) {
-    if stableOffset == nil { stableOffset = canvas.contentOffset }
-    action()
-    holdScroll()
-    DispatchQueue.main.async { [weak self] in self?.holdScroll(); self?.emitState() }
+  func setFingerDraws(_ on: Bool) {
+    fingerDraws = on
+    inkGesture.allowedTouchTypes = (on ? [UITouch.TouchType.pencil, .direct] : [UITouch.TouchType.pencil]).map { NSNumber(value: $0.rawValue) }
+    updatePanFingers()
   }
+
+  /// When a finger writes, scrolling takes two (except while typing).
+  func updatePanFingers() { canvas.panGestureRecognizer.minimumNumberOfTouches = fingerDraws && !textMode ? 2 : 1 }
 
   // MARK: - Export
 
   /// The whole note as a PDF: each page's background with its ink on top.
   func exportPdf(_ path: String) throws {
     saveNow(sync: true)
-    let drawing = canvas.drawing
+    let strokes = document.strokes
     let first = frames.first ?? CGRect(x: 0, y: 0, width: 612, height: 792)
     let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: first.size))
     let url = URL(fileURLWithPath: path)
@@ -569,9 +531,7 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
           ctx.beginPage(withBounds: r, pageInfo: [:])
           PageArt.draw(p, in: ctx.cgContext)
           if i < frames.count {
-            var ink: UIImage?
-            UITraitCollection(userInterfaceStyle: .light).performAsCurrent { ink = drawing.image(from: frames[i], scale: 2) }
-            ink?.draw(in: r)
+            InkRaster.image(strokes, rect: frames[i], scale: 3)?.draw(in: r)
             drawTexts(onPage: frames[i], in: ctx.cgContext)
           }
         }
@@ -581,29 +541,4 @@ final class QuillCanvasView: ExpoView, PKCanvasViewDelegate, UITextViewDelegate,
 
   /// A small picture of the first page for the library.
   func snapshot(_ path: String, width: Double) -> Bool { pageThumb(0, path: path, width: width) }
-
-  // MARK: - Ink from the old app
-
-  static func drawing(from legacy: [LegacyStroke]) -> PKDrawing {
-    var strokes: [PKStroke] = []
-    for s in legacy {
-      let n = s.pts.count / 3
-      if n < 1 { continue }
-      var pts: [PKStrokePoint] = []
-      pts.reserveCapacity(n)
-      for i in 0..<n {
-        let p = CGFloat(s.pts[i * 3 + 2])
-        let w = CGFloat(s.w) * (s.hl ? 1 : (0.6 + 0.8 * min(1, max(0, p))))
-        pts.append(PKStrokePoint(
-          location: CGPoint(x: s.pts[i * 3], y: s.pts[i * 3 + 1]),
-          timeOffset: TimeInterval(i) * 0.008,
-          size: CGSize(width: max(0.5, w), height: max(0.5, w)),
-          opacity: 1, force: max(0.1, p), azimuth: 0, altitude: .pi / 2))
-      }
-      let path = PKStrokePath(controlPoints: pts, creationDate: Date())
-      let ink = PKInk(s.hl ? .marker : .pen, color: UIColor(hex: s.color))
-      strokes.append(PKStroke(ink: ink, path: path, transform: .identity, mask: nil))
-    }
-    return PKDrawing(strokes: strokes)
-  }
 }
