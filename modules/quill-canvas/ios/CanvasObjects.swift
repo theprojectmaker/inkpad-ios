@@ -26,9 +26,19 @@ struct TapeObj: Codable, Equatable {
   var shown: Bool
 }
 
+/// A comment pinned to a spot on the page.
+struct CommentObj: Codable, Equatable {
+  var id: String
+  var x: Double
+  var y: Double
+  var text: String
+  var at: Double
+}
+
 struct InkExtras: Codable {
   var pics: [PictureObj] = []
   var tapes: [TapeObj] = []
+  var comments: [CommentObj]? = nil
 }
 
 /// Everything on the page that isn't ink, for undo.
@@ -52,16 +62,18 @@ extension QuillCanvasView {
     if let url = extrasURL, let data = try? Data(contentsOf: url), let e = try? JSONDecoder().decode(InkExtras.self, from: data) {
       pics = e.pics
       tapes = e.tapes
+      comments = e.comments ?? []
     }
     renderPictures()
     renderTapes()
+    renderPins()
     objBase = currentObjects()
   }
 
   func saveExtras() {
     guard let url = extrasURL else { return }
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    if let data = try? JSONEncoder().encode(InkExtras(pics: pics, tapes: tapes)) { try? data.write(to: url, options: .atomic) }
+    if let data = try? JSONEncoder().encode(InkExtras(pics: pics, tapes: tapes, comments: comments)) { try? data.write(to: url, options: .atomic) }
   }
 
   /// Text, photos or tape changed: one undo step, and saved.
@@ -281,7 +293,70 @@ extension QuillCanvasView {
   }
 
   @objc func onTapeTap(_ g: UITapGestureRecognizer) {
+    if inkMode == .comment || pinAt(g.location(in: tapeHost)) != nil { tappedForComment(at: g.location(in: tapeHost)); return }
     if let i = tapeAt(g.location(in: tapeHost)) { toggleTape(i) }
+  }
+
+  // MARK: - Comments
+
+  func renderPins() {
+    let keep = Set(comments.map(\.id))
+    for (id, v) in pinViews where !keep.contains(id) { v.removeFromSuperview(); pinViews[id] = nil }
+    for c in comments {
+      let v = pinViews[c.id] ?? {
+        let n = UILabel()
+        n.text = "…"
+        n.textAlignment = .center
+        n.font = .systemFont(ofSize: 15, weight: .bold)
+        n.textColor = UIColor(red: 0.27, green: 0.31, blue: 0.39, alpha: 1)
+        n.backgroundColor = UIColor(red: 0.86, green: 0.88, blue: 0.93, alpha: 1)
+        n.layer.cornerRadius = 15
+        n.layer.borderWidth = 2
+        n.layer.borderColor = UIColor.white.cgColor
+        n.layer.masksToBounds = true
+        n.isUserInteractionEnabled = false
+        tapeHost.addSubview(n)
+        pinViews[c.id] = n
+        return n
+      }()
+      v.bounds = CGRect(x: 0, y: 0, width: 30, height: 30)
+      v.center = CGPoint(x: c.x, y: c.y)
+    }
+    keepPinsUpright()
+  }
+
+  /// Pins stay the same size on screen at any zoom.
+  func keepPinsUpright() {
+    let k = 1 / max(0.01, canvas.zoomScale)
+    for v in pinViews.values { v.transform = CGAffineTransform(scaleX: k, y: k) }
+  }
+
+  private func pinAt(_ p: CGPoint) -> CommentObj? {
+    let reach = 22 / max(0.01, canvas.zoomScale)
+    return comments.last { hypot(CGFloat($0.x) - p.x, CGFloat($0.y) - p.y) < reach }
+  }
+
+  /// A tap opens the comment there, or starts a new one when the Comment tool is picked.
+  func tappedForComment(at p: CGPoint) {
+    if let c = pinAt(p) {
+      onSelectionAction(["action": "comment", "id": c.id, "text": c.text])
+    } else if inkMode == .comment {
+      let c = CommentObj(id: UUID().uuidString, x: Double(p.x), y: Double(p.y), text: "", at: Date().timeIntervalSince1970)
+      comments.append(c)
+      renderPins()
+      onSelectionAction(["action": "comment", "id": c.id, "text": ""])
+    }
+  }
+
+  /// From the comment sheet. Nothing written removes it.
+  func setComment(id: String, text: String) {
+    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      comments.removeAll { $0.id == id }
+    } else if let i = comments.firstIndex(where: { $0.id == id }) {
+      comments[i].text = text
+    }
+    renderPins()
+    saveExtras()
   }
 
   // MARK: - Laser pointer

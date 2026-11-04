@@ -50,8 +50,9 @@ export function currentTool(s: Settings): CanvasTool {
     case 'eraser': return { kind: 'eraser', color: '#000000', width: widthOf('eraser', n), mode: s.eraser ?? 'partial' };
     case 'tape': return { kind: 'tape', color, width: widthOf('tape', n) };
     case 'laser': return { kind: 'laser', color, width: 5 };
-    case 'text': return { kind: 'text', color, width: n, mode: s.textFont ?? 'system', bold: !!s.textBold };
+    case 'text': return { kind: 'text', color, width: n, mode: s.textFont ?? 'system', bold: !!s.textBold, italic: !!s.textItalic, underline: !!s.textUnderline };
     case 'hand': return { kind: 'hand', color: '#000000', width: 1 };
+    case 'comment': return { kind: 'comment', color: '#000000', width: 1 };
     default: return { kind: 'lasso', color: '#000000', width: 1, mode: s.lassoBox ? 'box' : 'free' };
   }
 }
@@ -79,6 +80,7 @@ const TOOLS_B: { id: InkTool; icon: string; label: string }[] = [
   { id: 'laser', icon: 'cursorarrow.rays', label: 'Laser pointer' },
   { id: 'calligraphy', icon: 'paintbrush.pointed', label: 'Calligraphy' },
   { id: 'tape', icon: 'rectangle.fill', label: 'Tape' },
+  { id: 'comment', icon: 'bubble.left', label: 'Comment' },
 ];
 
 const WAVE = 'M3 14C8 4 14 4 20 11S32 19 37 7';
@@ -248,6 +250,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, onInsert, onAudio, onR
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' }}>{sizes}<Bar />{chip('Whole', s.eraser === 'stroke', () => set({ eraser: 'stroke' }))}<View style={{ width: 8 }} />{chip('Partial', s.eraser !== 'stroke', () => set({ eraser: 'partial' }))}</View>;
   } else if (kind === 'hand') {
     row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 14 }}>The Pencil scrolls the page. Pick a pen to write again.</Text>;
+  } else if (kind === 'comment') {
+    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 14 }}>Tap the page to leave a comment. Tap a pin to read or change it.</Text>;
   } else if (kind === 'laser') {
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }}>{dots}</View>;
   } else if (kind === 'tape') {
@@ -266,8 +270,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, onInsert, onAudio, onR
         <Bar />
         {dots}
         <Bar />
-        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E9EEFD' : 'transparent' }}>
+        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 30, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E9EEFD' : 'transparent' }}>
           <Text style={{ fontSize: 18, fontWeight: '800', color: s.textBold ? BLUE : INK }}>B</Text>
+        </Pressable>
+        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 30, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? '#E9EEFD' : 'transparent' }}>
+          <Text style={{ fontSize: 18, fontStyle: 'italic', color: s.textItalic ? BLUE : INK }}>I</Text>
+        </Pressable>
+        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 30, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? '#E9EEFD' : 'transparent' }}>
+          <Text style={{ fontSize: 18, textDecorationLine: 'underline', color: s.textUnderline ? BLUE : INK }}>U</Text>
         </Pressable>
       </View>
     );

@@ -88,7 +88,7 @@ export default function Editor() {
   const { width } = useWindowDimensions();
   const tool = useMemo(() => currentTool(s),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.nibAngle, s.nibSteady]);
+    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady]);
   const [menu, setMenu] = useState(false);
   const [opts, setOpts] = useState(false);     // the picked pen's options card (tap the pen again)
   const [sidebar, setSidebar] = useState(false);
@@ -113,6 +113,7 @@ export default function Editor() {
   const [jump, setJump] = useState(false);
   const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
   const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
+  const [comment, setComment] = useState<{ id: string; text: string } | null>(null);
   const audio = useNoteAudio(id, toast);
   // Leaving the text tool finishes the text being typed.
   useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
@@ -487,9 +488,10 @@ export default function Editor() {
     setOpts(false);
     await canvas.current?.paste();
   };
-  const onSelectionAction = async (e: { nativeEvent: { action: string; path?: string; text?: string; width?: number } }) => {
+  const onSelectionAction = async (e: { nativeEvent: { action: string; id?: string; path?: string; text?: string; width?: number } }) => {
     const { action, path, text } = e.nativeEvent;
     if (action === 'message' && text) toast(text);
+    else if (action === 'comment' && e.nativeEvent.id) setComment({ id: e.nativeEvent.id, text: text ?? '' });
     else if (action === 'style') setSelStyle({ color: text ?? '#000000', width: e.nativeEvent.width ?? 2 });
     else if (action === 'share' && path) Sharing.shareAsync('file://' + path, { mimeType: 'image/jpeg', UTI: 'public.jpeg' }).catch(() => {});
     else if (action === 'explain' && path) {
@@ -651,6 +653,9 @@ export default function Editor() {
         onClose={() => setPaperFor(null)}
         onDone={(style: PaperStyle, color: PaperColor) => { const i = paperFor; setPaperFor(null); if (doc && i != null) savePages(doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'paper' as const, style, color } } : q))); }} />
       <NotePicker visible={picking} exclude={id} onClose={() => setPicking(false)} onPick={(n) => { setPicking(false); setSecond(n.id); }} />
+      <PromptSheet visible={!!comment} title="Comment" initial={comment?.text ?? ''} placeholder="Add a comment" confirm="Post"
+        onCancel={() => { if (comment) canvas.current?.setComment(comment.id, comment.text); setComment(null); }}
+        onSubmit={(v) => { if (comment) canvas.current?.setComment(comment.id, v); setComment(null); }} />
       <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />
       <ConfirmSheet visible={delRec != null} title="Delete this recording?" message="Your writing stays. The audio and its transcript are removed." onCancel={() => setDelRec(null)}

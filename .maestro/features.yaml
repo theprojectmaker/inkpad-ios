@@ -97,6 +97,17 @@ appId: com.solyapps.notes
 - tapOn: { text: "Laser pointer", optional: true }
 - swipe: { start: "30%, 60%", end: "70%, 62%", duration: 700 }
 - takeScreenshot: 13-laser
+# A comment
+- tapOn: { text: "More tools", optional: true }
+- tapOn: { text: "Comment", optional: true }
+- tapOn: { point: "60%, 70%" }
+- waitForAnimationToEnd
+- inputText: "Check this"
+- takeScreenshot: 13b-comment-sheet
+- tapOn: { text: "Post", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 13c-comment-pin
+- tapOn: { text: "Back to the main tools", optional: true }
 # Eraser modes
 - tapOn: { text: "Eraser", optional: true }
 - tapOn: { text: "Eraser", optional: true }

@@ -42,7 +42,7 @@ extension QuillCanvasView {
     guard let f = frames.first(where: { $0.insetBy(dx: 0, dy: -4).contains(p) }) else { return }
     let x = max(f.minX + 8, min(p.x, f.maxX - 120))
     let w = max(120, min(360, f.maxX - x - 16))
-    let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(max(f.minY + 4, p.y - CGFloat(textSize) * 0.7)), w: Double(w), text: "", size: textSize, color: textColor, font: textFont, bold: textBold)
+    let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(max(f.minY + 4, p.y - CGFloat(textSize) * 0.7)), w: Double(w), text: "", size: textSize, color: textColor, font: textFont, bold: textBold, italic: textItalic, underline: textUnderline)
     texts.append(b)
     beginEdit(b)
   }
@@ -75,7 +75,12 @@ extension QuillCanvasView {
 
   // MARK: - Editing
 
-  func font(_ b: TextBox) -> UIFont { QuillCanvasView.makeFont(b.font, size: CGFloat(b.size), bold: b.bold ?? false) }
+  func font(_ b: TextBox) -> UIFont {
+    let f = QuillCanvasView.makeFont(b.font, size: CGFloat(b.size), bold: b.bold ?? false)
+    guard b.italic == true else { return f }
+    if let d = f.fontDescriptor.withSymbolicTraits(f.fontDescriptor.symbolicTraits.union(.traitItalic)) { return UIFont(descriptor: d, size: CGFloat(b.size)) }
+    return f
+  }
 
   static func makeFont(_ name: String?, size: CGFloat, bold: Bool) -> UIFont {
     let weight: UIFont.Weight = bold ? .bold : .regular
@@ -98,8 +103,11 @@ extension QuillCanvasView {
     texts[i].size = textSize
     texts[i].font = textFont
     texts[i].bold = textBold
-    ed.font = font(texts[i])
-    ed.textColor = UIColor(hex: textColor)
+    texts[i].italic = textItalic
+    texts[i].underline = textUnderline
+    let attrs: [NSAttributedString.Key: Any] = [.font: font(texts[i]), .foregroundColor: UIColor(hex: textColor), .underlineStyle: textUnderline ? NSUnderlineStyle.single.rawValue : 0]
+    ed.attributedText = NSAttributedString(string: ed.text ?? "", attributes: attrs)
+    ed.typingAttributes = attrs
     textViewDidChange(ed)
   }
 
@@ -115,7 +123,9 @@ extension QuillCanvasView {
     ed.isScrollEnabled = false
     ed.font = font(b)
     ed.textColor = UIColor(hex: b.color)
-    ed.text = b.text
+    let startAttrs: [NSAttributedString.Key: Any] = [.font: font(b), .foregroundColor: UIColor(hex: b.color), .underlineStyle: b.underline == true ? NSUnderlineStyle.single.rawValue : 0]
+    ed.attributedText = NSAttributedString(string: b.text, attributes: startAttrs)
+    ed.typingAttributes = startAttrs
     ed.layer.borderColor = UIColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 1).cgColor
     ed.layer.borderWidth = 1.2
     ed.layer.cornerRadius = 4
@@ -193,7 +203,7 @@ extension QuillCanvasView {
     l.numberOfLines = 0
     l.font = font(b)
     l.textColor = UIColor(hex: b.color)
-    l.text = b.text
+    l.attributedText = NSAttributedString(string: b.text, attributes: [.font: font(b), .foregroundColor: UIColor(hex: b.color), .underlineStyle: b.underline == true ? NSUnderlineStyle.single.rawValue : 0])
     let h = l.sizeThatFits(CGSize(width: CGFloat(b.w), height: 10000)).height
     l.frame = CGRect(x: CGFloat(b.x), y: CGFloat(b.y), width: CGFloat(b.w), height: max(h, CGFloat(b.size)))
     l.isHidden = b.id == editingId
@@ -216,7 +226,7 @@ extension QuillCanvasView {
     for b in texts where ids?.contains(b.id) ?? f.contains(CGPoint(x: b.x + 1, y: b.y + 1)) {
       let style = NSMutableParagraphStyle()
       style.lineBreakMode = .byWordWrapping
-      let attrs: [NSAttributedString.Key: Any] = [.font: font(b), .foregroundColor: UIColor(hex: b.color), .paragraphStyle: style]
+      let attrs: [NSAttributedString.Key: Any] = [.font: font(b), .foregroundColor: UIColor(hex: b.color), .paragraphStyle: style, .underlineStyle: b.underline == true ? NSUnderlineStyle.single.rawValue : 0]
       (b.text as NSString).draw(with: CGRect(x: CGFloat(b.x) - f.minX, y: CGFloat(b.y) - f.minY, width: CGFloat(b.w), height: 10000),
                                 options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
     }
@@ -272,6 +282,11 @@ extension QuillCanvasView {
       guard let d = shift(CGFloat((o.y1 + o.y2) / 2)) else { return nil }
       var n = o; n.y1 += Double(d); n.y2 += Double(d); return n
     }
+    comments = comments.compactMap { o in
+      guard let d = shift(CGFloat(o.y)) else { return nil }
+      var n = o; n.y += Double(d); return n
+    }
+    renderPins()
     contentMoved()
   }
 

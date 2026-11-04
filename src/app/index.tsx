@@ -13,7 +13,6 @@ import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages, scanPages } from '@/lib/noteio';
-import { engine } from '@/lib/pdf-engine';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
@@ -111,12 +110,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           await fsx.remove(path);
           continue;
         }
-        const started = Date.now();
-        let old = 'ok';
-        try { await Promise.race([engine.info(`test/${f}`, path), new Promise((_, no) => setTimeout(() => no(new Error('timed out')), 150000))]); }
-        catch (e) { old = String((e as Error)?.message ?? e).slice(0, 30); }
-        const name = `${f.replace(/\.pdf$/, '')} old:${old} ${Math.round((Date.now() - started) / 1000)}s`;
-        await importPdfUri(fsx.uri(path), name, true);
+        await importPdfUri(fsx.uri(path), f, true);
         await fsx.remove(path);
       }
     })().catch(() => {});

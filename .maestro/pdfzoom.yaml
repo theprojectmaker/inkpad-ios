@@ -7,16 +7,16 @@ appId: com.solyapps.notes
     arguments:
       QuillTestPinch: "1"
 - extendedWaitUntil: { visible: "Home", timeout: 60000 }
-- extendedWaitUntil: { visible: "THeavy60.*", timeout: 400000 }
+- extendedWaitUntil: { visible: "THeavy60.*", timeout: 200000 }
 - extendedWaitUntil: { visible: "T200.*", timeout: 200000 }
-- extendedWaitUntil: { visible: "T5 .*", timeout: 200000 }
+- extendedWaitUntil: { visible: "T5.*", timeout: 200000 }
 - takeScreenshot: a01-imported
 - tapOn: { text: "Settings", optional: true }
 - waitForAnimationToEnd
 - tapOn: { text: "Draw with finger", optional: true }
 - tapOn: { text: "Back to notes", optional: true }
 # Short PDF: write on it, then sweep the zoom
-- tapOn: { text: "T5 .*" }
+- tapOn: { text: "T5.*" }
 - extendedWaitUntil: { visible: "More", timeout: 15000 }
 - waitForAnimationToEnd
 - takeScreenshot: a02-t5

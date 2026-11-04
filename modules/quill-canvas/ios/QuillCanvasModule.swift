@@ -161,6 +161,10 @@ public final class QuillCanvasModule: Module {
         view.styleSelection(color: color, width: width, style: style)
       }.runOnQueue(.main)
 
+      AsyncFunction("setComment") { (view: QuillCanvasView, id: String, text: String) in
+        view.setComment(id: id, text: text)
+      }.runOnQueue(.main)
+
       AsyncFunction("movePage") { (view: QuillCanvasView, from: Int, to: Int) in
         view.movePage(from: from, to: to)
       }.runOnQueue(.main)

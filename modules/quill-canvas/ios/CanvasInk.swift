@@ -10,7 +10,7 @@ struct InkEdit {
   var objects: (before: InkObjects, after: InkObjects)? = nil
 }
 
-enum InkMode { case write, erase, lasso, tape, laser }
+enum InkMode { case write, erase, lasso, tape, laser, comment }
 
 /// Reports the Pencil (and a finger, if allowed) the instant it touches, with no waiting.
 final class InkGesture: UIGestureRecognizer {
@@ -290,6 +290,7 @@ extension QuillCanvasView {
     case .lasso: beginLasso(p)
     case .tape: beginTape(p)
     case .laser: laserDown = true; beginLaser(p)
+    case .comment: break
     }
   }
 
@@ -301,6 +302,7 @@ extension QuillCanvasView {
     case .lasso: moveLasso(location(t))
     case .tape: moveTape(location(t))
     case .laser: moveLaser(location(t))
+    case .comment: break
     }
   }
 
@@ -312,6 +314,7 @@ extension QuillCanvasView {
     case .lasso: endLasso()
     case .tape: endTape(location(t))
     case .laser: laserDown = false
+    case .comment: if t.type != .direct { tappedForComment(at: location(t)) }   // a finger tap arrives by its own route
     }
     letPageMove()
   }

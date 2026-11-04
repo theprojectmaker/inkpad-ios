@@ -37,6 +37,8 @@ export type Settings = {
   tapeSize?: number;         // 0 | 1 | 2
   textFont?: string;         // system | serif | mono | hand | round
   textBold?: boolean;
+  textItalic?: boolean;
+  textUnderline?: boolean;
   defaultPaper?: { style: PaperStyle; color: PaperColor; size?: PageSizeId };
   inkKind: InkTool;          // the PencilKit tool picked in the editor
   inkSize: number;           // 0 | 1 | 2
@@ -47,7 +49,7 @@ export type Settings = {
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };
-export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy';
+export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment';
 export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
 /** What each tool remembers: its colours, three sizes (1-12) and line style. */
 export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: number; line: PenLine };

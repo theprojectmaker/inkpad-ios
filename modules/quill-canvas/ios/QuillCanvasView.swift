@@ -12,6 +12,8 @@ struct ToolSpec: Record {
   @Field var bold: Bool = false
   @Field var angle: Double = 40     // calligraphy
   @Field var stabilize: Bool = false
+  @Field var italic: Bool = false
+  @Field var underline: Bool = false
 }
 
 struct LegacyStroke: Record {
@@ -32,6 +34,8 @@ struct TextBox: Codable, Equatable {
   var color: String
   var font: String? = nil
   var bold: Bool? = nil
+  var italic: Bool? = nil
+  var underline: Bool? = nil
 }
 
 /// Fingers scroll and zoom; a finger on a lasso selection moves that instead.
@@ -101,6 +105,10 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var lassoBox = false
   var textFont = "system"
   var textBold = false
+  var textItalic = false
+  var textUnderline = false
+  var comments: [CommentObj] = []
+  var pinViews: [String: UILabel] = [:]
   var objBase = InkObjects(texts: [], pics: [], tapes: [])   // text, photos and tape as of the last undo step
   var laserPts: [(CGPoint, CFTimeInterval)] = []
   var laserBreaks: [Int] = []
@@ -342,6 +350,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if tapeHost.transform != tf || tapeHost.layer.position != .zero {
       tapeHost.transform = tf
       tapeHost.layer.position = .zero
+      keepPinsUpright()
     }
     let content = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     if zoomView.bounds != content { zoomView.bounds = content }
@@ -595,6 +604,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       textSize = t.width
       textFont = t.mode.isEmpty ? "system" : t.mode
       textBold = t.bold
+      textItalic = t.italic
+      textUnderline = t.underline
       restyleEditor()
       clearSelection()
       selTap.isEnabled = false
@@ -607,7 +618,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     canvas.panGestureRecognizer.allowedTouchTypes = scrollers.map { NSNumber(value: $0.rawValue) }
     updatePanFingers()
     if handMode { clearSelection(); selTap.isEnabled = false; return }
-    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : .write
+    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : .write
     if mode != .lasso { clearSelection() }
     inkMode = mode
     selTap.isEnabled = mode == .lasso
