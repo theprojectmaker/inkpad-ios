@@ -22,11 +22,16 @@ struct Ribbon {
   private var x: Float = 0, y: Float = 0, r: Float = 0, a: Float = 0
   private var dx: Float = 0, dy: Float = 0
   private var lx: Float = 0, ly: Float = 0, rx: Float = 0, ry: Float = 0, pc: UInt32 = 0
+  private let broken: InkKind?             // .dash or .dot
+  private var walked: Float = 0
+  private var lastX: Float = 0, lastY: Float = 0, hasLast = false
+  private var nextDot: Float = 0
 
   init(stroke rgb: UInt32, kind: InkKind, seq: UInt32) {
     self.rgb = rgb
     self.z = Ribbon.depth(seq)
     self.grain = kind == .pencil ? 1 : 0
+    self.broken = kind == .dash || kind == .dot ? kind : nil
   }
 
   static func depth(_ seq: UInt32) -> Float { Float(seq % 16_000_000 + 1) / 16_777_216 }
@@ -34,6 +39,29 @@ struct Ribbon {
   private func color(_ a: Float) -> UInt32 { rgb | UInt32(max(0, min(255, a * 255 + 0.5))) << 24 }
 
   mutating func add(_ p: InkPoint, to out: inout [Vtx]) {
+    guard let broken else { solid(p, to: &out); return }
+    if hasLast { walked += ((p.x - lastX) * (p.x - lastX) + (p.y - lastY) * (p.y - lastY)).squareRoot() }
+    lastX = p.x; lastY = p.y; hasLast = true
+    if broken == .dot {
+      // A round dot every so often.
+      if walked >= nextDot {
+        x = p.x; y = p.y; r = p.r; a = p.a
+        disc(to: &out)
+        nextDot = walked + max(2.5, p.r * 3.4)
+      }
+      return
+    }
+    let on = max(3, p.r * 6.5), gap = max(2, p.r * 4)
+    if walked.truncatingRemainder(dividingBy: on + gap) < on {
+      solid(p, to: &out)
+    } else if started {
+      finish(to: &out)
+      started = false
+      turning = false
+    }
+  }
+
+  private mutating func solid(_ p: InkPoint, to out: inout [Vtx]) {
     if !started {
       started = true
       x = p.x; y = p.y; r = p.r; a = p.a

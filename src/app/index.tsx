@@ -17,7 +17,7 @@ import { engine } from '@/lib/pdf-engine';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
-type Filter = { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'folder'; id: string };
+type Filter = { kind: 'home' } | { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'folder'; id: string };
 
 const fmtDate = (t: number) => {
   const d = new Date(t), now = new Date();
@@ -35,7 +35,7 @@ export default function LibraryScreen() {
   const { toast, busy } = useToast();
   const { s, set } = useSettings();
 
-  const [filter, setFilter] = useState<Filter>({ kind: 'all' });
+  const [filter, setFilter] = useState<Filter>({ kind: 'home' });
   const [q, setQ] = useState('');
   const [sheet, setSheet] = useState<null | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'trashNote' | 'purge' | 'purgeAll'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
@@ -73,12 +73,12 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     return at < 0 ? '' : h.slice(Math.max(0, at - 16), at + needle.length + 28).replace(/\s+/g, ' ').trim();
   };
 
-  const open = (id: string) => router.push(`/note/${id}`);
+  const open = (id: string, record?: boolean) => router.push(record ? `/note/${id}?record=1` : `/note/${id}`);
 
-  const newNote = async (style: PaperStyle, color: PaperColor = 'white', size: PageSizeId = 'letter') => {
+  const newNote = async (style: PaperStyle = 'blank', color: PaperColor = 'white', size: PageSizeId = 'letter', record = false) => {
     try {
       const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color, size }, title: defaultTitle() });
-      open(id);
+      open(id, record);
     } catch (e) { toast("Couldn't make the note: " + String((e as Error)?.message ?? e)); }
   };
 
@@ -181,10 +181,12 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
   const gapX = 24;
   const cols = Math.max(2, Math.floor((mainW - pad * 2 + gapX) / (160 + gapX)));
   const cardW = (mainW - pad * 2 - (cols - 1) * gapX) / cols;
-  const title = filter.kind === 'all' ? 'All Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : folderOf(filter.id)?.name ?? 'Subject';
+  const title = filter.kind === 'all' || filter.kind === 'home' ? 'Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : folderOf(filter.id)?.name ?? 'Subject';
   const live = lib.lib.notes.filter((n) => !n.trashed);
   const trashed = lib.lib.notes.filter((n) => n.trashed).length;
   const list = s.view === 'list';
+  const showHome = filter.kind === 'home' && !q.trim();
+  const recent = useMemo(() => live.slice().sort((a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated)).slice(0, 6), [lib.lib.notes]);
 
   const chip = (label: string, on: boolean, onPress: () => void, color?: string, onLongPress?: () => void) => (
     <Pressable key={label + (color ?? '')} onPress={onPress} onLongPress={onLongPress} delayLongPress={350}
@@ -275,43 +277,54 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     <View style={{ flex: 1, flexDirection: 'row', backgroundColor: t.bg }}>
       {wide ? (
         <View style={{ width: sideW, backgroundColor: t.side, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: t.line, paddingTop: ins.top + 18, paddingBottom: ins.bottom + 10 }}>
-          <Text style={{ color: t.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.4, paddingHorizontal: 22, marginBottom: 14 }}>Quill</Text>
+          <View style={{ paddingHorizontal: 12, marginBottom: 12 }}>
+            <IconButton name="gearshape" label="Settings" onPress={() => router.push('/settings')} style={{ alignSelf: 'flex-start' }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 40, marginTop: 8, paddingHorizontal: 12, borderRadius: 11, backgroundColor: t.card, borderWidth: 1, borderColor: t.line }}>
+              <Icon name="magnifyingglass" size={15} color={t.faint} />
+              <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={t.faint} style={{ flex: 1, color: t.text, fontSize: 16, height: 40 }} />
+            </View>
+          </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 2, paddingBottom: 20 }}>
-            {sideRow('All Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'doc.on.doc', count: live.length })}
+            {sideRow('Home', filter.kind === 'home', () => setFilter({ kind: 'home' }), { icon: 'house' })}
+            {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
-            <Text style={{ color: t.faint, fontSize: 12, fontWeight: '600', letterSpacing: 0.4, marginTop: 24, marginBottom: 6, paddingHorizontal: 12 }}>Subjects</Text>
+            {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
+            <Text style={{ color: t.faint, fontSize: 12, fontWeight: '600', letterSpacing: 0.4, marginTop: 24, marginBottom: 6, paddingHorizontal: 12 }}>Folders</Text>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
             <Pressable onPress={() => setSheet('newFolder')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 42, paddingHorizontal: 12 }}>
               <Icon name="plus" size={15} color={t.sub} />
-              <Text style={{ color: t.sub, fontSize: 15.5 }}>New subject</Text>
+              <Text style={{ color: t.sub, fontSize: 15.5 }}>New folder</Text>
             </Pressable>
           </ScrollView>
           <View style={{ paddingHorizontal: 12 }}>
             {sideRow('Recently Deleted', filter.kind === 'trash', () => setFilter({ kind: 'trash' }), { icon: 'trash', count: trashed })}
-            {sideRow('Settings', false, () => router.push('/settings'), { icon: 'gearshape' })}
           </View>
         </View>
       ) : null}
 
       <View style={{ flex: 1, paddingTop: ins.top }}>
         <View style={{ paddingHorizontal: pad, paddingTop: 18, paddingBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 30, fontWeight: '700', letterSpacing: -0.6 }}>{wide ? title : 'Quill'}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, width: wide ? 260 : 180, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.chip }}>
-            <Icon name="magnifyingglass" size={14} color={t.faint} />
-            <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={t.faint} style={{ flex: 1, color: t.text, fontSize: 15, height: 38 }} />
-          </View>
-          <IconButton name="arrow.up.arrow.down" label="Sort" onPress={() => setSheet('sort')} />
-          <IconButton name={list ? 'square.grid.2x2' : 'list.bullet'} label={list ? 'Show as grid' : 'Show as list'} onPress={() => set({ view: list ? 'grid' : 'list' })} />
+          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6 }}>{showHome ? '' : wide ? title : 'Quill'}</Text>
+          {!wide ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, width: 180, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.chip }}>
+              <Icon name="magnifyingglass" size={14} color={t.faint} />
+              <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={t.faint} style={{ flex: 1, color: t.text, fontSize: 15, height: 38 }} />
+            </View>
+          ) : null}
+          {!showHome ? <IconButton name="arrow.up.arrow.down" label="Sort" onPress={() => setSheet('sort')} /> : null}
+          {!showHome ? <IconButton name={list ? 'square.grid.2x2' : 'list.bullet'} label={list ? 'Show as grid' : 'Show as list'} onPress={() => set({ view: list ? 'grid' : 'list' })} /> : null}
           {!wide ? <IconButton name="gearshape" label="Settings" onPress={() => router.push('/settings')} /> : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
-            style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
-            <Icon name="plus" size={19} color="#fff" />
+            style={({ pressed }) => ({ flexDirection: 'row', gap: 8, height: 40, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3F6AF2', opacity: pressed ? 0.8 : 1 })}>
+            <Icon name="plus" size={16} color="#fff" />
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>New</Text>
           </Pressable>
         </View>
         {!wide ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 48, marginTop: 6 }} contentContainerStyle={{ paddingHorizontal: pad, gap: 8, alignItems: 'center' }}>
-            {chip('All', filter.kind === 'all', () => setFilter({ kind: 'all' }))}
+            {chip('Home', filter.kind === 'home', () => setFilter({ kind: 'home' }))}
+            {chip('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }))}
             {chip('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }))}
             {lib.lib.folders.map((f) => chip(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }), f.color, () => { setFolderTarget(f.id); setSheet('folder'); }))}
             {chip('+ Subject', false, () => setSheet('newFolder'))}
@@ -319,13 +332,38 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           </ScrollView>
         ) : null}
 
+        {showHome ? (
+          <ScrollView contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: 60 }}>
+            <View style={{ alignItems: 'center', marginTop: 8 }}>
+              <Icon name="pencil.and.scribble" size={54} color="#3F6AF2" />
+              <Text style={{ color: t.text, fontSize: 32, fontWeight: '900', letterSpacing: -0.8, marginTop: 14 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 16, marginTop: 32 }}>
+              {[
+                { label: 'Scan a document', icon: 'doc.viewfinder', bg: t.card, line: '#C3D3F7', go: scanPaper },
+                { label: 'Record a lecture', icon: 'mic', bg: t.dark ? t.card : '#FFF6E9', line: '#F3D9AE', go: () => newNote('blank', 'white', 'letter', true) },
+                { label: 'Import a file', icon: 'square.and.arrow.down', bg: t.dark ? t.card : '#EDF2FE', line: '#C3D3F7', go: importPdf },
+                { label: 'Find a template', icon: 'doc.plaintext', bg: t.dark ? t.card : '#F4F5F8', line: t.line, go: () => setSheet('paper') },
+              ].map((c) => (
+                <Pressable key={c.label} accessibilityLabel={c.label} onPress={c.go} style={({ pressed }) => ({ flex: 1, height: 124, borderRadius: 18, borderWidth: 1.2, borderColor: c.line, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', gap: 10, opacity: pressed ? 0.75 : 1 })}>
+                  <Icon name={c.icon} size={24} color={t.text} />
+                  <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', textAlign: 'center' }}>{c.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={{ color: t.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5, marginTop: 36, marginBottom: 16 }}>Recent notes</Text>
+            {recent.length ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{recent.map((n) => <View key={n.id}>{card({ item: n })}</View>)}</View>
+            ) : <Text style={{ color: t.sub, fontSize: 16 }}>Your notes will show up here.</Text>}
+          </ScrollView>
+        ) : null}
         {filter.kind === 'trash' && notes.length ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: pad, marginTop: 4 }}>
             <Text style={{ flex: 1, color: t.sub, fontSize: 14 }}>Notes stay here for 30 days. Tap one to restore it.</Text>
             <Pressable accessibilityLabel="Delete all" onPress={() => setSheet('purgeAll')} hitSlop={8}><Text style={{ color: t.danger, fontSize: 14, fontWeight: '600' }}>Delete all</Text></Pressable>
           </View>
         ) : null}
-        {notes.length ? (
+        {showHome ? null : notes.length ? (
           list ? (
             <FlatList key="list" data={notes} keyExtractor={(n) => n.id} renderItem={row} contentContainerStyle={{ paddingHorizontal: pad - 10, paddingTop: 10, paddingBottom: 80 }} />
           ) : (
@@ -345,11 +383,9 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         )}
       </View>
 
-      <MenuSheet visible={sheet === 'new'} onClose={() => setSheet(null)} title="New" items={[
-        { label: 'Lined note', icon: 'line.3.horizontal', onPress: () => newNote('lined') },
-        { label: 'Blank note', icon: 'square', onPress: () => newNote('blank') },
-        { label: 'Grid note', icon: 'grid', onPress: () => newNote('grid') },
-        { label: 'More paper…', icon: 'doc.plaintext', onPress: () => setSheet('paper') },
+      <MenuSheet topRight visible={sheet === 'new'} onClose={() => setSheet(null)} items={[
+        { label: 'Note', icon: 'square.and.pencil', onPress: () => newNote(s.defaultPaper?.style ?? 'blank', s.defaultPaper?.color ?? 'white', s.defaultPaper?.size ?? 'letter') },
+        { label: 'From a template…', icon: 'doc.plaintext', onPress: () => setSheet('paper') },
         ...(canScan() ? [
           { label: 'Scan paper', icon: 'doc.viewfinder', onPress: scanPaper },
           { label: 'Retype a scan with AI (can make mistakes)', icon: 'text.viewfinder', onPress: scanClean },
@@ -364,7 +400,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { try { toast((await lib.duplicateNote(target2.id)) ? 'Duplicated' : "Couldn't duplicate that note."); } catch { toast("Couldn't duplicate that note."); } } },
         { label: 'Delete', icon: 'trash', danger: true, onPress: () => setSheet('delete') },
       ] : []} />
-      <PaperSheet visible={sheet === 'paper'} title="New note" confirm="Create" withSize
+      <PaperSheet visible={sheet === 'paper'} title="Templates" confirm="Apply" withSize
         style={s.defaultPaper?.style} color={s.defaultPaper?.color} size={s.defaultPaper?.size} onClose={() => setSheet(null)}
         onDone={(style, color, size) => { setSheet(null); set({ defaultPaper: { style, color, size } }); newNote(style, color, size ?? 'letter'); }} />
       <MenuSheet visible={sheet === 'sort'} onClose={() => setSheet(null)} title="Sort by" items={[

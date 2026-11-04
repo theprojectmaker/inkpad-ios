@@ -3,7 +3,7 @@
 appId: com.solyapps.notes
 ---
 - launchApp
-- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
 - extendedWaitUntil: { visible: "doc-dim", timeout: 300000 }
 - extendedWaitUntil: { visible: "THeavy60.*", timeout: 300000 }
 - tapOn: { text: "doc-dim" }

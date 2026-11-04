@@ -182,10 +182,28 @@ extension QuillCanvasView {
     v.bounds = CGRect(x: 0, y: 0, width: hypot(dx, dy) + o.w * 0.4, height: o.w)
     v.center = CGPoint(x: (o.x1 + o.x2) / 2, y: (o.y1 + o.y2) / 2)
     v.transform = CGAffineTransform(rotationAngle: atan2(dy, dx))
-    v.backgroundColor = UIColor(hex: o.color)
-    v.alpha = o.shown ? 0.14 : 1
-    v.layer.borderWidth = o.shown ? 1 : 0
-    v.layer.borderColor = UIColor(hex: o.color).cgColor
+    v.backgroundColor = QuillCanvasView.stripes(UIColor(hex: o.color))
+    v.alpha = o.shown ? 0.18 : 1
+    v.layer.borderWidth = 0.6
+    v.layer.borderColor = UIColor(white: 0.55, alpha: o.shown ? 0.9 : 0.5).cgColor
+  }
+
+  /// The tape's colour with thin white diagonal stripes.
+  static func stripes(_ c: UIColor) -> UIColor {
+    let size: CGFloat = 12
+    let img = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { ctx in
+      c.setFill()
+      ctx.fill(CGRect(x: 0, y: 0, width: size, height: size))
+      let g = ctx.cgContext
+      g.setStrokeColor(UIColor(white: 1, alpha: 0.75).cgColor)
+      g.setLineWidth(1.6)
+      for off in [-size, 0, size] {
+        g.move(to: CGPoint(x: off, y: size))
+        g.addLine(to: CGPoint(x: off + size, y: 0))
+      }
+      g.strokePath()
+    }
+    return UIColor(patternImage: img)
   }
 
   private func tapeContains(_ o: TapeObj, _ p: CGPoint, slack: CGFloat = 0) -> Bool {
@@ -272,11 +290,11 @@ extension QuillCanvasView {
     laserPts.append((pageHost.convert(p, to: self), CACurrentMediaTime()))
     if laserLink == nil {
       laserLayer.fillColor = nil
-      laserLayer.strokeColor = UIColor(red: 1, green: 0.16, blue: 0.2, alpha: 1).cgColor
+      laserLayer.strokeColor = laserColor.cgColor
       laserLayer.lineWidth = 5
       laserLayer.lineCap = .round
       laserLayer.lineJoin = .round
-      laserLayer.shadowColor = UIColor(red: 1, green: 0.1, blue: 0.15, alpha: 1).cgColor
+      laserLayer.shadowColor = laserColor.cgColor
       laserLayer.shadowOpacity = 0.9
       laserLayer.shadowRadius = 8
       laserLayer.shadowOffset = .zero

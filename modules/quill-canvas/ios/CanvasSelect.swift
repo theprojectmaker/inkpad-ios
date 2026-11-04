@@ -184,10 +184,10 @@ extension QuillCanvasView {
   /// Where the turning handle sits, in this view's coordinates.
   private func rotateHandlePoint() -> CGPoint {
     let c = corners
-    let a = viewPoint(c.tl), b = viewPoint(c.tr), o = viewPoint(c.br)
+    let a = viewPoint(c.tr), b = viewPoint(c.br), left = viewPoint(c.tl), low = viewPoint(c.bl)
     let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
-    let bottom = CGPoint(x: (viewPoint(c.bl).x + o.x) / 2, y: (viewPoint(c.bl).y + o.y) / 2)
-    let dx = mid.x - bottom.x, dy = mid.y - bottom.y
+    let back = CGPoint(x: (left.x + low.x) / 2, y: (left.y + low.y) / 2)
+    let dx = mid.x - back.x, dy = mid.y - back.y
     let l = max(1, hypot(dx, dy))
     return CGPoint(x: mid.x + dx / l * 30, y: mid.y + dy / l * 30)
   }
@@ -490,7 +490,7 @@ extension QuillCanvasView {
     guard hasSelection else { return }
     let c = corners
     let v = [viewPoint(c.tl), viewPoint(c.tr), viewPoint(c.br), viewPoint(c.bl)]
-    let top = CGPoint(x: (v[0].x + v[1].x) / 2, y: (v[0].y + v[1].y) / 2)
+    let top = CGPoint(x: (v[1].x + v[2].x) / 2, y: (v[1].y + v[2].y) / 2)
     let knob = rotateHandlePoint()
     let outline = UIBezierPath()
     outline.move(to: v[0])
@@ -498,8 +498,9 @@ extension QuillCanvasView {
     outline.close()
     outline.move(to: top)
     outline.addLine(to: knob)
-    let handles = UIBezierPath(ovalIn: CGRect(x: v[2].x - 9, y: v[2].y - 9, width: 18, height: 18))
-    handles.append(UIBezierPath(ovalIn: CGRect(x: knob.x - 9, y: knob.y - 9, width: 18, height: 18)))
+    let handles = UIBezierPath(ovalIn: CGRect(x: v[2].x - 8, y: v[2].y - 8, width: 16, height: 16))
+    handles.append(UIBezierPath(ovalIn: CGRect(x: v[0].x - 8, y: v[0].y - 8, width: 16, height: 16)))
+    handles.append(UIBezierPath(ovalIn: CGRect(x: knob.x - 7, y: knob.y - 7, width: 14, height: 14)))
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     selOutline.isHidden = false
@@ -510,11 +511,46 @@ extension QuillCanvasView {
     selBar.isHidden = false
     bringSubviewToFront(selBar)
     let size = selBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
-    let minX = v.map(\.x).min() ?? 0, maxX = v.map(\.x).max() ?? 0
-    let minY = min(v.map(\.y).min() ?? 0, knob.y), maxY = v.map(\.y).max() ?? 0
-    let x = max(8, min(bounds.width - size.width - 8, (minX + maxX) / 2 - size.width / 2))
-    let y = minY - size.height - 12 > 8 ? minY - size.height - 12 : min(bounds.height - size.height - 8, maxY + 18)
-    selBar.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+    // Right under the toolbar, wherever the selection is.
+    selBar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 100, width: size.width, height: size.height)
+  }
+
+  @objc func onSelStyle() {
+    let rgb = selection.first?.rgb ?? 0x111111
+    let n = max(1, selection.reduce(0) { $0 + $1.pts.count })
+    let total = selection.reduce(Float(0)) { sum, s in s.pts.reduce(sum) { $0 + $1.r } }
+    onSelectionAction(["action": "style", "text": String(format: "#%02X%02X%02X", rgb & 255, rgb >> 8 & 255, rgb >> 16 & 255), "width": Double(total / Float(n)) * 2])
+  }
+
+  /// From the Style popover. Empty or zero leaves that part as it is.
+  func styleSelection(color: String, width: Double, style: String) {
+    commitSelection()
+    let rgb = color.isEmpty ? nil : UIColor(hex: color).inkRGB
+    let old = selection
+    let new = old.map { s -> InkStroke in
+      var pts = s.pts
+      if width > 0 {
+        let avg = pts.reduce(Float(0)) { $0 + $1.r } / Float(max(1, pts.count))
+        let k = Float(width / 2) / max(0.05, avg)
+        pts = pts.map { InkPoint(x: $0.x, y: $0.y, r: $0.r * k, a: $0.a) }
+      }
+      var kind = s.kind
+      if style == "dash" { kind = .dash } else if style == "dot" { kind = .dot } else if !style.isEmpty && (s.kind == .dash || s.kind == .dot) { kind = .pen }
+      return InkStroke(pts: pts, rgb: rgb ?? s.rgb, kind: kind, seq: s.seq, ts: s.ts)
+    }
+    document.apply(removed: old, added: new)
+    if !color.isEmpty { for i in texts.indices where selTexts.contains(texts[i].id) { texts[i].color = color } }
+    renderTexts()
+    selection = new
+    new.forEach { $0.lifted = true }
+    ink.lifted = new
+    var box = new.reduce(CGRect.null) { $0.union($1.bounds) }
+    for id in selTexts { if let f = labels[id]?.frame { box = box.union(f) } }
+    for o in pics where selPics.contains(o.id) { box = box.union(pictureBounds(o)) }
+    selBox = box
+    finishObjects(removed: old, added: new)
+    ink.setNeedsInk(rebuild: true)
+    placeSelectionUI()
   }
 
   private func colourMenu() -> UIMenu {
@@ -538,9 +574,9 @@ extension QuillCanvasView {
       l.isHidden = true
       layer.addSublayer(l)
     }
-    selHandle.fillColor = UIColor.white.cgColor
-    selHandle.strokeColor = blue.cgColor
-    selHandle.lineWidth = 2
+    selHandle.fillColor = blue.cgColor
+    selHandle.strokeColor = UIColor.white.cgColor
+    selHandle.lineWidth = 1.5
     selHandle.isHidden = true
     layer.addSublayer(selHandle)
     eraserRing.fillColor = UIColor(white: 1, alpha: 0.35).cgColor
@@ -551,35 +587,48 @@ extension QuillCanvasView {
 
     selBar.axis = .horizontal
     selBar.spacing = 0
-    selBar.backgroundColor = UIColor(white: 0.12, alpha: 0.92)
-    selBar.layer.cornerRadius = 18
+    selBar.backgroundColor = .white
+    selBar.layer.cornerRadius = 22
+    selBar.layer.shadowColor = UIColor.black.cgColor
+    selBar.layer.shadowOpacity = 0.16
+    selBar.layer.shadowRadius = 12
+    selBar.layer.shadowOffset = CGSize(width: 0, height: 3)
     selBar.isLayoutMarginsRelativeArrangement = true
-    selBar.layoutMargins = UIEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
+    selBar.layoutMargins = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
     selBar.isHidden = true
     let make = { (title: String) -> UIButton in
       let b = UIButton(type: .system)
       b.setTitle(title, for: .normal)
-      b.setTitleColor(.white, for: .normal)
-      b.titleLabel?.font = .systemFont(ofSize: 14.5, weight: .semibold)
-      b.contentEdgeInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+      b.setTitleColor(UIColor(white: 0.1, alpha: 1), for: .normal)
+      b.titleLabel?.font = .systemFont(ofSize: 15)
+      b.contentEdgeInsets = UIEdgeInsets(top: 11, left: 12, bottom: 11, right: 12)
       return b
     }
-    let actions: [(String, Selector)] = [("Copy", #selector(onSelCopy)), ("Cut", #selector(onSelCut)), ("Duplicate", #selector(onSelDuplicate))]
+    let divider = { () -> UIView in
+      let d = UIView()
+      d.backgroundColor = UIColor(white: 0.85, alpha: 1)
+      d.translatesAutoresizingMaskIntoConstraints = false
+      d.widthAnchor.constraint(equalToConstant: 1).isActive = true
+      d.heightAnchor.constraint(equalToConstant: 18).isActive = true
+      return d
+    }
+    selBar.alignment = .center
+    let actions: [(String, Selector)] = [("Style", #selector(onSelStyle)), ("Duplicate", #selector(onSelDuplicate)), ("Cut", #selector(onSelCut)), ("Copy", #selector(onSelCopy)), ("Delete", #selector(onSelDelete))]
     for (title, action) in actions {
       let b = make(title)
       b.addTarget(self, action: action, for: .touchUpInside)
       selBar.addArrangedSubview(b)
+      selBar.addArrangedSubview(divider())
     }
-    let colour = make("Colour")
-    colour.menu = colourMenu()
-    colour.showsMenuAsPrimaryAction = true
-    selBar.addArrangedSubview(colour)
-    let more: [(String, Selector)] = [("To text", #selector(onSelToText)), ("Explain", #selector(onSelExplain)), ("Share", #selector(onSelShare)), ("Delete", #selector(onSelDelete))]
-    for (title, action) in more {
-      let b = make(title)
-      b.addTarget(self, action: action, for: .touchUpInside)
-      selBar.addArrangedSubview(b)
-    }
+    let convert = make("Convert ›")
+    convert.accessibilityLabel = "Convert"
+    convert.menu = UIMenu(children: [
+      UIAction(title: "Text") { [weak self] _ in self?.onSelToText() },
+      UIAction(title: "Explain with AI") { [weak self] _ in self?.onSelExplain() },
+      UIAction(title: "Share as a picture") { [weak self] _ in self?.onSelShare() },
+    ])
+    convert.showsMenuAsPrimaryAction = true
+    selBar.addArrangedSubview(convert)
     addSubview(selBar)
   }
 }

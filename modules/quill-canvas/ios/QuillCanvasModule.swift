@@ -157,6 +157,10 @@ public final class QuillCanvasModule: Module {
         view.resizePage(index, delta: delta)
       }.runOnQueue(.main)
 
+      AsyncFunction("styleSelection") { (view: QuillCanvasView, color: String, width: Double, style: String) in
+        view.styleSelection(color: color, width: width, style: style)
+      }.runOnQueue(.main)
+
       AsyncFunction("movePage") { (view: QuillCanvasView, from: Int, to: Int) in
         view.movePage(from: from, to: to)
       }.runOnQueue(.main)

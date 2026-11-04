@@ -55,13 +55,13 @@ export function Button({ title, onPress, kind = 'plain', disabled, icon }: { tit
 }
 
 /** A centred card on a dimmed backdrop. */
-export function Sheet({ visible, onClose, children, width = 420, title }: { visible: boolean; onClose: () => void; children: ReactNode; width?: number; title?: string }) {
+export function Sheet({ visible, onClose, children, width = 420, title, topRight }: { visible: boolean; onClose: () => void; children: ReactNode; width?: number; title?: string; topRight?: boolean }) {
   const t = useTheme();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }} pointerEvents="box-none">
+        <View style={topRight ? { flex: 1, alignItems: 'flex-end', justifyContent: 'flex-start', paddingTop: 70, paddingRight: 12 } : { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }} pointerEvents="box-none">
           <View style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 18, padding: 18, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
             {title ? <Text style={{ color: t.text, fontSize: 19, fontWeight: '700', marginBottom: 12 }}>{title}</Text> : null}
             <ScrollView bounces={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
@@ -74,14 +74,14 @@ export function Sheet({ visible, onClose, children, width = 420, title }: { visi
 
 export type MenuItem = { label: string; icon?: string; onPress: () => void; danger?: boolean; checked?: boolean };
 
-export function MenuSheet({ visible, onClose, title, items }: { visible: boolean; onClose: () => void; title?: string; items: MenuItem[] }) {
+export function MenuSheet({ visible, onClose, title, items, topRight }: { visible: boolean; onClose: () => void; title?: string; items: MenuItem[]; topRight?: boolean }) {
   const t = useTheme();
   // One tap per opening, and the action waits until the sheet has gone, so a
   // picker or another sheet it opens isn't dropped by iOS mid-dismiss.
   const fired = useRef(false);
   useEffect(() => { if (visible) fired.current = false; }, [visible]);
   return (
-    <Sheet visible={visible} onClose={onClose} title={title} width={360}>
+    <Sheet visible={visible} onClose={onClose} title={title} width={topRight ? 320 : 360} topRight={topRight}>
       {items.map((it, i) => (
         <Pressable key={i} accessibilityRole="button" accessibilityLabel={it.label} testID={`menu-${it.label}`} onPress={() => { if (fired.current) return; fired.current = true; onClose(); setTimeout(it.onPress, Platform.OS === 'ios' ? 380 : 60); }}
           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 10, backgroundColor: pressed ? t.chip : 'transparent' })}>

@@ -102,7 +102,7 @@ final class PenCapture {
     // Light enough that the line lands where the tip was drawn: heavier filtering
     // made the ink visibly shift just after it appeared.
     if !first { lastSpeed += (speed - lastSpeed) * 0.2 }
-    let tau = 1 / (2 * Float.pi * (24 + 0.2 * speed))
+    let tau = 1 / (2 * Float.pi * (pen.stabilize ? 7 : 24 + 0.2 * speed))
     let k = first ? 1 : 1 / (1 + tau / dt)
     let oldX = fx, oldY = fy
     fx += (x - fx) * k
@@ -158,7 +158,8 @@ final class PenCapture {
 /// A ruler to draw along: two fingers move and turn it; the Pencil follows its edge.
 final class RulerView: UIView, UIGestureRecognizerDelegate {
   private let length: CGFloat = 2600
-  private let thickness: CGFloat = 92
+  private let thickness: CGFloat = 112
+  private var angle: CGFloat = 0
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -186,21 +187,64 @@ final class RulerView: UIView, UIGestureRecognizerDelegate {
 
   @objc private func onTurn(_ g: UIRotationGestureRecognizer) {
     transform = transform.rotated(by: g.rotation)
+    angle += g.rotation
     g.rotation = 0
+    setNeedsDisplay()
   }
 
   override func draw(_ rect: CGRect) {
     guard let c = UIGraphicsGetCurrentContext() else { return }
-    c.setFillColor(UIColor(white: 0.12, alpha: 0.62).cgColor)
+    c.setFillColor(UIColor(red: 0.965, green: 0.965, blue: 0.98, alpha: 0.86).cgColor)
     c.fill(bounds)
-    c.setFillColor(UIColor(white: 1, alpha: 0.85).cgColor)
-    var x: CGFloat = 0, i = 0
-    while x < length {
-      let h: CGFloat = i % 10 == 0 ? 18 : i % 5 == 0 ? 12 : 7
-      c.fill(CGRect(x: x, y: 0, width: 1, height: h))
-      c.fill(CGRect(x: x, y: thickness - h, width: 1, height: h))
-      x += 10; i += 1
+    let ink = UIColor(red: 0.2, green: 0.23, blue: 0.3, alpha: 1)
+    c.setFillColor(ink.cgColor)
+    c.fill(CGRect(x: 0, y: 0, width: length, height: 1))
+    c.fill(CGRect(x: 0, y: thickness - 1, width: length, height: 1))
+    // Inches counted out from the middle, an eighth at a time.
+    let eighth: CGFloat = 16, mid = length / 2
+    let label: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 13), .foregroundColor: ink]
+    for side in [-1, 1] as [CGFloat] {
+      var i = 0
+      while CGFloat(i) * eighth < mid {
+        let x = mid + side * CGFloat(i) * eighth
+        let h: CGFloat = i % 8 == 0 ? 20 : i % 4 == 0 ? 14 : 8
+        c.fill(CGRect(x: x, y: 0, width: 1, height: h))
+        c.fill(CGRect(x: x, y: thickness - h, width: 1, height: h))
+        if i % 8 == 0 && i > 0 {
+          let n = "\(i / 8)" as NSString
+          let w = n.size(withAttributes: label).width
+          n.draw(at: CGPoint(x: x - w / 2, y: 24), withAttributes: label)
+          c.saveGState()
+          c.translateBy(x: x, y: thickness - 24)
+          c.rotate(by: .pi)
+          n.draw(at: CGPoint(x: -w / 2, y: 0), withAttributes: label)
+          c.restoreGState()
+        }
+        i += 1
+      }
     }
+    // The dial, showing how far it's turned.
+    let r: CGFloat = 32
+    let dial = CGRect(x: mid - r, y: thickness / 2 - r, width: r * 2, height: r * 2)
+    c.saveGState()
+    c.setShadow(offset: CGSize(width: 0, height: 1), blur: 5, color: UIColor(white: 0, alpha: 0.35).cgColor)
+    c.setFillColor(UIColor.white.cgColor)
+    c.fillEllipse(in: dial)
+    c.restoreGState()
+    c.setStrokeColor(ink.cgColor)
+    c.setLineWidth(1)
+    for k in 0..<36 {
+      let t = CGFloat(k) * .pi / 18, inner = r - (k % 9 == 0 ? 9 : 5)
+      c.move(to: CGPoint(x: mid + cos(t) * inner, y: thickness / 2 + sin(t) * inner))
+      c.addLine(to: CGPoint(x: mid + cos(t) * r, y: thickness / 2 + sin(t) * r))
+    }
+    c.strokePath()
+    var degrees = Int((angle * 180 / .pi).rounded()) % 360
+    if degrees < 0 { degrees += 360 }
+    let text = "\(degrees)°" as NSString
+    let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12), .foregroundColor: ink]
+    let size = text.size(withAttributes: attrs)
+    text.draw(at: CGPoint(x: mid - size.width / 2, y: thickness / 2 - size.height / 2), withAttributes: attrs)
   }
 
   /// The edge a stroke starting here should follow, if it's close enough.
@@ -554,7 +598,6 @@ extension QuillCanvasView {
     guard ruler == nil else { return }
     let r = RulerView()
     r.center = CGPoint(x: bounds.midX, y: bounds.midY)
-    r.transform = CGAffineTransform(rotationAngle: -.pi / 12)
     addSubview(r)
     ruler = r
   }

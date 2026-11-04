@@ -27,6 +27,9 @@ export type Settings = {
   tapeColor: string;
   favPens: FavPen[];
   favs: FavTool[];            // the pens saved in the floating pen bar
+  tk?: Record<string, Partial<ToolKit>>;
+  nibAngle?: number;         // calligraphy
+  nibSteady?: boolean;
   autoPage?: boolean;        // a blank page appears when you write on the last one (on by default)
   showFavs?: boolean;        // that bar is on screen (on by default)
   lastTool?: InkTool;        // for the Pencil double-tap
@@ -44,7 +47,10 @@ export type Settings = {
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };
-export type InkTool = 'pen' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser';
+export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy';
+export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
+/** What each tool remembers: its colours, three sizes (1-12) and line style. */
+export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: number; line: PenLine };
 export type FavTool = { kind: 'pen' | 'marker'; style: PenStyle; color: string; size: number };
 export type PenStyle = 'pen' | 'felt' | 'fountain' | 'pencil';
 

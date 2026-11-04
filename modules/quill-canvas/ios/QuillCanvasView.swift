@@ -10,6 +10,8 @@ struct ToolSpec: Record {
   @Field var width: Double = 3
   @Field var mode: String = ""      // eraser: partial | stroke | hl; lasso: free | box; text: the font
   @Field var bold: Bool = false
+  @Field var angle: Double = 40     // calligraphy
+  @Field var stabilize: Bool = false
 }
 
 struct LegacyStroke: Record {
@@ -144,6 +146,10 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   lazy var tapGR = UITapGestureRecognizer(target: self, action: #selector(onTextTap(_:)))
   lazy var panGR = UIPanGestureRecognizer(target: self, action: #selector(onTextPan(_:)))
   private var pageViews: [PageTileView] = []
+  private var pageSeams: [UIView] = []
+  private var pageEdges: [UIView] = []
+  var handMode = false
+  var laserColor = UIColor(red: 1, green: 0.16, blue: 0.2, alpha: 1)
   private(set) var specs: [PageSpec] = []
   private(set) var frames: [CGRect] = []
   private var pagesKey = ""
@@ -174,7 +180,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     super.init(appContext: appContext)
     clipsToBounds = true
     isMultipleTouchEnabled = true
-    backgroundColor = UIColor(red: 0.925, green: 0.925, blue: 0.935, alpha: 1)
+    backgroundColor = UIColor(red: 0.957, green: 0.961, blue: 0.973, alpha: 1)
 
     canvas.delegate = self
     canvas.backgroundColor = .clear
@@ -277,7 +283,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   func currentFit() -> CGFloat { fitScale() }
 
-  private func fitScale() -> CGFloat { max(0.05, (bounds.width - 40) / max(1, contentW)) }
+  private func fitScale() -> CGFloat { max(0.05, bounds.width / max(1, contentW)) }
 
   /// Page width fills the screen (with a small margin).
   func fitWidth() { refit(keepZoom: false) }
@@ -344,7 +350,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     let size = CGSize(width: contentW * z, height: contentH * z)
     if canvas.contentSize != size { canvas.contentSize = size }
     let padX = max(0, (bounds.width - size.width) / 2)
-    let inset = UIEdgeInsets(top: 20, left: padX, bottom: 160 + keyboardInset, right: padX)
+    // Room at the top for the floating toolbar; the page scrolls under it.
+    let inset = UIEdgeInsets(top: 92, left: padX, bottom: 160 + keyboardInset, right: padX)
     if canvas.contentInset != inset { canvas.contentInset = inset }
     syncInk()
   }
@@ -442,23 +449,38 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       let k = "\(p.kind)|\(p.file)|\(p.index)|\(p.w)x\(p.h)|\(p.bg)|\(sig(p))"
       if let old = pageViewsById[p.id], old.key == k {
         old.view.frame = f
-        old.view.layer.shadowPath = UIBezierPath(rect: CGRect(origin: .zero, size: f.size)).cgPath
         keep[p.id] = old
         return old.view
       }
       let v = PageTileView(spec: p)
       keep[p.id] = (k, v)
       v.frame = f
-      v.layer.shadowColor = UIColor.black.cgColor
-      v.layer.shadowOpacity = 0.12
-      v.layer.shadowRadius = 6
-      v.layer.shadowOffset = CGSize(width: 0, height: 2)
-      v.layer.shadowPath = UIBezierPath(rect: CGRect(origin: .zero, size: f.size)).cgPath
       pageHost.addSubview(v)
       return v
     }
     for (id, old) in pageViewsById where keep[id] == nil || keep[id]!.view !== old.view { old.view.removeFromSuperview() }
     pageViewsById = keep
+    // Between pages: white, with one thin line across the middle.
+    pageSeams.forEach { $0.removeFromSuperview() }
+    pageSeams = []
+    let line = UIColor(red: 0.72, green: 0.76, blue: 0.84, alpha: 1)
+    for (a, b) in zip(fs, fs.dropFirst()) {
+      let left = min(a.minX, b.minX), width = max(a.width, b.width)
+      let seam = UIView(frame: CGRect(x: left, y: a.maxY, width: width, height: b.minY - a.maxY))
+      seam.backgroundColor = .white
+      let rule = UIView(frame: CGRect(x: 0, y: (b.minY - a.maxY) / 2 - 0.3, width: width, height: 0.6))
+      rule.backgroundColor = line
+      seam.addSubview(rule)
+      pageHost.addSubview(seam)
+      pageSeams.append(seam)
+    }
+    // The page's edges when zoomed out.
+    for (i, x) in [CGFloat(0), contentW - 0.5].enumerated() {
+      let edge = pageEdges.count > i ? pageEdges[i] : { () -> UIView in let v = UIView(); pageHost.addSubview(v); pageEdges.append(v); return v }()
+      edge.backgroundColor = line
+      edge.frame = CGRect(x: x, y: 0, width: 0.5, height: max(1, y - gap))
+      pageHost.bringSubviewToFront(edge)
+    }
     pageHost.transform = .identity
     pageHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     textHost.transform = .identity
@@ -578,6 +600,13 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       selTap.isEnabled = false
       return
     }
+    // Navigate: nothing writes; the Pencil scrolls too.
+    handMode = t.kind == "hand"
+    inkGesture.isEnabled = !handMode
+    let scrollers: [UITouch.TouchType] = handMode ? [.direct, .indirect, .indirectPointer, .pencil] : [.direct, .indirect, .indirectPointer]
+    canvas.panGestureRecognizer.allowedTouchTypes = scrollers.map { NSNumber(value: $0.rawValue) }
+    updatePanFingers()
+    if handMode { clearSelection(); selTap.isEnabled = false; return }
     let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : .write
     if mode != .lasso { clearSelection() }
     inkMode = mode
@@ -585,7 +614,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if mode == .erase { eraserWidth = max(4, w); eraserMode = t.mode.isEmpty ? "partial" : t.mode }
     if mode == .lasso { lassoBox = t.mode == "box" }
     if mode == .tape { tapeColor = t.color; tapeWidth = w }
-    if mode == .write { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w)) }
+    if mode == .laser { laserColor = UIColor(hex: t.color) }
+    if mode == .write { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: t.mode, angle: Float(t.angle), stabilize: t.stabilize) }
   }
 
   func setFingerDraws(_ on: Bool) {
@@ -595,7 +625,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
 
   /// When a finger writes, scrolling takes two (except while typing).
-  func updatePanFingers() { canvas.panGestureRecognizer.minimumNumberOfTouches = fingerDraws && !textMode ? 2 : 1 }
+  func updatePanFingers() { canvas.panGestureRecognizer.minimumNumberOfTouches = fingerDraws && !textMode && !handMode ? 2 : 1 }
 
   // MARK: - Export
 

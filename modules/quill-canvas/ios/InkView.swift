@@ -41,8 +41,12 @@ fragment float4 inkF(Out in [[stage_in]]) {
   float a = in.c.a;
   if (in.g > 0.5) {
     float2 q = fmod(in.page, 2048.0);
-    float n = noise(q * 2.6) * 0.65 + noise(q * 6.1) * 0.35;
-    a *= smoothstep(0.26, 0.62, n) * 0.85 + 0.15;
+    // Two grids of small squares at different slants, each square its own strength.
+    float2 u = float2(0.82 * q.x - 0.57 * q.y, 0.57 * q.x + 0.82 * q.y) * 1.25;
+    float2 v = float2(0.26 * q.x + 0.97 * q.y, 0.97 * q.x - 0.26 * q.y) * 0.95;
+    float h1 = hash21(floor(u)), h2 = hash21(floor(v) + 17.0);
+    float fleck = max(step(0.42, h1) * (0.45 + 0.55 * h1), step(0.5, h2) * (0.4 + 0.6 * h2));
+    a *= fleck * 0.92 + 0.08 * noise(q * 2.6);
   }
   return float4(in.c.rgb * a, a);
 }

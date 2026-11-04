@@ -25,6 +25,7 @@ export type CanvasHandle = {
   insertPageSpace(after: number, height: number): Promise<void>;
   pageIsEmpty(index: number): Promise<boolean>;
   resizePage(index: number, delta: number): Promise<void>;
+  styleSelection(color: string, width: number, style: string): Promise<void>;
   movePage(from: number, to: number): Promise<void>;
   duplicatePage(index: number): Promise<void>;
   addPicture(file: string, width: number, height: number): Promise<void>;
@@ -35,8 +36,8 @@ export type CanvasHandle = {
   setReplay(cut: number, from: number, to: number): Promise<void>;
 };
 
-export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser';
-export type CanvasTool = { kind: ToolKind; color: string; width: number; mode?: string; bold?: boolean };
+export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand';
+export type CanvasTool = { kind: ToolKind; color: string; width: number; mode?: string; bold?: boolean; angle?: number; stabilize?: boolean };
 
 type Props = ViewProps & {
   pages: CanvasPage[];
@@ -51,7 +52,7 @@ type Props = ViewProps & {
   legacy?: LegacyStroke[];
   onDrawingChange?: (e: { nativeEvent: CanvasState }) => void;
   onPencilTap?: (e: { nativeEvent: { action: string } }) => void;
-  onSelectionAction?: (e: { nativeEvent: { action: string; path?: string; text?: string } }) => void;
+  onSelectionAction?: (e: { nativeEvent: { action: string; path?: string; text?: string; width?: number } }) => void;
   autoPage?: boolean;        // says when the last page has been written on
   onLastPageUsed?: () => void;
   inkTaps?: boolean;         // a finger tapping ink reports when it was written

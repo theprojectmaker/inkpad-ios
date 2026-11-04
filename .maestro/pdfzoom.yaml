@@ -6,7 +6,7 @@ appId: com.solyapps.notes
 - launchApp:
     arguments:
       QuillTestPinch: "1"
-- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
 - extendedWaitUntil: { visible: "THeavy60.*", timeout: 400000 }
 - extendedWaitUntil: { visible: "T200.*", timeout: 200000 }
 - extendedWaitUntil: { visible: "T5 .*", timeout: 200000 }

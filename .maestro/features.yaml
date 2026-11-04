@@ -5,7 +5,7 @@ appId: com.solyapps.notes
 - launchApp:
     clearState: true
     permissions: { all: allow }
-- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
 - tapOn: { text: "Settings", optional: true }
 - waitForAnimationToEnd
 - tapOn: { text: "Draw with finger", optional: true }
@@ -13,21 +13,22 @@ appId: com.solyapps.notes
 - tapOn: { text: "Back to notes", optional: true }
 # New note: the full paper chooser
 - tapOn: "New"
-- tapOn: { text: "More paper.*", optional: true }
+- tapOn: { text: "From a template.*", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 02-paper-chooser
-- tapOn: { text: "Create", optional: true }
+- tapOn: { text: "Apply", optional: true }
 - extendedWaitUntil: { visible: "More", timeout: 8000, optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 03-editor-tools
 # Writing, saved pens bar
 - swipe: { start: "25%, 30%", end: "60%, 32%", duration: 500 }
 - swipe: { start: "25%, 36%", end: "55%, 40%", duration: 500 }
-- tapOn: { text: "Saved pen 2", optional: true }
+- tapOn: { text: "Colour #0A66F0", optional: true }
 - swipe: { start: "30%, 46%", end: "60%, 48%", duration: 500 }
-- tapOn: { text: "Saved pen 4", optional: true }
+- tapOn: { text: "Highlighter", optional: true }
 - swipe: { start: "30%, 30%", end: "60%, 31%", duration: 500 }
-- tapOn: { text: "Saved pen 1", optional: true }
+- tapOn: { text: "Pen", optional: true }
+- tapOn: { text: "Colour #000000", optional: true }
 - takeScreenshot: 04-saved-pens
 - swipe: { start: "50%, 80%", end: "50%, 30%", duration: 700 }
 - waitForAnimationToEnd
@@ -50,16 +51,17 @@ appId: com.solyapps.notes
 - tapOn: { text: "Lasso", optional: true }
 - tapOn: { text: "Lasso", optional: true }
 - waitForAnimationToEnd
-- tapOn: { text: "Box", optional: true }
+- tapOn: { text: "Boxed", optional: true }
 - takeScreenshot: 06-lasso-options
 - tapOn: { point: "70%, 80%" }
 - swipe: { start: "20%, 26%", end: "66%, 44%", duration: 600 }
 - waitForAnimationToEnd
 - takeScreenshot: 07-selected
-- tapOn: { text: "Colour", optional: true }
+- tapOn: { text: "Style", optional: true }
 - waitForAnimationToEnd
-- takeScreenshot: 08-colour-menu
-- tapOn: { text: "Red", optional: true }
+- takeScreenshot: 08-style-popover
+- tapOn: { text: "Colour #E01E26", optional: true }
+- tapOn: { text: "Close style", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 08b-recoloured
 - tapOn: { text: "Duplicate", optional: true }
@@ -187,7 +189,7 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - takeScreenshot: 30-library
 - tapOn: "New"
-- tapOn: { text: "Grid note", optional: true }
+- tapOn: { text: "Note", optional: true }
 - extendedWaitUntil: { visible: "More", timeout: 8000, optional: true }
 - tapOn: { text: "More", optional: true }
 - tapOn: { text: "Open another note beside", optional: true }

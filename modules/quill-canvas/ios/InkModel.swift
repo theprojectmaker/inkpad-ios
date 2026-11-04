@@ -12,7 +12,7 @@ struct InkPoint {
 }
 
 enum InkKind: UInt32 {
-  case pen = 0, marker = 1, pencil = 2
+  case pen = 0, marker = 1, pencil = 2, dash = 3, dot = 4
 }
 
 final class InkStroke {
@@ -127,30 +127,34 @@ struct InkPen {
   var type = "pen"     // monoline | pen | fountain | pencil | marker
   var rgb: UInt32 = 0x111111
   var width: Float = 2
+  var style = ""       // dash | dot: the same pen, broken into dashes or dots
+  var angle: Float = 40    // calligraphy: the nib's slant, in degrees
+  var stabilize = false    // calligraphy: a much steadier line
 
-  var kind: InkKind { type == "marker" ? .marker : type == "pencil" ? .pencil : .pen }
+  var kind: InkKind { style == "dash" ? .dash : style == "dot" ? .dot : type == "marker" ? .marker : type == "pencil" ? .pencil : .pen }
   /// Pens that start thin and grow into the line.
-  var tapers: Bool { type != "marker" }
+  var tapers: Bool { type == "pen" || type == "fountain" }
 
   /// Radius and opacity for one moment of the stroke. `p` is pressure 0...1.
   func shape(p: Float, dirX: Float, dirY: Float, altitude: Float) -> (r: Float, a: Float) {
     let half = width / 2
     switch type {
     case "monoline":
-      // Keeps its thin, even character but still answers the hand.
-      return (half * (0.72 + 0.62 * pow(p, 0.8)), 1)
+      // An even, round line that barely answers the hand.
+      return (half * (0.86 + 0.28 * pow(p, 0.8)), 1)
     case "fountain":
-      // A nib held at 40 degrees: thin along it, broad across it.
-      let across = abs(dirX * -0.643 + dirY * 0.766)
-      return (half * (0.3 + 0.7 * across) * (0.65 + 0.7 * p), 1)
+      // A nib held at an angle: thin along it, broad across it.
+      let t = angle * .pi / 180
+      let across = abs(dirX * -sin(t) + dirY * cos(t))
+      return (half * (0.12 + 0.88 * across) * (0.8 + 0.4 * p), 1)
     case "pencil":
       // Tilting the Pencil shades: a wider, lighter line.
       let tilt = max(0, min(1, (1.05 - altitude) / 0.75))
       return (half * (0.7 + 0.5 * p + 2.6 * tilt), max(0.28, min(1, 0.38 + 0.75 * p)) * (1 - 0.4 * tilt))
     case "marker":
       return (half, 0.42)
-    default:  // gel: thickens as you press
-      return (half * (0.5 + pow(p, 0.75)), 1)
+    default:  // the pressure pen: a hairline when light, bold when pressed
+      return (half * (0.16 + 1.5 * pow(p, 1.25)), 1)
     }
   }
 }

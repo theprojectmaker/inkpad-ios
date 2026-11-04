@@ -1,9 +1,10 @@
-// Editor, laid out like Notability: back / pages / title on the left, the
+// Editor, laid out like the recordings of Notability: the page fills the screen and everything floats over it. Back on the left, the
 // tools in the middle, insert / audio / undo / redo / more on the right; the tool's
 // options on a card; an optional page sidebar; the ink canvas; panels beside it.
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
 import { AudioBar, transcribe, TranscriptPanel, useNoteAudio } from '@/components/audio-bar';
 import { FindPanel } from '@/components/find-panel';
-import { currentTool, FavBar, ToolButtons, ToolStrip } from '@/components/ink-bar';
+import { currentTool, NoteToolbar, StylePopover } from '@/components/note-toolbar';
 import { Markdown } from '@/components/markdown';
 import { PaperSheet } from '@/components/paper-sheet';
 import { NotePicker, SideNote } from '@/components/side-note';
@@ -71,7 +72,7 @@ function legacyInk(doc: NoteDoc): LegacyStroke[] {
 }
 
 export default function Editor() {
-  const { id, handin } = useLocalSearchParams<{ id: string; handin?: string }>();
+  const { id, handin, record } = useLocalSearchParams<{ id: string; handin?: string; record?: string }>();
   const t = useTheme();
   const ins = useSafeAreaInsets();
   const lib = useLibrary();
@@ -87,7 +88,7 @@ export default function Editor() {
   const { width } = useWindowDimensions();
   const tool = useMemo(() => currentTool(s),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.inkKind, s.penStyle, s.inkSize, s.textSizeIdx, s.penColor, s.hlColor, s.eraser, s.lassoBox, s.tapeColor, s.tapeSize, s.textFont, s.textBold]);
+    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.nibAngle, s.nibSteady]);
   const [menu, setMenu] = useState(false);
   const [opts, setOpts] = useState(false);     // the picked pen's options card (tap the pen again)
   const [sidebar, setSidebar] = useState(false);
@@ -111,6 +112,7 @@ export default function Editor() {
   const [paperFor, setPaperFor] = useState<number | null>(null);
   const [jump, setJump] = useState(false);
   const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
+  const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
   const audio = useNoteAudio(id, toast);
   // Leaving the text tool finishes the text being typed.
   useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
@@ -485,9 +487,10 @@ export default function Editor() {
     setOpts(false);
     await canvas.current?.paste();
   };
-  const onSelectionAction = async (e: { nativeEvent: { action: string; path?: string; text?: string } }) => {
+  const onSelectionAction = async (e: { nativeEvent: { action: string; path?: string; text?: string; width?: number } }) => {
     const { action, path, text } = e.nativeEvent;
     if (action === 'message' && text) toast(text);
+    else if (action === 'style') setSelStyle({ color: text ?? '#000000', width: e.nativeEvent.width ?? 2 });
     else if (action === 'share' && path) Sharing.shareAsync('file://' + path, { mimeType: 'image/jpeg', UTI: 'public.jpeg' }).catch(() => {});
     else if (action === 'explain' && path) {
       setExplain({ busy: true, text: '' });
@@ -507,61 +510,21 @@ export default function Editor() {
     } else if (a === 'previous') set({ inkKind: s.lastTool && s.lastTool !== kind ? s.lastTool : kind === 'pen' ? 'eraser' : 'pen', lastTool: kind });
     else if (a === 'options') setOpts((v) => !v);
   };
+  // Came from Home's Record a lecture: start once the page is up.
+  const autoRecord = useRef(false);
+  useEffect(() => {
+    if (record === '1' && doc && !autoRecord.current) { autoRecord.current = true; setAudioOpen(true); startRecording(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record, doc]);
   const closePanels = () => { setCalc(false); setStudy(false); setFind(false); setTranscriptOpen(false); };
-  const onLast = doc ? page.page >= doc.pages.length - 1 : false;
   const paperPageNow = paperFor != null ? doc?.pages[paperFor] : null;
 
   const narrow = width < 1000;   // labels hide, so the three parts of the bar never touch
   const subjectName = lib.lib.folders.find((f) => f.id === meta?.folderId)?.name;
   return (
-    <View style={{ flex: 1, backgroundColor: t.bar, paddingTop: ins.top }}>
+    <View style={{ flex: 1, backgroundColor: '#F4F5F8' }}>
+      <StatusBar hidden />
       <Stack.Screen options={{ gestureEnabled: false }} />
-      {/* Three parts that never overlap: you and the note on the left, the pens in
-          the middle, page actions on the right. */}
-      {focus ? null : <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 8 }}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', minWidth: 0 }}>
-          <IconButton name="chevron.left" label="Back to notes" onPress={back} />
-          <IconButton name="sidebar.left" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} />
-          <Pressable onPress={() => setRenaming(true)} style={{ flexShrink: 1, minWidth: 0, paddingHorizontal: 6, height: 44, justifyContent: 'center' }} accessibilityLabel="Rename note">
-            <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{meta?.title ?? 'Note'}</Text>
-            {!narrow ? (
-              <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12, marginTop: 1 }}>
-                {[subjectName, doc ? `${doc.pages.length} page${doc.pages.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}
-              </Text>
-            ) : null}
-          </Pressable>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.chip, borderRadius: 14, paddingHorizontal: 4, height: 44 }}>
-          <ToolButtons onOptions={() => setOpts((v) => !v)} />
-        </View>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <IconButton name="plus.circle" label="Insert" onPress={() => setInsert(true)} />
-            <IconButton name={audio.rec ? 'waveform' : 'mic'} label="Audio" active={audioOpen || !!audio.rec} color={audio.rec ? '#E5322D' : undefined} onPress={() => setAudioOpen((v) => !v || !!audio.rec)} />
-            <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
-            <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
-          </View>
-          {calc || study ? <IconButton name="xmark" label={calc ? 'Close calculator' : 'Close Study'} onPress={() => { setCalc(false); setStudy(false); }} /> : null}
-          <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} />
-        </View>
-      </View>}
-      {meta?.hw && !focus ? (
-        // Homework: which assignment this is for, and Hand in, out of the way of the tools.
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, paddingRight: 8, height: 40, backgroundColor: t.dark ? '#13281B' : '#EAF6EE', borderBottomWidth: 1, borderBottomColor: t.line }}>
-          <Icon name="graduationcap" size={15} color="#1E8E3E" />
-          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 14 }}>
-            <Text style={{ fontWeight: '700' }}>{meta.hw.course}</Text>
-            <Text style={{ color: t.sub }}>{'  ·  '}{meta.hw.title}{meta.hw.due ? `  ·  ${dueLabel(meta.hw.due)}` : ''}</Text>
-          </Text>
-          <Pressable onPress={() => openAssignment(meta.hw!)} style={{ height: 30, paddingHorizontal: 12, borderRadius: 15, justifyContent: 'center' }}>
-            <Text style={{ color: t.sub, fontSize: 13.5, fontWeight: '600' }}>Assignment</Text>
-          </Pressable>
-          <Pressable onPress={handIn} accessibilityLabel="Hand in to Classroom" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 30, paddingHorizontal: 14, borderRadius: 15, backgroundColor: '#1E8E3E' }}>
-            <Icon name="paperplane.fill" size={13} color="#fff" />
-            <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '700' }}>Hand in</Text>
-          </Pressable>
-        </View>
-      ) : null}
       <View style={{ flex: 1, flexDirection: 'row' }}>
         {sidebar && doc ? (
           <PageSidebar noteId={id} pages={doc.pages} current={page.page} ver={ver} canvas={canvas} absPath={absPath}
@@ -576,25 +539,17 @@ export default function Editor() {
               drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
               onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
-          <FavBar />
-          {focus ? (
-            <View style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', backgroundColor: t.elev, borderRadius: 20, paddingHorizontal: 4 }}>
-              <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
-              <IconButton name="arrow.down.right.and.arrow.up.left" label="Leave focus mode" onPress={() => setFocus(false)} />
-            </View>
-          ) : null}
-          {!audioOpen ? (
-            <View pointerEvents="box-none" style={{ position: 'absolute', right: 14, bottom: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {onLast ? (
-                <Pressable accessibilityLabel="New page" onPress={() => addPage()} style={{ height: 28, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', backgroundColor: 'rgba(20,22,28,0.72)' }}>
-                  <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>+ New page</Text>
+          {page.count > 1 || doc?.pages.length ? (
+            <View pointerEvents="box-none" style={{ position: 'absolute', right: 8, top: 0, bottom: 0, justifyContent: 'center' }}>
+              <View style={{ width: 34, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
+                <Pressable accessibilityLabel="Previous page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} style={{ padding: 5 }}><Icon name="chevron.up" size={13} color="#3B4252" /></Pressable>
+                <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ paddingVertical: 2, alignItems: 'center' }}>
+                  <Text style={{ color: '#3B4252', fontSize: 11, fontWeight: '600' }}>{page.page + 1}</Text>
+                  <View style={{ width: 12, height: 1, backgroundColor: '#9AA2B2', marginVertical: 2 }} />
+                  <Text style={{ color: '#7A8294', fontSize: 11 }}>{page.count}</Text>
                 </Pressable>
-              ) : null}
-              {page.count > 1 ? (
-                <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ backgroundColor: 'rgba(20,22,28,0.72)', borderRadius: 14, paddingHorizontal: 10, height: 28, justifyContent: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>{page.page + 1} / {page.count}</Text>
-                </Pressable>
-              ) : null}
+                <Pressable accessibilityLabel="Next page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.min(page.count - 1, page.page + 1))} style={{ padding: 5 }}><Icon name="chevron.down" size={13} color="#3B4252" /></Pressable>
+              </View>
             </View>
           ) : null}
           {audioOpen ? (
@@ -618,19 +573,49 @@ export default function Editor() {
         {study && doc ? <StudyPanel noteId={id} page={page.page} pageCount={doc.pages.length} canvas={canvas} absPath={absPath} onClose={() => setStudy(false)} /> : null}
       </View>
 
-      {opts ? (
+      {!focus ? (
         <>
-          <Pressable accessibilityLabel="Close pen options" onPress={() => setOpts(false)} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, top: ins.top + 56 }} />
-          <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: ins.top + 52, alignItems: 'center', paddingHorizontal: 12 }}>
-            <ToolStrip floating onPaste={paste} onTape={(w) => { setOpts(false); if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
+          <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
+            onRuler={() => setRuler((v) => !v)} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
+          <View style={{ position: 'absolute', top: 12, left: 12, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+            <IconButton name="arrow.left" label="Back to notes" onPress={back} color="#3B4252" />
           </View>
+          <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', borderRadius: 14, backgroundColor: '#fff', paddingHorizontal: 2, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+            <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} color="#3B4252" />
+            <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} color="#3B4252" />
+            <IconButton name="square.and.arrow.up" label="Share" onPress={share} color="#3B4252" />
+            <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} color="#3B4252" />
+            <IconButton name="sparkles" label="Study with AI" active={study} onPress={() => { const was = study; closePanels(); setStudy(!was); }} color={study ? undefined : '#3B4252'} />
+            <IconButton name="square.on.square" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} color={sidebar ? undefined : '#3B4252'} />
+          </View>
+          {meta?.hw ? (
+            <View style={{ position: 'absolute', top: 70, left: 12, flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 6, borderRadius: 18, backgroundColor: '#fff', maxWidth: 220, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
+              <Pressable onPress={() => openAssignment(meta.hw!)} accessibilityLabel="Assignment" style={{ flexShrink: 1, paddingHorizontal: 6 }}>
+                <Text numberOfLines={1} style={{ color: '#3B4252', fontSize: 12.5, fontWeight: '600' }}>{meta.hw.title}{meta.hw.due ? ` · ${dueLabel(meta.hw.due)}` : ''}</Text>
+              </Pressable>
+              <Pressable onPress={handIn} accessibilityLabel="Hand in to Classroom" style={{ height: 26, paddingHorizontal: 10, borderRadius: 13, justifyContent: 'center', backgroundColor: '#1E8E3E' }}>
+                <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>Hand in</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </>
-      ) : null}
-      <MenuSheet visible={menu} onClose={() => setMenu(false)} title={meta?.title} items={[
+      ) : (
+        <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', borderRadius: 14, backgroundColor: '#fff', paddingHorizontal: 2 }}>
+          <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
+          <IconButton name="arrow.down.right.and.arrow.up.left" label="Leave focus mode" onPress={() => setFocus(false)} />
+        </View>
+      )}
+      {selStyle ? <StylePopover color={selStyle.color} width={selStyle.width} onClose={() => setSelStyle(null)}
+        onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')} /> : null}
+      <MenuSheet topRight visible={menu} onClose={() => setMenu(false)} items={[
+        { label: 'Quick export (PDF, all pages)', icon: 'square.and.arrow.up', onPress: share },
+        { label: 'Export this page as a picture', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
+        { label: 'Start study session', icon: 'sparkles', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
+        { label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
+        { label: meta?.title ?? 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
         { label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
         { label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
         { label: 'Focus mode', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
-        { label: 'Change this page\'s paper', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
         ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
           { label: 'Clean up this page', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
           { label: 'Make it black and white', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
@@ -640,13 +625,8 @@ export default function Editor() {
           { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
           { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
-        { label: 'Share as PDF', icon: 'square.and.arrow.up', onPress: share },
-        { label: 'Share this page as a picture', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
         { label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
         { label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
-        { label: 'Study with AI', icon: 'sparkles', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
-        { label: 'Ruler', icon: 'ruler', checked: ruler, onPress: () => setRuler((v) => !v) },
-        { label: 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
       ]} />
       <MenuSheet visible={insert} onClose={() => setInsert(false)} title="Insert" items={[
         { label: 'Photo on this page', icon: 'photo', onPress: () => placePhoto('library') },

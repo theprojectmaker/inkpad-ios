@@ -6,7 +6,7 @@ appId: com.solyapps.notes
 ---
 - launchApp:
     clearState: true
-- extendedWaitUntil: { visible: "All Notes", timeout: 60000 }
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
 - takeScreenshot: 01-library
 # Fingers write (the simulator has no Apple Pencil): Settings > Draw with finger
 - tapOn: { text: "Settings", optional: true }
