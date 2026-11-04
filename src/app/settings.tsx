@@ -69,7 +69,9 @@ export default function SettingsScreen() {
           <Row icon="hand.draw" label="Draw with finger" onPress={() => set({ fingerDraws: !s.fingerDraws })} note="Off: only Apple Pencil writes, fingers scroll and zoom."
             right={<Switch value={!!s.fingerDraws} onValueChange={(v) => set({ fingerDraws: v })} />} />
           <Row icon="triangle" label="Shape lock" onPress={() => set({ holdToShape: s.holdToShape === false })} note="Draw a line, circle, box or triangle and hold the Pencil still: it snaps clean."
-            right={<Switch value={s.holdToShape !== false} onValueChange={(v) => set({ holdToShape: v })} />} last />
+            right={<Switch value={s.holdToShape !== false} onValueChange={(v) => set({ holdToShape: v })} />} />
+          <Row icon="speedometer" label="Show ink speed" onPress={() => set({ inkStats: !s.inkStats })} note="Numbers on the page showing how fast the ink is on this iPad."
+            right={<Switch value={!!s.inkStats} onValueChange={(v) => set({ inkStats: v })} />} last />
         </Section>
 
         <Section title="Google">

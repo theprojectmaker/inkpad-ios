@@ -73,6 +73,10 @@ public final class QuillCanvasModule: Module {
         view.shapeSnap = on
       }
 
+      Prop("inkStats") { (view: QuillCanvasView, on: Bool) in
+        view.setInkStats(on)
+      }
+
       Prop("ruler") { (view: QuillCanvasView, on: Bool) in
         view.setRuler(on)
       }

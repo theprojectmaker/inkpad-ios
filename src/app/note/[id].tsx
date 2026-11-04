@@ -350,7 +350,7 @@ export default function Editor() {
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
-            <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} shapeSnap={s.holdToShape !== false} ruler={ruler}
+            <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
               drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
               onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}

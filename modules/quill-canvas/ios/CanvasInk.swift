@@ -65,6 +65,7 @@ final class PenCapture {
   private var lastT: TimeInterval
   private var r: Float = 0, a: Float = 1
   private var dirX: Float = 1, dirY: Float = 0
+  private var velX: Float = 0, velY: Float = 0
   private var storedX: Float, storedY: Float
   var moveAnchor: CGPoint
   var lastMoveTime: TimeInterval
@@ -95,7 +96,11 @@ final class PenCapture {
     let speed = hypot(x - rawX, y - rawY) * zoom / dt
     lastT = time
     // Holds a slow line steady without making a fast one lag.
-    let tau = 1 / (2 * Float.pi * (12 + 0.1 * speed))
+    if !first {
+      velX += ((x - rawX) / dt - velX) * 0.2
+      velY += ((y - rawY) / dt - velY) * 0.2
+    }
+    let tau = 1 / (2 * Float.pi * (7 + 0.08 * speed))
     let k = first ? 1 : 1 / (1 + tau / dt)
     let oldX = fx, oldY = fy
     fx += (x - fx) * k
@@ -118,7 +123,7 @@ final class PenCapture {
     let ease = 1 - exp(-dt / 0.02)
     r += (want.r - r) * ease
     a += (want.a - a) * ease
-    if hypot(fx - storedX, fy - storedY) * zoom >= 0.5 {
+    if hypot(fx - storedX, fy - storedY) * zoom >= 1 {
       wet.append(InkPoint(x: fx, y: fy, r: r, a: a))
       storedX = fx; storedY = fy
     }
@@ -127,7 +132,20 @@ final class PenCapture {
   /// Redraws the end of the line, out to the Pencil and where it's heading.
   func refresh(predicted: [CGPoint]) {
     var ahead = [InkPoint(x: rawX, y: rawY, r: r, a: a)]
-    for p in predicted { ahead.append(InkPoint(x: Float(p.x), y: Float(p.y), r: r, a: a)) }
+    let speed = hypot(velX, velY) * zoom
+    // Barely moving: a guess at where the Pencil is going is only noise.
+    if speed > 80 {
+      let reach = 34 / zoom
+      for p in predicted {
+        let x = Float(p.x), y = Float(p.y)
+        if hypot(x - rawX, y - rawY) > reach { break }
+        ahead.append(InkPoint(x: x, y: y, r: r, a: a))
+      }
+      // A little further than iPadOS guesses, to make up for the trip to the screen.
+      let from = ahead[ahead.count - 1]
+      let extra = min(0.012, 14 / (speed + 1))
+      ahead.append(InkPoint(x: from.x + velX * extra, y: from.y + velY * extra, r: r, a: a))
+    }
     wet.refresh(ahead: ahead)
   }
 
@@ -295,6 +313,13 @@ extension QuillCanvasView {
 
   private func feed(_ c: PenCapture, _ t: UITouch, _ event: UIEvent, first: Bool) {
     let samples = event.coalescedTouches(for: t) ?? [t]
+    ink.lastInputTime = samples.last?.timestamp ?? t.timestamp
+    if ink.stats.on {
+      let now = CACurrentMediaTime()
+      if !first && now - ink.stats.lastMove > 0.05 { ink.stats.stalls += 1 }
+      ink.stats.lastMove = now
+      ink.stats.samples += samples.count
+    }
     for (i, s) in samples.enumerated() {
       var p = location(s)
       if let e = c.rulerEdge { p = onRuler(p, e) }
@@ -322,6 +347,7 @@ extension QuillCanvasView {
 
   /// Runs every display frame while the Pencil is down: has it been held still long enough?
   func inkTick() {
+    if ink.stats.on, let text = ink.stats.report(now: CACurrentMediaTime()) { showStats(text) }
     guard shapeSnap, let c = capture, c.snap == nil, !c.triedSnap, c.rulerEdge == nil, c.pen.kind != .marker,
           CACurrentMediaTime() - c.lastMoveTime >= ShapeSnap.holdTime else { return }
     c.triedSnap = true
@@ -508,6 +534,7 @@ extension QuillCanvasView {
     selection = strokes
     guard !strokes.isEmpty else { selPan.isEnabled = false; selTap.isEnabled = false; return }
     strokes.forEach { $0.lifted = true }
+    ink.lifted = strokes
     selBox = strokes.reduce(CGRect.null) { $0.union($1.bounds) }
     ink.liftedTransform = .identity
     selPan.isEnabled = true
@@ -522,6 +549,7 @@ extension QuillCanvasView {
     let t = ink.liftedTransform
     let picked = selection
     picked.forEach { $0.lifted = false }
+    ink.lifted = []
     selection = []
     selDrag = nil
     ink.liftedTransform = .identity
@@ -599,6 +627,7 @@ extension QuillCanvasView {
   @objc func onSelDelete() {
     let picked = selection
     picked.forEach { $0.lifted = false }
+    ink.lifted = []
     ink.liftedTransform = .identity
     selection = []
     clearSelectionUI()
@@ -689,6 +718,29 @@ extension QuillCanvasView {
   }
 
   private var tintBlue: UIColor { UIColor(red: 0, green: 0.48, blue: 1, alpha: 1) }
+
+  // MARK: - Speed readout
+
+  func setInkStats(_ on: Bool) {
+    ink.stats.on = on
+    statsLabel.removeFromSuperview()
+    guard on else { return }
+    statsLabel.numberOfLines = 0
+    statsLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    statsLabel.textColor = .white
+    statsLabel.backgroundColor = UIColor(white: 0.1, alpha: 0.8)
+    statsLabel.layer.cornerRadius = 8
+    statsLabel.layer.masksToBounds = true
+    statsLabel.isUserInteractionEnabled = false
+    addSubview(statsLabel)
+    showStats("Write something to measure the ink")
+  }
+
+  private func showStats(_ text: String) {
+    statsLabel.text = text
+    let size = statsLabel.sizeThatFits(CGSize(width: bounds.width - 40, height: 200))
+    statsLabel.frame = CGRect(x: 12, y: 12, width: size.width + 8, height: size.height + 6)
+  }
 
   // MARK: - Ruler
 

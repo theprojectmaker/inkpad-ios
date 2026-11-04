@@ -31,6 +31,7 @@ export type Settings = {
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
+  inkStats?: boolean;        // numbers on the page: how fast the ink is
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };

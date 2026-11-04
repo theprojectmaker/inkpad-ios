@@ -80,6 +80,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     return g
   }()
   var ruler: RulerView?
+  let statsLabel = UILabel()
   var dragStartOffset: CGPoint = .zero
   var texts: [TextBox] = []
   var labels: [String: UILabel] = [:]

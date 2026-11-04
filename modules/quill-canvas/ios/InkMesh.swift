@@ -170,6 +170,8 @@ final class WetInk {
   let seq: UInt32
   private var ribbon: Ribbon
   private var settled = 0
+  private var rawBefore = InkPoint(x: 0, y: 0, r: 0, a: 0)
+  private var rawLast = InkPoint(x: 0, y: 0, r: 0, a: 0)
   private(set) var stable: [Vtx] = []
   private(set) var tail: [Vtx] = []
   private(set) var generation = 0     // bumped when `stable` is thrown away
@@ -193,22 +195,36 @@ final class WetInk {
     refresh(ahead: [])
   }
 
+  /// Adds a point and eases the one before it towards its neighbours, which takes out
+  /// the fine shake of a hand. Nobody sees the delay: the tail always reaches the Pencil.
   func append(_ p: InkPoint) {
+    let n = pts.count
+    if n >= 2 {
+      let a = rawBefore, b = rawLast
+      pts[n - 1].x = 0.25 * a.x + 0.5 * b.x + 0.25 * p.x
+      pts[n - 1].y = 0.25 * a.y + 0.5 * b.y + 0.25 * p.y
+    }
+    rawBefore = n == 0 ? p : rawLast
+    rawLast = p
     pts.append(p)
     if pts.count == 1 { ribbon.add(p, to: &stable) }
   }
 
   /// Redoes the unsettled end, running on through `ahead` (the live Pencil position and its predictions).
   func refresh(ahead: [InkPoint]) {
-    while settled < pts.count - 2 {
+    // A segment settles once no point it depends on can still be eased.
+    while settled < pts.count - 3 {
       InkMesh.segment(settled, of: pts, ribbon: &ribbon, out: &stable)
       settled += 1
     }
     tail.removeAll(keepingCapacity: true)
     var r = ribbon
-    let all = ahead.isEmpty ? pts : pts + ahead
-    if all.count > 1 && settled < all.count - 1 {
-      for s in settled..<(all.count - 1) { InkMesh.segment(s, of: all, ribbon: &r, out: &tail) }
+    // Only the end of the stroke: the cost stays the same however long the line gets.
+    let start = max(0, settled - 1)
+    let end = Array(pts[start...]) + ahead
+    let from = settled - start
+    if end.count > 1 && from < end.count - 1 {
+      for s in from..<(end.count - 1) { InkMesh.segment(s, of: end, ribbon: &r, out: &tail) }
     }
     r.finish(to: &tail)
   }

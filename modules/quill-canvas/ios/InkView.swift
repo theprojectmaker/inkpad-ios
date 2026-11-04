@@ -91,7 +91,7 @@ final class InkGPU {
     self.queue = queue
     do {
       let lib = try device.makeLibrary(source: shaderSource, options: nil)
-      let make = { (v: String, f: String) throws -> MTLRenderPipelineState in
+      let make = { (v: String, f: String, blend: Bool) throws -> MTLRenderPipelineState in
         let d = MTLRenderPipelineDescriptor()
         d.vertexFunction = lib.makeFunction(name: v)
         d.fragmentFunction = lib.makeFunction(name: f)
@@ -99,7 +99,7 @@ final class InkGPU {
         d.depthAttachmentPixelFormat = .depth32Float
         let c = d.colorAttachments[0]!
         c.pixelFormat = .bgra8Unorm
-        c.isBlendingEnabled = true
+        c.isBlendingEnabled = blend
         c.rgbBlendOperation = .add
         c.alphaBlendOperation = .add
         c.sourceRGBBlendFactor = .one
@@ -108,8 +108,8 @@ final class InkGPU {
         c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         return try device.makeRenderPipelineState(descriptor: d)
       }
-      ink = try make("inkV", "inkF")
-      sheet = try make("sheetV", "sheetF")
+      ink = try make("inkV", "inkF", true)
+      sheet = try make("sheetV", "sheetF", false)
     } catch {
       NSLog("Quill ink shaders failed: %@", String(describing: error))
       return nil
@@ -168,6 +168,37 @@ private final class MeshArena {
   func reset() { block = nil; used = 0; total = 0 }
 }
 
+/// What the writing is really doing on this iPad, for the on-screen readout.
+final class InkStats {
+  var on = false
+  var frames = 0, skipped = 0, samples = 0, stalls = 0
+  var cpu = 0.0, gpu = 0.0, lag = 0.0, worstLag = 0.0
+  var lagCount = 0
+  var lastMove: TimeInterval = 0
+  private var windowStart: TimeInterval = 0
+
+  /// A report once every half second while the Pencil is down.
+  func report(now: TimeInterval) -> String? {
+    if windowStart == 0 { windowStart = now; return nil }
+    let t = now - windowStart
+    guard t >= 0.5 else { return nil }
+    var model = utsname()
+    uname(&model)
+    let name = withUnsafeBytes(of: &model.machine) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+    let n = max(1, Double(frames)), l = max(1, Double(lagCount))
+    let text = """
+    \(name) · \(UIScreen.main.maximumFramesPerSecond) Hz screen
+    lag \(Int(lag / l * 1000)) ms (worst \(Int(worstLag * 1000))) · \(Int(Double(frames) / t)) frames/s
+    pencil \(Int(Double(samples) / t))/s · app \(String(format: "%.1f", cpu / n * 1000)) ms · GPU \(String(format: "%.1f", gpu / n * 1000)) ms
+    held back \(skipped) · stalls \(stalls)
+    """
+    frames = 0; skipped = 0; samples = 0; stalls = 0
+    cpu = 0; gpu = 0; lag = 0; worstLag = 0; lagCount = 0
+    windowStart = now
+    return text
+  }
+}
+
 final class InkView: UIView {
   override class var layerClass: AnyClass { InkGPU.shared != nil ? CAMetalLayer.self : CALayer.self }
 
@@ -175,6 +206,9 @@ final class InkView: UIView {
   var wet: WetInk?
   var zoom: CGFloat = 1
   var liftedTransform: CGAffineTransform = .identity
+  var lifted: [InkStroke] = []
+  let stats = InkStats()
+  var lastInputTime: TimeInterval = 0
 
   private let gpu = InkGPU.shared
   private lazy var arena: MeshArena? = gpu.map { MeshArena(device: $0.device) }
@@ -184,7 +218,9 @@ final class InkView: UIView {
   private var spare: MTLTexture?
   private var msaa: MTLTexture?
   private var depth: MTLTexture?
-  private var inFlight = 0
+  private var unshown = 0               // frames sent that aren't on screen yet
+  private var sentAt: CFTimeInterval = 0
+  private var lastCommand: MTLCommandBuffer?
   private var framePending = false
   private var frameQueued = false
   private var wetBuffer: MTLBuffer?
@@ -303,8 +339,20 @@ final class InkView: UIView {
   func drawNow(withPages: Bool = false) {
     guard window != nil, bounds.width > 1 else { return }
     guard let gpu else { drawFallback(); return }
-    if inFlight >= 2 { framePending = true; return }   // never wait on the GPU here
+    if withPages {
+      lastCommand?.waitUntilCompleted()     // ink and pages have to move together
+    } else if unshown >= 1 && CACurrentMediaTime() - sentAt < 0.1 {
+      // One frame waiting for the screen at a time: a queue of them would put the ink
+      // behind the Pencil, and asking for a drawable could stall the main thread.
+      framePending = true
+      if stats.on { stats.skipped += 1 }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        if self?.framePending == true { self?.drawNow() }
+      }
+      return
+    }
     framePending = false
+    let began = CACurrentMediaTime()
     guard let m = layer as? CAMetalLayer, let msaa, let depth, settled != nil else { return }
     if m.presentsWithTransaction != withPages { m.presentsWithTransaction = withPages }
     guard let drawable = m.nextDrawable(), let cmd = gpu.queue.makeCommandBuffer() else {
@@ -332,19 +380,35 @@ final class InkView: UIView {
 
     encode(cmd, msaa, depth, into: drawable.texture) { enc in
       self.drawSheet(enc, gpu)
-      let lifted = self.document.strokes.filter(\.lifted)
-      if !lifted.isEmpty { self.drawStrokes(lifted, enc, gpu, self.uniform(self.liftedTransform)) }
+      if !self.lifted.isEmpty { self.drawStrokes(self.lifted, enc, gpu, self.uniform(self.liftedTransform)) }
       if let wet = self.wet { self.drawWet(wet, enc, gpu, view) }
     }
 
-    inFlight += 1
-    cmd.addCompletedHandler { [weak self] done in
-      if let e = done.error { NSLog("Quill ink frame failed: %@", String(describing: e)) }
+    unshown += 1
+    sentAt = CACurrentMediaTime()
+    lastCommand = cmd
+    let input = wet == nil ? 0 : lastInputTime
+    drawable.addPresentedHandler { [weak self] shown in
+      let at = shown.presentedTime
       DispatchQueue.main.async {
         guard let self else { return }
-        self.inFlight -= 1
+        self.unshown = max(0, self.unshown - 1)
+        if self.stats.on && input > 0 && at > 0 {
+          self.stats.lag += at - input
+          self.stats.lagCount += 1
+          self.stats.worstLag = max(self.stats.worstLag, at - input)
+        }
         if self.framePending { self.drawNow() }
       }
+    }
+    cmd.addCompletedHandler { [weak self] done in
+      if let e = done.error { NSLog("Quill ink frame failed: %@", String(describing: e)) }
+      let gpuTime = done.gpuEndTime - done.gpuStartTime
+      DispatchQueue.main.async { if self?.stats.on == true { self?.stats.gpu += gpuTime } }
+    }
+    if stats.on {
+      stats.frames += 1
+      stats.cpu += CACurrentMediaTime() - began
     }
     if withPages {
       cmd.commit()
@@ -489,7 +553,6 @@ final class InkView: UIView {
         InkRaster.draw(strokes, rect: rect, in: c.cgContext)
       }
     }
-    let lifted = document.strokes.filter(\.lifted)
     let top = UIGraphicsImageRenderer(size: bounds.size, format: fmt).image { c in
       fallbackSettled?.draw(at: .zero)
       c.cgContext.scaleBy(x: z, y: z)
