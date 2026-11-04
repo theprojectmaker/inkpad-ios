@@ -71,6 +71,32 @@ export async function duplicateDoc(doc: NoteDoc, newId: string): Promise<NoteDoc
   return copy;
 }
 
+const VERSIONED = ['drawing.qink', 'texts.json', 'extras.json'];
+
+/** Keeps a copy of how the note looks now (the last ten are kept). */
+export async function saveVersion(id: string) {
+  const at = String(Date.now());
+  let any = false;
+  for (const f of VERSIONED) {
+    if (fsx.exists(notePath(id, f))) { await fsx.copy(notePath(id, f), notePath(id, `versions/${at}/${f}`)); any = true; }
+  }
+  if (!any) return;
+  const old = listVersions(id).slice(10);
+  for (const v of old) await fsx.remove(notePath(id, `versions/${v}`));
+}
+
+/** When each kept copy was made, newest first. */
+export const listVersions = (id: string) => fsx.list(notePath(id, 'versions')).sort((a, b) => Number(b) - Number(a));
+
+/** Puts the note back to a kept copy. The note must be closed on screen first. */
+export async function restoreVersion(id: string, at: string) {
+  for (const f of VERSIONED) {
+    const from = notePath(id, `versions/${at}/${f}`);
+    if (fsx.exists(from)) await fsx.copy(from, notePath(id, f));
+    else await fsx.remove(notePath(id, f));
+  }
+}
+
 /** Copies a PDF into the note and returns one page per PDF page, plus its text for search. */
 export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: string) => void): Promise<{ pages: Page[]; text: string }> {
   const file = `pdf_${uid()}.pdf`;

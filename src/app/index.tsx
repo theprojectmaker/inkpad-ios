@@ -281,6 +281,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 2, paddingBottom: 20 }}>
             {sideRow('Home', filter.kind === 'home', () => setFilter({ kind: 'home' }), { icon: 'house' })}
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length })}
+            {sideRow('Gallery', false, () => setSheet('paper'), { icon: 'photo.artframe' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
             <Text style={{ color: t.faint, fontSize: 12, fontWeight: '600', letterSpacing: 0.4, marginTop: 24, marginBottom: 6, paddingHorizontal: 12 }}>Folders</Text>
@@ -334,7 +335,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             </View>
             <View style={{ flexDirection: 'row', gap: 16, marginTop: 32 }}>
               {[
-                { label: 'Scan a document', icon: 'doc.viewfinder', bg: t.card, line: '#C3D3F7', go: scanPaper },
+                { label: 'Import Flashcards', icon: 'rectangle.on.rectangle', bg: t.card, line: '#C3D3F7', go: () => router.push('/flashcards') },
                 { label: 'Record a lecture', icon: 'mic', bg: t.dark ? t.card : '#FFF6E9', line: '#F3D9AE', go: () => newNote('blank', 'white', 'letter', true) },
                 { label: 'Import a file', icon: 'square.and.arrow.down', bg: t.dark ? t.card : '#EDF2FE', line: '#C3D3F7', go: importPdf },
                 { label: 'Find a template', icon: 'doc.plaintext', bg: t.dark ? t.card : '#F4F5F8', line: t.line, go: () => setSheet('paper') },

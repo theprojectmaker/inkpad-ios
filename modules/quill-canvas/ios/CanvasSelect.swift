@@ -135,6 +135,7 @@ extension QuillCanvasView {
       let c = CGPoint(x: CGFloat(b.x) + f.width / 2, y: CGFloat(b.y) + f.height / 2).applying(t)
       texts[i].w = b.w * Double(k)
       texts[i].size = b.size * Double(k)
+      reformat(&texts[i], scale: k)
       texts[i].x = Double(c.x - f.width * k / 2)
       texts[i].y = Double(c.y - f.height * k / 2)
     }
@@ -399,7 +400,7 @@ extension QuillCanvasView {
     let old = selection
     let new = old.map { InkStroke(pts: $0.pts, rgb: rgb, kind: $0.kind, seq: $0.seq, ts: $0.ts) }
     document.apply(removed: old, added: new)
-    for i in texts.indices where selTexts.contains(texts[i].id) { texts[i].color = hex }
+    for i in texts.indices where selTexts.contains(texts[i].id) { texts[i].color = hex; reformat(&texts[i], color: UIColor(hex: hex)) }
     renderTexts()
     selection = new
     new.forEach { $0.lifted = true }
@@ -539,7 +540,7 @@ extension QuillCanvasView {
       return InkStroke(pts: pts, rgb: rgb ?? s.rgb, kind: kind, seq: s.seq, ts: s.ts)
     }
     document.apply(removed: old, added: new)
-    if !color.isEmpty { for i in texts.indices where selTexts.contains(texts[i].id) { texts[i].color = color } }
+    if !color.isEmpty { for i in texts.indices where selTexts.contains(texts[i].id) { texts[i].color = color; reformat(&texts[i], color: UIColor(hex: color)) } }
     renderTexts()
     selection = new
     new.forEach { $0.lifted = true }

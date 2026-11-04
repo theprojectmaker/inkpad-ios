@@ -128,6 +128,23 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - takeScreenshot: 15b-text
 - tapOn: { text: "Pen", optional: true }
+# Zoom writing window, measure, Toolbox
+- tapOn: { text: "More tools", optional: true }
+- tapOn: { text: "Zoom", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 15c-zoom-window
+- tapOn: { text: "Close zoom window", optional: true }
+- tapOn: { text: "Measure", optional: true }
+- tapOn: { text: "Ruler", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 15d-ruler
+- tapOn: { text: "Hide ruler", optional: true }
+- tapOn: { text: "Toolbox settings", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: 15e-toolbox
+- tapOn: { text: "Done with toolbox", optional: true }
+- tapOn: { text: "Back to the main tools", optional: true }
+- tapOn: { text: "Pen", optional: true }
 # Audio: record while writing, play it back (ink replays), transcript
 - tapOn: { text: "Audio", optional: true }
 - waitForAnimationToEnd
@@ -184,6 +201,7 @@ appId: com.solyapps.notes
 - tapOn: { text: "More", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 27-more-menu
+- scrollUntilVisible: { element: { text: "Find in this note" }, optional: true }
 - tapOn: { text: "Find in this note", optional: true }
 - waitForAnimationToEnd: { timeout: 6000 }
 - inputText: "Typed"
@@ -191,6 +209,8 @@ appId: com.solyapps.notes
 - takeScreenshot: 28-find
 - tapOn: { text: "Close find", optional: true }
 - tapOn: { text: "More", optional: true }
+- tapOn: { text: "View settings", optional: true }
+- waitForAnimationToEnd
 - tapOn: { text: "Focus mode", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: 29-focus

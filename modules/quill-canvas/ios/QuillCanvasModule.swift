@@ -60,6 +60,10 @@ public final class QuillCanvasModule: Module {
     View(QuillCanvasView.self) {
       Events("onDrawingChange", "onPageChange", "onPencilTap", "onSelectionAction", "onInkTapped", "onLastPageUsed")
 
+      Prop("zoomWindow") { (view: QuillCanvasView, on: Bool) in
+        view.setZoomWindow(on)
+      }
+
       Prop("autoPage") { (view: QuillCanvasView, on: Bool) in
         view.autoPage = on
         view.checkLastPage()

@@ -6,7 +6,7 @@ import * as Sharing from 'expo-sharing';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
@@ -31,7 +31,7 @@ import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
 import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
-import { imagePages, loadDoc, notePath, renderDir, saveDoc, saveImage, scanPages } from '@/lib/noteio';
+import { imagePages, listVersions, loadDoc, notePath, renderDir, restoreVersion, saveDoc, saveImage, saveVersion, scanPages } from '@/lib/noteio';
 import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -88,7 +88,7 @@ export default function Editor() {
   const { width } = useWindowDimensions();
   const tool = useMemo(() => currentTool(s),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady]);
+    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady, s.measureMode]);
   const [menu, setMenu] = useState(false);
   const [opts, setOpts] = useState(false);     // the picked pen's options card (tap the pen again)
   const [sidebar, setSidebar] = useState(false);
@@ -114,6 +114,14 @@ export default function Editor() {
   const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
   const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
   const [comment, setComment] = useState<{ id: string; text: string } | null>(null);
+  const [zoomWin, setZoomWin] = useState(false);
+  const [calibrate, setCalibrate] = useState<null | { need: boolean; length?: number }>(null);
+  const [calValue, setCalValue] = useState('');
+  const [calUnit, setCalUnit] = useState('Feet');
+  const [versions, setVersions] = useState(false);
+  const [viewMenu, setViewMenu] = useState(false);
+  const [canvasKey, setCanvasKey] = useState(0);
+  const [exportMenu, setExportMenu] = useState(false);
   const audio = useNoteAudio(id, toast);
   // Leaving the text tool finishes the text being typed.
   useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
@@ -200,6 +208,7 @@ export default function Editor() {
     leaving.current = true;
     if (audio.rec) await stopRecording();
     try { await canvas.current?.save(); } catch {}
+    if (changed.current) saveVersion(id).catch(() => {});
     // Handwriting search: pictures of what changed now, and they're read after the note closes.
     let shots: { pageId: string; path: string }[] = [];
     try {
@@ -488,9 +497,18 @@ export default function Editor() {
     setOpts(false);
     await canvas.current?.paste();
   };
-  const onSelectionAction = async (e: { nativeEvent: { action: string; id?: string; path?: string; text?: string; width?: number } }) => {
+  const onSelectionAction = async (e: { nativeEvent: { action: string; id?: string; path?: string; text?: string; width?: number; height?: number } }) => {
     const { action, path, text } = e.nativeEvent;
     if (action === 'message' && text) toast(text);
+    else if (action === 'zoomClosed') setZoomWin(false);
+    else if (action === 'measured') {
+      const scale = s.measureScale;
+      const mode = text;
+      const w = e.nativeEvent.width ?? 0, h = e.nativeEvent.height ?? 0;
+      if (!scale) { setCalValue(''); setCalibrate({ need: false, length: mode === 'area' ? w : w }); }
+      else if (mode === 'area') toast(`${(w * scale.perPoint * h * scale.perPoint).toFixed(2)} square ${scale.unit.toLowerCase()}`);
+      else toast(`${(w * scale.perPoint).toFixed(2)} ${scale.unit.toLowerCase()}`);
+    }
     else if (action === 'comment' && e.nativeEvent.id) setComment({ id: e.nativeEvent.id, text: text ?? '' });
     else if (action === 'style') setSelStyle({ color: text ?? '#000000', width: e.nativeEvent.width ?? 2 });
     else if (action === 'share' && path) Sharing.shareAsync('file://' + path, { mimeType: 'image/jpeg', UTI: 'public.jpeg' }).catch(() => {});
@@ -534,7 +552,7 @@ export default function Editor() {
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
-            <QuillCanvas ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
+            <QuillCanvas key={canvasKey} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
               onPencilTap={onPencilTap} onSelectionAction={onSelectionAction} autoPage={s.autoPage !== false} onLastPageUsed={() => addPage(undefined, true)}
               inkTaps={audioOpen && !audio.rec && recordings.length > 0}
               onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && ms <= x.created + x.dur); if (r) hear(r, (ms - r.created) / 1000); }}
@@ -577,8 +595,8 @@ export default function Editor() {
 
       {!focus ? (
         <>
-          <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
-            onRuler={() => setRuler((v) => !v)} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
+          <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
+            onRuler={setRuler} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
           <View style={{ position: 'absolute', top: 12, left: 12, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
             <IconButton name="arrow.left" label="Back to notes" onPress={back} color="#3B4252" />
           </View>
@@ -610,26 +628,73 @@ export default function Editor() {
       {selStyle ? <StylePopover color={selStyle.color} width={selStyle.width} onClose={() => setSelStyle(null)}
         onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')} /> : null}
       <MenuSheet topRight visible={menu} onClose={() => setMenu(false)} items={[
-        { label: 'Quick export (PDF, all pages)', icon: 'square.and.arrow.up', onPress: share },
-        { label: 'Export this page as a picture', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
-        { label: 'Start study session', icon: 'sparkles', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
-        { label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
-        { label: meta?.title ?? 'Rename', icon: 'pencil', onPress: () => setRenaming(true) },
-        { label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
-        { label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
-        { label: 'Focus mode', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
+        { group: 1, label: 'Share settings', icon: 'person.badge.plus', onPress: share },
+        { group: 1, label: 'Quick export', sub: 'PDF, All pages', icon: 'square.and.arrow.up', onPress: share },
+        { group: 1, label: 'Export as…', icon: 'square.and.arrow.up.on.square', onPress: () => setExportMenu(true) },
+        { group: 2, label: 'Comments', icon: 'bubble.left', onPress: () => set({ inkKind: 'comment', lastTool: s.inkKind }) },
+        { group: 2, label: 'Start study session', icon: 'timer', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
+        { group: 3, label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
+        { group: 3, label: 'View settings', icon: 'chevron.right', onPress: () => setViewMenu(true) },
+        { group: 4, label: meta?.title ?? 'Note', sub: 'Tap to rename', icon: 'chevron.right', onPress: () => setRenaming(true) },
+        { group: 5, label: 'Version history', icon: 'clock.arrow.circlepath', onPress: () => setVersions(true) },
         ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
-          { label: 'Clean up this page', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
-          { label: 'Make it black and white', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
-          ...(doc?.pages[page.page]?.bg.kind === 'image' && (doc.pages[page.page].bg as { orig?: string }).orig ? [{ label: 'Back to the original photo', icon: 'arrow.uturn.backward', onPress: () => restorePhoto(page.page) }] : []),
+          { group: 6, label: 'Clean up this page', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
+          { group: 6, label: 'Make it black and white', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
+          ...((doc.pages[page.page].bg as { orig?: string }).orig ? [{ group: 6, label: 'Back to the original photo', icon: 'arrow.uturn.backward', onPress: () => restorePhoto(page.page) }] : []),
         ] : []),
         ...(meta?.hw ? [
-          { label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
-          { label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
+          { group: 7, label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
+          { group: 7, label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
-        { label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
-        { label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
+        { group: 8, label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
+        { group: 8, label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
+        { group: 8, label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
+        { group: 8, label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
+        { group: 9, label: 'Settings', icon: 'gearshape', onPress: () => router.push('/settings') },
       ]} />
+      <MenuSheet topRight visible={exportMenu} onClose={() => setExportMenu(false)} items={[
+        { group: 1, label: 'PDF', sub: 'All pages', icon: 'doc.richtext', onPress: share },
+        { group: 1, label: 'Picture', sub: 'This page', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
+      ]} />
+      <MenuSheet topRight visible={viewMenu} onClose={() => setViewMenu(false)} items={[
+        { group: 1, label: 'Focus mode', sub: 'Hides the toolbars', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
+        { group: 1, label: 'Fit page to width', icon: 'arrow.left.and.right', onPress: () => canvas.current?.fitWidth() },
+      ]} />
+      <MenuSheet visible={versions} onClose={() => setVersions(false)} title="Version history" items={(() => {
+        const list = versions ? listVersions(id) : [];
+        return list.length ? list.map((v) => ({ label: new Date(Number(v)).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), icon: 'clock', onPress: async () => {
+          await canvas.current?.save();
+          await saveVersion(id);
+          await restoreVersion(id, v);
+          setCanvasKey((k) => k + 1);
+          toast('Note restored. The version before this was kept too.');
+        } })) : [{ label: 'Versions appear after you leave a note you changed', onPress: () => {} }];
+      })()} />
+      <Sheet visible={!!calibrate} onClose={() => setCalibrate(null)} title="Calibrate scale" width={420}>
+        {calibrate?.need ? (
+          <>
+            <Text style={{ color: t.text, fontSize: 18, fontWeight: '700' }}>Select something with a known length</Text>
+            <Text style={{ color: t.sub, fontSize: 15, marginTop: 6 }}>Drag across it on the page. We'll use it to calibrate the measurement scale.</Text>
+          </>
+        ) : (
+          <>
+            <Text style={{ color: t.text, fontSize: 18, fontWeight: '700' }}>What is the length of the selected object?</Text>
+            <Text style={{ color: t.sub, fontSize: 14, marginTop: 6 }}>Length</Text>
+            <TextInput accessibilityLabel="Length" value={calValue} onChangeText={setCalValue} keyboardType="decimal-pad" autoFocus style={{ height: 44, borderWidth: 1, borderColor: t.line, borderRadius: 10, paddingHorizontal: 12, color: t.text, fontSize: 17, marginTop: 4 }} />
+            <Text style={{ color: t.sub, fontSize: 14, marginTop: 12 }}>Unit</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+              {['Inches', 'Feet', 'Centimeters', 'Meters'].map((u) => (
+                <Pressable key={u} accessibilityLabel={u} onPress={() => setCalUnit(u)} style={{ height: 34, paddingHorizontal: 12, borderRadius: 17, justifyContent: 'center', backgroundColor: calUnit === u ? '#E9EEFD' : t.chip }}><Text style={{ color: t.text, fontSize: 14 }}>{u}</Text></Pressable>
+              ))}
+            </View>
+          </>
+        )}
+        <Pressable accessibilityLabel="Continue" onPress={() => {
+          const v = parseFloat(calValue);
+          if (!calibrate?.need && calibrate?.length && v > 0) { set({ measureScale: { perPoint: v / calibrate.length, unit: calUnit } }); toast('Scale set. Drag on the page to measure.'); }
+          setCalibrate(null);
+        }} style={{ height: 44, borderRadius: 10, marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3F6AF2' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Continue</Text></Pressable>
+      </Sheet>
       <MenuSheet visible={insert} onClose={() => setInsert(false)} title="Insert" items={[
         { label: 'Photo on this page', icon: 'photo', onPress: () => placePhoto('library') },
         { label: 'Take a photo', icon: 'camera', onPress: () => placePhoto('camera') },

@@ -72,7 +72,7 @@ export function Sheet({ visible, onClose, children, width = 420, title, topRight
   );
 }
 
-export type MenuItem = { label: string; icon?: string; onPress: () => void; danger?: boolean; checked?: boolean };
+export type MenuItem = { label: string; icon?: string; onPress: () => void; danger?: boolean; checked?: boolean; sub?: string; group?: number };
 
 export function MenuSheet({ visible, onClose, title, items, topRight }: { visible: boolean; onClose: () => void; title?: string; items: MenuItem[]; topRight?: boolean }) {
   const t = useTheme();
@@ -82,7 +82,20 @@ export function MenuSheet({ visible, onClose, title, items, topRight }: { visibl
   useEffect(() => { if (visible) fired.current = false; }, [visible]);
   return (
     <Sheet visible={visible} onClose={onClose} title={title} width={topRight ? 320 : 360} topRight={topRight}>
-      {items.map((it, i) => (
+      {topRight && items.some((x) => x.group != null) ? [...new Set(items.map((x) => x.group ?? 0))].map((g) => (
+        <View key={g} style={{ borderRadius: 12, backgroundColor: t.dark ? t.chip : '#ECEDF1', marginBottom: 12, overflow: 'hidden' }}>
+          {items.filter((x) => (x.group ?? 0) === g).map((it, i) => (
+            <Pressable key={i} accessibilityRole="button" accessibilityLabel={it.label} onPress={() => { if (fired.current) return; fired.current = true; onClose(); setTimeout(it.onPress, Platform.OS === 'ios' ? 380 : 60); }}
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingVertical: 8, paddingHorizontal: 14, borderTopWidth: i ? StyleSheet.hairlineWidth : 0, borderTopColor: t.line, opacity: pressed ? 0.6 : 1 })}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: it.danger ? t.danger : t.text, fontSize: 16 }}>{it.label}</Text>
+                {it.sub ? <Text style={{ color: t.faint, fontSize: 12.5, marginTop: 1 }}>{it.sub}</Text> : null}
+              </View>
+              {it.checked ? <Icon name="checkmark" size={15} color={t.accent} /> : it.icon ? <Icon name={it.icon} size={18} color={t.sub} /> : null}
+            </Pressable>
+          ))}
+        </View>
+      )) : items.map((it, i) => (
         <Pressable key={i} accessibilityRole="button" accessibilityLabel={it.label} testID={`menu-${it.label}`} onPress={() => { if (fired.current) return; fired.current = true; onClose(); setTimeout(it.onPress, Platform.OS === 'ios' ? 380 : 60); }}
           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 10, backgroundColor: pressed ? t.chip : 'transparent' })}>
           {it.icon ? <Icon name={it.icon} size={19} color={it.danger ? t.danger : t.text} /> : null}

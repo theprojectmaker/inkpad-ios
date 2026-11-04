@@ -10,7 +10,7 @@ struct InkEdit {
   var objects: (before: InkObjects, after: InkObjects)? = nil
 }
 
-enum InkMode { case write, erase, lasso, tape, laser, comment }
+enum InkMode { case write, erase, lasso, tape, laser, comment, measure }
 
 /// Reports the Pencil (and a finger, if allowed) the instant it touches, with no waiting.
 final class InkGesture: UIGestureRecognizer {
@@ -257,7 +257,7 @@ final class RulerView: UIView, UIGestureRecognizerDelegate {
 extension QuillCanvasView {
   // MARK: - Touches
 
-  private func location(_ t: UITouch) -> CGPoint { t.preciseLocation(in: pageHost) }
+  private func location(_ t: UITouch) -> CGPoint { zoomWriter?.map(t) ?? t.preciseLocation(in: pageHost) }
 
   /// The page stays still while writing. A palm that had started to scroll is put back.
   private func holdPageStill() {
@@ -283,6 +283,7 @@ extension QuillCanvasView {
   func inkBegan(_ t: UITouch, _ event: UIEvent) {
     guard isLoaded else { return }
     if t.type != .direct { holdPageStill() }   // a writing finger still lets two fingers scroll
+    if let z = zoomWriter { z.capturing = z.pad.bounds.contains(t.location(in: z.pad)) }
     let p = location(t)
     switch inkMode {
     case .write: beginStroke(t, event, p)
@@ -291,6 +292,7 @@ extension QuillCanvasView {
     case .tape: beginTape(p)
     case .laser: laserDown = true; beginLaser(p)
     case .comment: break
+    case .measure: measureStart = p
     }
   }
 
@@ -303,6 +305,7 @@ extension QuillCanvasView {
     case .tape: moveTape(location(t))
     case .laser: moveLaser(location(t))
     case .comment: break
+    case .measure: drawMeasure(to: location(t))
     }
   }
 
@@ -314,6 +317,7 @@ extension QuillCanvasView {
     case .lasso: endLasso()
     case .tape: endTape(location(t))
     case .laser: laserDown = false
+    case .measure: finishMeasure(at: location(t))
     case .comment: if t.type != .direct { tappedForComment(at: location(t)) }   // a finger tap arrives by its own route
     }
     letPageMove()
@@ -440,6 +444,45 @@ extension QuillCanvasView {
     ink.settle([stroke])
     ink.drawNow(finishing: true)
     ink.penUp()
+    if zoomWriter?.capturing == true { zoomWriter?.strokeEnded(stroke.bounds) }
+  }
+
+  // MARK: - Measuring
+
+  private func drawMeasure(to p: CGPoint) {
+    if measureMode == "ruler" { return }
+    let a = pageHost.convert(measureStart, to: self), b = pageHost.convert(p, to: self)
+    let path = UIBezierPath()
+    if measureMode == "area" {
+      path.append(UIBezierPath(rect: CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))))
+    } else {
+      path.move(to: a)
+      path.addLine(to: b)
+      let t = atan2(b.y - a.y, b.x - a.x)
+      for (tip, dir) in [(a, t), (b, t + .pi)] {
+        path.move(to: CGPoint(x: tip.x + cos(dir + 0.45) * 12, y: tip.y + sin(dir + 0.45) * 12))
+        path.addLine(to: tip)
+        path.addLine(to: CGPoint(x: tip.x + cos(dir - 0.45) * 12, y: tip.y + sin(dir - 0.45) * 12))
+      }
+    }
+    if measureLayer.superlayer == nil {
+      measureLayer.fillColor = nil
+      measureLayer.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      measureLayer.lineWidth = 2
+      layer.addSublayer(measureLayer)
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    measureLayer.path = path.cgPath
+    CATransaction.commit()
+  }
+
+  private func finishMeasure(at p: CGPoint) {
+    if measureMode == "ruler" { return }
+    drawMeasure(to: p)
+    let w = abs(p.x - measureStart.x), h = abs(p.y - measureStart.y)
+    if hypot(w, h) * canvas.zoomScale < 8 { measureLayer.path = nil; return }
+    onSelectionAction(["action": "measured", "text": measureMode, "width": measureMode == "area" ? Double(w) : Double(hypot(w, h)), "height": Double(h)])
   }
 
   // MARK: - Undo

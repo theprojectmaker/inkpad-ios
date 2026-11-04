@@ -37,7 +37,7 @@ export type CanvasHandle = {
   setReplay(cut: number, from: number, to: number): Promise<void>;
 };
 
-export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment';
+export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
 export type CanvasTool = { kind: ToolKind; color: string; width: number; mode?: string; bold?: boolean; angle?: number; stabilize?: boolean; italic?: boolean; underline?: boolean };
 
 type Props = ViewProps & {
@@ -53,7 +53,8 @@ type Props = ViewProps & {
   legacy?: LegacyStroke[];
   onDrawingChange?: (e: { nativeEvent: CanvasState }) => void;
   onPencilTap?: (e: { nativeEvent: { action: string } }) => void;
-  onSelectionAction?: (e: { nativeEvent: { action: string; id?: string; path?: string; text?: string; width?: number } }) => void;
+  onSelectionAction?: (e: { nativeEvent: { action: string; id?: string; path?: string; text?: string; width?: number; height?: number } }) => void;
+  zoomWindow?: boolean;      // the zoom writing window
   autoPage?: boolean;        // says when the last page has been written on
   onLastPageUsed?: () => void;
   inkTaps?: boolean;         // a finger tapping ink reports when it was written

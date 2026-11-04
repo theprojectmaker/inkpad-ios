@@ -36,6 +36,12 @@ struct TextBox: Codable, Equatable {
   var bold: Bool? = nil
   var italic: Bool? = nil
   var underline: Bool? = nil
+  var rtf: String? = nil          // the formatting, word by word
+  var fill: String? = nil
+  var border: String? = nil       // none | lined | grid
+  var borderWidth: Double? = nil
+  var borderColor: String? = nil
+  var locked: Bool? = nil
 }
 
 /// Fingers scroll and zoom; a finger on a lasso selection moves that instead.
@@ -108,6 +114,21 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var textItalic = false
   var textUnderline = false
   var comments: [CommentObj] = []
+  let sizeLabel = UILabel()
+  var boxBar: UIStackView?
+  lazy var formatBar: UIView = makeFormatBar()
+  var zoomWriter: ZoomWriter?
+  var measureMode = "length"
+  var measureStart: CGPoint = .zero
+  let measureLayer = CAShapeLayer()
+  lazy var zoomPan: UIPanGestureRecognizer = {
+    let g = UIPanGestureRecognizer(target: self, action: #selector(onZoomPan(_:)))
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    g.maximumNumberOfTouches = 1
+    g.delegate = self
+    g.isEnabled = false
+    return g
+  }()
   var pinViews: [String: UILabel] = [:]
   var objBase = InkObjects(texts: [], pics: [], tapes: [])   // text, photos and tape as of the last undo step
   var laserPts: [(CGPoint, CFTimeInterval)] = []
@@ -199,7 +220,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     canvas.delaysContentTouches = false
     canvas.blocksPan = { [weak self] p in
       guard let self else { return false }
-      return self.selectionWantsTouch(at: self.canvas.convert(p, to: self))
+      let at = self.canvas.convert(p, to: self)
+      return self.selectionWantsTouch(at: at) || (self.zoomWriter?.contains(viewPoint: at) ?? false)
     }
     addSubview(canvas)
 
@@ -247,6 +269,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     addGestureRecognizer(selTap)
     addGestureRecognizer(tapeTap)
     addGestureRecognizer(inkTapGR)
+    addGestureRecognizer(zoomPan)
     let pencil = UIPencilInteraction()
     pencil.delegate = self
     addInteraction(pencil)
@@ -281,6 +304,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   override func layoutSubviews() {
     super.layoutSubviews()
     canvas.frame = bounds
+    zoomWriter?.layout()
     placeTextHost()
     syncInk()
     if bounds.width > 1 && abs(bounds.width - lastWidth) > 0.5 {
@@ -336,6 +360,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     syncInk()
   }
 
+  func refreshZoomInset() { applyZoom() }
+
   private func applyZoom() {
     let z = canvas.zoomScale
     let tf = CGAffineTransform(scaleX: z, y: z)
@@ -369,6 +395,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   private func syncInk() {
     ink.scrolled(to: canvas.bounds, zoom: canvas.zoomScale)
     placeSelectionUI()
+    placeBoxBar()
+    zoomWriter?.syncBox()
   }
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { zoomView }
@@ -387,6 +415,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer === panGR { return panStartsOnBox() }
     if gestureRecognizer === selPan { return selectionWantsTouch(at: selPan.location(in: self)) }
+    if gestureRecognizer === zoomPan { return zoomWriter?.contains(viewPoint: zoomPan.location(in: self)) ?? false }
     return super.gestureRecognizerShouldBegin(gestureRecognizer)
   }
 
@@ -394,6 +423,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     // A button on the lasso bar is a button: it must not count as tapping away from the selection.
     if let v = touch.view, v.isDescendant(of: selBar) { return false }
+    if let v = touch.view, let bar = boxBar, v.isDescendant(of: bar) { return false }
+    if g !== inkGesture, let z = zoomWriter, let v = touch.view, v.isDescendant(of: z.pad) { return false }
     if g === inkGesture {
       if touch.view is UIControl { return false }
       if touch.type == .direct && touch.view is RulerView { return false }
@@ -618,7 +649,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     canvas.panGestureRecognizer.allowedTouchTypes = scrollers.map { NSNumber(value: $0.rawValue) }
     updatePanFingers()
     if handMode { clearSelection(); selTap.isEnabled = false; return }
-    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : .write
+    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : t.kind == "measure" ? .measure : .write
     if mode != .lasso { clearSelection() }
     inkMode = mode
     selTap.isEnabled = mode == .lasso
@@ -626,6 +657,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if mode == .lasso { lassoBox = t.mode == "box" }
     if mode == .tape { tapeColor = t.color; tapeWidth = w }
     if mode == .laser { laserColor = UIColor(hex: t.color) }
+    if mode == .measure { measureMode = t.mode } else { measureLayer.path = nil }
     if mode == .write { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: t.mode, angle: Float(t.angle), stabilize: t.stabilize) }
   }
 

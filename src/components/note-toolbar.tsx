@@ -53,6 +53,7 @@ export function currentTool(s: Settings): CanvasTool {
     case 'text': return { kind: 'text', color, width: n, mode: s.textFont ?? 'system', bold: !!s.textBold, italic: !!s.textItalic, underline: !!s.textUnderline };
     case 'hand': return { kind: 'hand', color: '#000000', width: 1 };
     case 'comment': return { kind: 'comment', color: '#000000', width: 1 };
+    case 'measure': return { kind: 'measure', color: '#000000', width: 1, mode: s.measureMode ?? 'ruler' };
     default: return { kind: 'lasso', color: '#000000', width: 1, mode: s.lassoBox ? 'box' : 'free' };
   }
 }
@@ -81,7 +82,68 @@ const TOOLS_B: { id: InkTool; icon: string; label: string }[] = [
   { id: 'calligraphy', icon: 'paintbrush.pointed', label: 'Calligraphy' },
   { id: 'tape', icon: 'rectangle.fill', label: 'Tape' },
   { id: 'comment', icon: 'bubble.left', label: 'Comment' },
+  { id: 'measure', icon: 'ruler', label: 'Measure' },
 ];
+
+const ALL_TOOLS: { id: string; icon: string; label: string }[] = [
+  ...TOOLS_A,
+  { id: 'media', icon: 'plus.circle', label: 'Media' },
+  { id: 'record', icon: 'mic', label: 'Record' },
+  TOOLS_B[0],
+  { id: 'zoom', icon: 'plus.magnifyingglass', label: 'Zoom' },
+  ...TOOLS_B.slice(1),
+];
+const fullOrder = (saved?: string[]) => {
+  const ids = ALL_TOOLS.map((t) => t.id);
+  return [...(saved ?? []).filter((x) => ids.includes(x)), ...ids.filter((x) => !(saved ?? []).includes(x))];
+};
+
+/** Toolbox: reorder or hide the tools. */
+function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: () => void; onSettings: () => void }) {
+  const { s, set } = useSettings();
+  const order = fullOrder(s.toolOrder);
+  const hidden = s.toolHidden ?? [];
+  const move = (i: number, d: number) => {
+    const n = order.slice();
+    const j = i + d;
+    if (j < 0 || j >= n.length) return;
+    [n[i], n[j]] = [n[j], n[i]];
+    set({ toolOrder: n });
+  };
+  return (
+    <Modal visible={visible} transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={onClose}>
+      <Pressable accessibilityLabel="Close toolbox" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.25)' }]} onPress={onClose} />
+      <View pointerEvents="box-none" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <View style={{ width: '100%', maxWidth: 560, maxHeight: '85%', borderRadius: 22, backgroundColor: '#fff', overflow: 'hidden' }}>
+          <View style={{ height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }}>
+            <Pressable accessibilityLabel="Cancel toolbox" onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E7EC' }}><Icon name="xmark" size={14} color="#15171C" /></Pressable>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#15171C' }}>Toolbox</Text>
+            <Pressable accessibilityLabel="Done with toolbox" onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}><Icon name="checkmark" size={15} color="#fff" /></Pressable>
+          </View>
+          <Text style={{ color: '#6B7385', fontSize: 14, paddingHorizontal: 18, paddingBottom: 10 }}>Reorder or hide the Toolbox tools.</Text>
+          <ScrollView>
+            {order.map((id, i) => {
+              const x = ALL_TOOLS.find((t) => t.id === id)!;
+              const off = hidden.includes(id);
+              return (
+                <View key={id} style={{ flexDirection: 'row', alignItems: 'center', height: 50, paddingHorizontal: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EC' }}>
+                  <Pressable accessibilityLabel={(off ? 'Show ' : 'Hide ') + x.label} onPress={() => set({ toolHidden: off ? hidden.filter((h) => h !== id) : [...hidden, id] })} hitSlop={8}>
+                    <Icon name={off ? 'eye.slash' : 'eye'} size={20} color="#9AA2B2" />
+                  </Pressable>
+                  {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <Icon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
+                  <Text style={{ flex: 1, fontSize: 16, color: off ? '#9AA2B2' : '#15171C' }}>{x.label}</Text>
+                  <Pressable accessibilityLabel={'Move ' + x.label + ' up'} onPress={() => move(i, -1)} hitSlop={6} style={{ padding: 6 }}><Icon name="chevron.up" size={14} color="#6B7385" /></Pressable>
+                  <Pressable accessibilityLabel={'Move ' + x.label + ' down'} onPress={() => move(i, 1)} hitSlop={6} style={{ padding: 6 }}><Icon name="chevron.down" size={14} color="#6B7385" /></Pressable>
+                </View>
+              );
+            })}
+            <Pressable accessibilityLabel="App settings" onPress={() => { onClose(); onSettings(); }} style={{ padding: 16 }}><Text style={{ color: BLUE, fontSize: 16 }}>App settings</Text></Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 const WAVE = 'M3 14C8 4 14 4 20 11S32 19 37 7';
 
@@ -162,14 +224,15 @@ const Card = ({ children, width, top = 96, align }: { children: React.ReactNode;
 
 const LINES: PenLine[] = ['even', 'pressure', 'dash', 'dot'];
 
-export function NoteToolbar({ recording, hasAudio, ruler, onInsert, onAudio, onRuler, onSettings, onPaste, onTape }: {
-  recording: boolean; hasAudio: boolean; ruler: boolean; onInsert: () => void; onAudio: () => void; onRuler: () => void; onSettings: () => void;
+export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudio, onRuler, onZoom, onCalibrate, onSettings, onPaste, onTape }: {
+  recording: boolean; hasAudio: boolean; ruler: boolean; zoom: boolean; onInsert: () => void; onAudio: () => void; onRuler: (on: boolean) => void; onZoom: () => void; onCalibrate: () => void; onSettings: () => void;
   onPaste: () => void; onTape: (what: 'show' | 'hide' | 'clear') => void;
 }) {
   const { s, set } = useSettings();
   const { width: screen } = useWindowDimensions();
   const [set2, setSet2] = useState(false);
   const [pop, setPop] = useState<null | 'colors' | 'addColor' | 'size' | 'line' | 'nib'>(null);
+  const [toolbox, setToolbox] = useState(false);
   const kind = (s.inkKind ?? 'pen') as string;
   const k = kitOf(s, kind);
   const color = k.colors[k.color] ?? '#000000';
@@ -244,7 +307,18 @@ export function NoteToolbar({ recording, hasAudio, ruler, onInsert, onAudio, onR
   );
 
   let row2;
-  if (kind === 'lasso') {
+  if (kind === 'measure') {
+    const m = s.measureMode ?? 'ruler';
+    row2 = (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, justifyContent: 'center' }}>
+        {chip('Ruler', m === 'ruler', () => { set({ measureMode: 'ruler' }); onRuler(true); })}
+        {chip('Calculate length', m === 'length', () => { set({ measureMode: 'length' }); onCalibrate(); })}
+        {chip('Calculate area', m === 'area', () => { set({ measureMode: 'area' }); onCalibrate(); })}
+        <Bar />
+        <Pressable accessibilityLabel={ruler ? 'Hide ruler' : 'Show ruler'} onPress={() => onRuler(!ruler)} style={{ padding: 4 }}><Icon name={ruler ? 'eye.slash' : 'eye'} size={21} color={INK} /></Pressable>
+      </View>
+    );
+  } else if (kind === 'lasso') {
     row2 = <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', flex: 1 }}>{chip('Freeform', !s.lassoBox, () => set({ lassoBox: false }))}{chip('Boxed', !!s.lassoBox, () => set({ lassoBox: true }))}{chip('Paste', false, onPaste)}</View>;
   } else if (kind === 'eraser') {
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' }}>{sizes}<Bar />{chip('Whole', s.eraser === 'stroke', () => set({ eraser: 'stroke' }))}<View style={{ width: 8 }} />{chip('Partial', s.eraser !== 'stroke', () => set({ eraser: 'partial' }))}</View>;
@@ -294,8 +368,21 @@ export function NoteToolbar({ recording, hasAudio, ruler, onInsert, onAudio, onR
   }
 
   const pillW = Math.min(screen - 110, 620);
+  const order = fullOrder(s.toolOrder);
+  const hidden = s.toolHidden ?? [];
+  const shown = order.filter((id) => !hidden.includes(id));
+  const render = (id: string) => {
+    if (id === 'media') return plain('plus.circle', 'Insert', onInsert);
+    if (id === 'record') return plain(hasAudio && !recording ? 'play.circle' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined);
+    if (id === 'zoom') return plain('plus.magnifyingglass', 'Zoom', onZoom, undefined, zoom);
+    const x = ALL_TOOLS.find((t) => t.id === id);
+    return x ? toolBtn(x as { id: InkTool; icon: string; label: string }) : null;
+  };
+  const first = shown.slice(0, 8);
+  const second = shown.slice(8);
   return (
     <>
+      <Toolbox visible={toolbox} onClose={() => setToolbox(false)} onSettings={onSettings} />
       {pop ? <Modal visible transparent animationType="none" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={() => setPop(null)}>
         <Pressable accessibilityLabel="Close" style={StyleSheet.absoluteFill} onPress={() => setPop(null)} />
         {pop === 'colors' || pop === 'addColor' ? (
@@ -337,19 +424,15 @@ export function NoteToolbar({ recording, hasAudio, ruler, onInsert, onAudio, onR
           <View style={{ height: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
             {!set2 ? (
               <>
-                {TOOLS_A.map(toolBtn)}
-                {plain('plus.circle', 'Insert', onInsert)}
-                {plain(hasAudio && !recording ? 'play.circle' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined)}
-                <Div />
-                {toolBtn(TOOLS_B[0])}
+                {first.map(render)}
+                {second.length ? <Div /> : null}
+                {second[0] ? render(second[0]) : null}
                 {plain('chevron.right', 'More tools', () => setSet2(true))}
               </>
             ) : (
               <>
-                {TOOLS_B.map(toolBtn)}
-                {plain('ruler', 'Measure', onRuler, ruler ? '#F28C0F' : undefined, ruler)}
-                {plain(hasAudio && !recording ? 'play.circle' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined)}
-                {plain('gearshape', 'Toolbox settings', onSettings)}
+                {second.map(render)}
+                {plain('gearshape', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
                 {plain('chevron.left', 'Back to the main tools', () => setSet2(false))}
               </>
             )}

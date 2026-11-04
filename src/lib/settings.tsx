@@ -28,6 +28,11 @@ export type Settings = {
   favPens: FavPen[];
   favs: FavTool[];            // the pens saved in the floating pen bar
   tk?: Record<string, Partial<ToolKit>>;
+  toolOrder?: string[];      // the Toolbox: order of the tools
+  toolHidden?: string[];     // and the ones taken off the toolbar
+  measureMode?: 'ruler' | 'length' | 'area';
+  measureScale?: { perPoint: number; unit: string };   // from Calibrate scale
+  myTemplates?: string[];
   nibAngle?: number;         // calligraphy
   nibSteady?: boolean;
   autoPage?: boolean;        // a blank page appears when you write on the last one (on by default)
@@ -49,7 +54,7 @@ export type Settings = {
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };
-export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment';
+export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment' | 'measure';
 export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
 /** What each tool remembers: its colours, three sizes (1-12) and line style. */
 export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: number; line: PenLine };

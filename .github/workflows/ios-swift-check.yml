@@ -31,4 +31,4 @@ jobs:
           T=arm64-apple-ios16.4-simulator
           xcrun swiftc -emit-module -module-name ExpoModulesCore -parse-as-library -sdk "$SDK" -target $T -emit-module-path stub/ExpoModulesCore.swiftmodule stub/ExpoModulesCore.swift
           cd modules/quill-canvas/ios
-          xcrun swiftc -typecheck -module-name QuillCanvas -sdk "$SDK" -target $T -I ../../../stub QuillCanvasView.swift CanvasInk.swift CanvasTextAndPages.swift CanvasSelect.swift CanvasObjects.swift Transcribe.swift PdfInfo.swift InkModel.swift InkMesh.swift InkView.swift ShapeSnap.swift PageArt.swift
+          xcrun swiftc -typecheck -module-name QuillCanvas -sdk "$SDK" -target $T -I ../../../stub QuillCanvasView.swift CanvasInk.swift CanvasTextAndPages.swift CanvasSelect.swift CanvasObjects.swift Transcribe.swift PdfInfo.swift CanvasZoom.swift CanvasTextBar.swift InkModel.swift InkMesh.swift InkView.swift ShapeSnap.swift PageArt.swift

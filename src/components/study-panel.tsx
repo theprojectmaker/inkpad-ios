@@ -13,7 +13,7 @@ import { notePath, renderDir } from '@/lib/noteio';
 import { type OcrLine, readText } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
 
-type Tab = 'summary' | 'cards' | 'quiz' | 'explain' | 'help' | 'ask';
+type Tab = 'home' | 'summary' | 'cards' | 'quiz' | 'explain' | 'help' | 'ask';
 type Scope = 'page' | 'note';
 type Saved = { summary?: string; explain?: string; cards?: Flashcard[]; quiz?: QuizQ[]; title?: string };
 type Msg = { role: 'user' | 'assistant'; text: string; err?: boolean };
@@ -33,7 +33,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   absPath: (p: string) => string; onClose: () => void;
 }) {
   const t = useTheme();
-  const [tab, setTab] = useState<Tab>('summary');
+  const [tab, setTab] = useState<Tab>('home');
   const [scope, setScope] = useState<Scope>(pageCount > 1 ? 'page' : 'note');
   const [saved, setSaved] = useState<Saved>({});
   const [busy, setBusy] = useState(false);
@@ -100,6 +100,45 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
         <Text style={{ color: t.sub, fontSize: 14 }}>Reading {scopeLabel}…</Text>
       </View>
     );
+  } else if (tab === 'home') {
+    const Box = ({ tag, children, onPress, label }: { tag: string; children: React.ReactNode; onPress: () => void; label: string }) => (
+      <Pressable accessibilityLabel={label} onPress={onPress} style={{ marginTop: 16, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: t.card }}>
+        <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, height: 20, borderRadius: 5, justifyContent: 'center', backgroundColor: '#E9EEFD', marginBottom: 8 }}><Text style={{ color: '#3F6AF2', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4 }}>{tag}</Text></View>
+        {children}
+      </Pressable>
+    );
+    const n = saved.quiz?.length ?? 20;
+    body = (
+      <>
+        <Text style={{ color: t.text, fontSize: 18, fontWeight: '800' }}>Chat with your notes</Text>
+        <Text style={{ color: t.sub, fontSize: 14, marginTop: 4 }}>Ask questions, explore topics, and study with all of your notes.</Text>
+        <Pressable accessibilityLabel="Ask anything" onPress={() => setTab('ask')} style={{ flexDirection: 'row', alignItems: 'center', height: 46, marginTop: 10, paddingHorizontal: 14, borderRadius: 23, borderWidth: 1, borderColor: t.line }}>
+          <Text style={{ flex: 1, color: t.faint, fontSize: 15 }}>Ask anything</Text>
+          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#A9BDF8', alignItems: 'center', justifyContent: 'center' }}><Icon name="arrow.up" size={14} color="#fff" /></View>
+        </Pressable>
+        <Text style={{ color: t.text, fontSize: 18, fontWeight: '800', marginTop: 22 }}>Keep it up!</Text>
+        <Pressable accessibilityLabel="Practice" onPress={() => setTab('quiz')} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: t.line }}>
+          <Icon name="list.bullet.rectangle" size={18} color={t.sub} />
+          <Text style={{ flex: 1, color: t.text, fontSize: 15 }}>Practice with <Text style={{ fontWeight: '800' }}>{n} questions</Text></Text>
+          <Icon name="chevron.right" size={13} color={t.faint} />
+        </Pressable>
+        <Box tag="SUMMARY" label="Summary" onPress={() => setTab('summary')}>
+          {saved.summary ? <Text numberOfLines={5} style={{ color: t.text, fontSize: 14.5, lineHeight: 20 }}>{saved.summary.replace(/[#*]/g, '')}</Text> : <Text style={{ color: t.sub, fontSize: 14.5 }}>Tap to write a summary of {scopeLabel}.</Text>}
+        </Box>
+        <Box tag="PRACTICE" label="Practice" onPress={() => setTab('quiz')}>
+          {saved.quiz?.[0] ? <Text numberOfLines={4} style={{ color: t.text, fontSize: 18, fontWeight: '800' }}>{saved.quiz[0].q}</Text> : <Text style={{ color: t.sub, fontSize: 14.5 }}>Tap to make practice questions.</Text>}
+        </Box>
+        <Box tag="FLASHCARDS" label="Flashcards" onPress={() => setTab('cards')}>
+          <Text style={{ color: t.sub, fontSize: 14.5 }}>{saved.cards?.length ? `${saved.cards.length} cards ready` : 'Tap to make flashcards.'}</Text>
+        </Box>
+        <Box tag="EXPLAIN" label="Explain" onPress={() => setTab('explain')}>
+          <Text style={{ color: t.sub, fontSize: 14.5 }}>{saved.explain ? 'Your explanation is ready.' : 'Tap to explain the hard parts.'}</Text>
+        </Box>
+        <Box tag="QUESTION HELP" label="Question help" onPress={() => setTab('help')}>
+          <Text style={{ color: t.sub, fontSize: 14.5 }}>Pick a question from the page and get help with it.</Text>
+        </Box>
+      </>
+    );
   } else if (tab === 'summary') {
     body = saved.summary ? <><Markdown text={saved.summary} /><Redo onPress={() => run('summary')} /></> : <MakeButton label="Write a summary" onPress={() => run('summary')} />;
   } else if (tab === 'explain') {
@@ -117,8 +156,8 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   return (
     <View style={{ width: 380, backgroundColor: t.bg, borderLeftWidth: 1, borderLeftColor: t.line }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
-        <Icon name="sparkles" size={18} color={t.accent} />
-        <Text style={{ flex: 1, marginLeft: 8, color: t.text, fontSize: 18, fontWeight: '800' }}>Study</Text>
+        {tab !== 'home' ? <Pressable accessibilityLabel="Back to Learn" onPress={() => setTab('home')} hitSlop={8}><Icon name="chevron.left" size={16} color={t.sub} /></Pressable> : <Icon name="sparkles" size={18} color={t.accent} />}
+        <Text style={{ flex: 1, marginLeft: 8, color: t.text, fontSize: 18, fontWeight: '800' }}>{tab === 'home' ? 'Learn' : TABS.find((x) => x.id === tab)?.label}</Text>
         {pageCount > 1 ? (
           <View style={{ flexDirection: 'row', backgroundColor: t.chip, borderRadius: 9, padding: 2, marginRight: 8 }}>
             {(['page', 'note'] as Scope[]).map((s) => (
@@ -132,13 +171,6 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
           <Icon name="xmark" size={13} color={t.sub} />
         </Pressable>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0 }} contentContainerStyle={{ paddingHorizontal: 12, gap: 6, paddingBottom: 10 }}>
-        {TABS.map((x) => (
-          <Pressable key={x.id} onPress={() => setTab(x.id)} style={{ paddingHorizontal: 12, height: 32, borderRadius: 16, justifyContent: 'center', backgroundColor: tab === x.id ? t.text : t.chip }}>
-            <Text style={{ color: tab === x.id ? t.bg : t.text, fontSize: 13, fontWeight: '600' }}>{x.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
       {tab === 'ask' && !busy ? <View style={{ flex: 1 }}>{body}</View> : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
           {err ? <Text style={{ color: t.danger, fontSize: 14, marginBottom: 10 }}>{err}</Text> : null}

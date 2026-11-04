@@ -52,7 +52,7 @@ extension QuillCanvasView {
     switch gr.state {
     case .began:
       if editingId != nil { commitEdit() }
-      dragId = box(at: p)?.id
+      dragId = box(at: p).flatMap { $0.locked == true ? nil : $0.id }
       dragStart = p
     case .changed:
       guard let id = dragId, let i = texts.firstIndex(where: { $0.id == id }) else { return }
@@ -106,7 +106,13 @@ extension QuillCanvasView {
     texts[i].italic = textItalic
     texts[i].underline = textUnderline
     let attrs: [NSAttributedString.Key: Any] = [.font: font(texts[i]), .foregroundColor: UIColor(hex: textColor), .underlineStyle: textUnderline ? NSUnderlineStyle.single.rawValue : 0]
-    ed.attributedText = NSAttributedString(string: ed.text ?? "", attributes: attrs)
+    if ed.selectedRange.length > 0 {
+      let a = NSMutableAttributedString(attributedString: ed.attributedText)
+      a.addAttributes(attrs, range: ed.selectedRange)
+      let keep = ed.selectedRange
+      ed.attributedText = a
+      ed.selectedRange = keep
+    }
     ed.typingAttributes = attrs
     textViewDidChange(ed)
   }
@@ -117,17 +123,18 @@ extension QuillCanvasView {
     let ed = editor ?? UITextView()
     editor = ed
     ed.delegate = self
-    ed.backgroundColor = UIColor.white.withAlphaComponent(0.6)
     ed.textContainerInset = UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
     ed.textContainer.lineFragmentPadding = 0
     ed.isScrollEnabled = false
     ed.font = font(b)
     ed.textColor = UIColor(hex: b.color)
     let startAttrs: [NSAttributedString.Key: Any] = [.font: font(b), .foregroundColor: UIColor(hex: b.color), .underlineStyle: b.underline == true ? NSUnderlineStyle.single.rawValue : 0]
-    ed.attributedText = NSAttributedString(string: b.text, attributes: startAttrs)
+    ed.attributedText = attributed(b)
     ed.typingAttributes = startAttrs
-    ed.layer.borderColor = UIColor(red: 0.15, green: 0.39, blue: 0.92, alpha: 1).cgColor
-    ed.layer.borderWidth = 1.2
+    ed.inputAccessoryView = formatBar
+    ed.isScrollEnabled = false
+    styleBoxView(ed, b)
+    if ed.backgroundColor == .clear { ed.backgroundColor = UIColor.white.withAlphaComponent(0.6) }
     ed.layer.cornerRadius = 4
     ed.overrideUserInterfaceStyle = .light
     let h = max(CGFloat(b.size) * 1.5, ed.sizeThatFits(CGSize(width: CGFloat(b.w), height: 10000)).height)
@@ -135,18 +142,23 @@ extension QuillCanvasView {
     if ed.superview == nil { textHost.addSubview(ed) }
     ed.contentScaleFactor = textScale()
     ed.becomeFirstResponder()
+    syncFormatBar()
+    placeBoxBar()
   }
 
   func textViewDidChange(_ textView: UITextView) {
     let w = textView.frame.width
     let h = max(textView.font?.lineHeight ?? 20, textView.sizeThatFits(CGSize(width: w, height: 10000)).height)
     textView.frame.size.height = h
+    placeBoxBar()
   }
 
   func commitEdit() {
     guard let id = editingId, let ed = editor else { return }
     editingId = nil
     let text = ed.text ?? ""
+    let rich = ed.attributedText.map { rtfString($0) } ?? nil
+    boxBar?.isHidden = true
     ed.resignFirstResponder()
     ed.removeFromSuperview()
     if let i = texts.firstIndex(where: { $0.id == id }) {
@@ -156,6 +168,7 @@ extension QuillCanvasView {
         labels[id] = nil
       } else {
         texts[i].text = text
+        texts[i].rtf = rich
         layoutLabel(texts[i])
       }
     }
@@ -203,7 +216,8 @@ extension QuillCanvasView {
     l.numberOfLines = 0
     l.font = font(b)
     l.textColor = UIColor(hex: b.color)
-    l.attributedText = NSAttributedString(string: b.text, attributes: [.font: font(b), .foregroundColor: UIColor(hex: b.color), .underlineStyle: b.underline == true ? NSUnderlineStyle.single.rawValue : 0])
+    l.attributedText = attributed(b)
+    styleBoxView(l, b)
     let h = l.sizeThatFits(CGSize(width: CGFloat(b.w), height: 10000)).height
     l.frame = CGRect(x: CGFloat(b.x), y: CGFloat(b.y), width: CGFloat(b.w), height: max(h, CGFloat(b.size)))
     l.isHidden = b.id == editingId
@@ -224,11 +238,15 @@ extension QuillCanvasView {
   func drawTexts(only ids: [String]? = nil, onPage f: CGRect, in ctx: CGContext) {
     UIGraphicsPushContext(ctx)
     for b in texts where ids?.contains(b.id) ?? f.contains(CGPoint(x: b.x + 1, y: b.y + 1)) {
-      let style = NSMutableParagraphStyle()
-      style.lineBreakMode = .byWordWrapping
-      let attrs: [NSAttributedString.Key: Any] = [.font: font(b), .foregroundColor: UIColor(hex: b.color), .paragraphStyle: style, .underlineStyle: b.underline == true ? NSUnderlineStyle.single.rawValue : 0]
-      (b.text as NSString).draw(with: CGRect(x: CGFloat(b.x) - f.minX, y: CGFloat(b.y) - f.minY, width: CGFloat(b.w), height: 10000),
-                                options: [.usesLineFragmentOrigin], attributes: attrs, context: nil)
+      let a = attributed(b)
+      let box = CGRect(x: CGFloat(b.x) - f.minX, y: CGFloat(b.y) - f.minY, width: CGFloat(b.w), height: labels[b.id]?.bounds.height ?? 20)
+      if let fill = b.fill { UIColor(hex: fill).setFill(); ctx.fill(box) }
+      if b.border == "lined" || b.border == "grid" {
+        ctx.setStrokeColor(UIColor(hex: b.borderColor ?? "#8C8C8C").cgColor)
+        ctx.setLineWidth(CGFloat(b.borderWidth ?? 1))
+        ctx.stroke(box)
+      }
+      a.draw(with: CGRect(x: box.minX, y: box.minY, width: box.width, height: 10000), options: [.usesLineFragmentOrigin], context: nil)
     }
     UIGraphicsPopContext()
   }

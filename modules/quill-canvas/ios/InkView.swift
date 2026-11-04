@@ -239,6 +239,8 @@ final class InkView: UIView {
   var onLinkTick: (() -> Void)?
   private var replay: (cut: Double, from: Double, to: Double)?
   private var laterCount = 0
+  weak var mirror: InkView?       // the zoom window shows the same ink
+  private var padOrigin: CGPoint?
   private var pageFrameQueued = false
 
   init(document: InkDocument) {
@@ -265,6 +267,17 @@ final class InkView: UIView {
     if window == nil { penUp() } else { matchScreen(); setNeedsInk(rebuild: true) }
   }
 
+  // MARK: - The zoom window
+
+  /// Shows `rect` of the page, filling a view of `size`, instead of following the scroll view.
+  func setPad(rect: CGRect, size: CGSize) {
+    if bounds.size != size { bounds.size = size; matchScreen() }
+    zoom = size.width / max(1, rect.width)
+    padOrigin = CGPoint(x: rect.minX * zoom, y: rect.minY * zoom)
+    settledDirty = true
+    drawNow()
+  }
+
   // MARK: - Replay
 
   /// While a recording plays, ink written later in it shows faintly and fills in as it plays.
@@ -289,6 +302,7 @@ final class InkView: UIView {
   /// Ask for a new frame (several asks in one go become one frame).
   func setNeedsInk(rebuild: Bool = false) {
     if rebuild { settledDirty = true }
+    if let m = mirror { m.setNeedsInk(rebuild: rebuild) }
     if frameQueued { return }
     frameQueued = true
     DispatchQueue.main.async { [weak self] in
@@ -329,9 +343,11 @@ final class InkView: UIView {
   /// A finished stroke joins the settled ink in the same frame the wet one leaves, so nothing flashes.
   func settle(_ strokes: [InkStroke]) {
     pendingSettle.append(contentsOf: strokes)
+    mirror?.settle(strokes)
   }
 
   func penDown() {
+    mirror?.penDown()
     guard link == nil else { return }
     let l = CADisplayLink(target: self, selector: #selector(tick))
     l.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
@@ -340,6 +356,7 @@ final class InkView: UIView {
   }
 
   func penUp() {
+    mirror?.penUp()
     link?.invalidate()
     link = nil
   }
@@ -385,6 +402,12 @@ final class InkView: UIView {
   /// Otherwise it goes straight out, the quickest path, for the Pencil.
   func drawNow(withPages: Bool = false, finishing: Bool = false) {
     guard window != nil, bounds.width > 1 else { return }
+    if let m = mirror {
+      m.wet = wet
+      m.lifted = lifted
+      m.liftedTransform = liftedTransform
+      m.drawNow(finishing: finishing)
+    }
     guard let gpu else { drawFallback(); return }
     if withPages {
       lastCommand?.waitUntilCompleted()     // ink and pages have to move together
@@ -519,7 +542,7 @@ final class InkView: UIView {
   private func uniform(_ t: CGAffineTransform) -> ViewUniform {
     let w = Float(max(1, bounds.width)), h = Float(max(1, bounds.height))
     let z = Float(zoom)
-    let ox = Float(center.x - bounds.width / 2), oy = Float(center.y - bounds.height / 2)
+    let ox = Float(padOrigin?.x ?? (center.x - bounds.width / 2)), oy = Float(padOrigin?.y ?? (center.y - bounds.height / 2))
     return ViewUniform(m: SIMD4(Float(t.a), Float(t.b), Float(t.c), Float(t.d)),
                        t: SIMD2(Float(t.tx), Float(t.ty)),
                        s: SIMD2(2 * z / w, -2 * z / h),
@@ -529,7 +552,8 @@ final class InkView: UIView {
 
   private func visibleRect() -> CGRect {
     let z = max(0.01, zoom)
-    return CGRect(x: (center.x - bounds.width / 2) / z, y: (center.y - bounds.height / 2) / z, width: bounds.width / z, height: bounds.height / z)
+    let ox = padOrigin?.x ?? (center.x - bounds.width / 2), oy = padOrigin?.y ?? (center.y - bounds.height / 2)
+    return CGRect(x: ox / z, y: oy / z, width: bounds.width / z, height: bounds.height / z)
   }
 
   private func visibleStrokes() -> [InkStroke] {
