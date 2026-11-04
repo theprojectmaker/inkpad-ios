@@ -19,7 +19,8 @@ enum ScanFilter {
     if side < target {
       image = image.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: min(3, target / side), kCIInputAspectRatioKey: 1.0])
     }
-    image = image.settingAlphaOne(in: image.extent)
+    // Everything below is judged the way the eye sees it, not in raw light values.
+    image = image.settingAlphaOne(in: image.extent).applyingFilter("CILinearToSRGBToneCurve")
     let ext = image.extent
     let px = max(ext.width, ext.height) / target    // 1 at the working size
 
@@ -44,7 +45,7 @@ enum ScanFilter {
       .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": 3])
       .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 5])
       .applyingFilter("CIColorClamp", parameters: [
-        "inputMinComponents": CIVector(x: 0.06, y: 0.06, z: 0.06, w: 1), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
+        "inputMinComponents": CIVector(x: 0.1, y: 0.1, z: 0.1, w: 1), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1),
       ])
       .cropped(to: small.extent).clampedToExtent()
       .transformed(by: CGAffineTransform(scaleX: 1 / k, y: 1 / k)).cropped(to: ext)
@@ -54,8 +55,8 @@ enum ScanFilter {
     //    followed by a steep curve is what turns jagged edges into smooth ones, and it
     //    closes the little gaps in a broken line. The low end is set to keep faint pencil.
     let grey = flat.applyingFilter("CIMinimumComponent")
-    let soft = blur(grey, 2.2 * px)
-    let ink = curve(soft, [(0, 1), (0.5, 1), (0.72, 0.72), (0.86, 0.12), (0.93, 0)]).cropped(to: ext)
+    let soft = blur(grey, 1.8 * px)
+    let ink = curve(soft, [(0, 1), (0.6, 1), (0.8, 0.8), (0.9, 0.18), (0.95, 0)]).cropped(to: ext)
 
     // 5. Where nearly everything nearby counts as ink, it's a picture or a filled shape.
     let crowd = blur(ink, 60 * px)
@@ -81,6 +82,6 @@ enum ScanFilter {
       let photo = curve(flat, [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)]).cropped(to: ext)
       out = photo.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: out, kCIInputMaskImageKey: picture]).cropped(to: ext)
     }
-    return out.cropped(to: ext)
+    return out.applyingFilter("CISRGBToneCurveToLinear").cropped(to: ext)
   }
 }
