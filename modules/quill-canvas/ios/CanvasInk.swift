@@ -10,7 +10,7 @@ struct InkEdit {
   var objects: (before: InkObjects, after: InkObjects)? = nil
 }
 
-enum InkMode { case write, erase, lasso, tape, laser, comment, measure, compass }
+enum InkMode { case write, erase, lasso, tape, laser, comment, measure, compass, shape }
 
 /// Reports the Pencil (and a finger, if allowed) the instant it touches, with no waiting.
 ///
@@ -157,7 +157,9 @@ final class PenCapture {
     // Light enough that the line lands where the tip was drawn: heavier filtering
     // made the ink visibly shift just after it appeared.
     if !first { lastSpeed += (speed - lastSpeed) * 0.2 }
-    let tau = 1 / (2 * Float.pi * (pen.stabilize ? 7 : 24 + 0.2 * speed))
+    // Streamline eases the line from following the hand closely towards a slow, steady pull.
+    let follow = 24 + 0.2 * speed
+    let tau = 1 / (2 * Float.pi * (pen.stabilize ? 7 : follow * (1 - pen.streamline) + 4 * pen.streamline))
     let k = first ? 1 : 1 / (1 + tau / dt)
     let oldX = fx, oldY = fy
     fx += (x - fx) * k
@@ -363,6 +365,7 @@ extension QuillCanvasView {
     case .measure:
       if measureMode == "angle" { angleBegan(p) } else { measureStart = p }
     case .compass: compassBegan(p)
+    case .shape: shapeBegan(p)
     }
   }
 
@@ -377,6 +380,7 @@ extension QuillCanvasView {
     case .comment: break
     case .measure: drawMeasure(to: location(t))
     case .compass: compassMoved(location(t))
+    case .shape: shapeMoved(location(t))
     }
   }
 
@@ -390,6 +394,7 @@ extension QuillCanvasView {
     case .laser: laserDown = false
     case .measure: finishMeasure(at: location(t))
     case .compass: compassEnded()
+    case .shape: shapeEnded()
     case .comment: if t.type != .direct { tappedForComment(at: location(t)) }   // a finger tap arrives by its own route
     }
     letPageMove()
@@ -673,6 +678,16 @@ extension QuillCanvasView {
 
   private var eraserRadius: CGFloat { eraserWidth / 2 / max(0.2, canvas.zoomScale / max(0.05, currentFit())) }
 
+  private func insideOutline(_ pts: [InkPoint], _ p: CGPoint) -> Bool {
+    var inside = false
+    let x = Float(p.x), y = Float(p.y)
+    for i in pts.indices {
+      let a = pts[i], b = pts[(i + 1) % pts.count]
+      if (a.y <= y) != (b.y <= y), x < a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x) { inside.toggle() }
+    }
+    return inside
+  }
+
   private func beginErase(_ p: CGPoint) {
     eraseLast = p
     eraseRemoved = []
@@ -694,6 +709,10 @@ extension QuillCanvasView {
     eraseTape(at: p, radius: radius)
     for s in document.strokes {
       if eraserMode == "hl" && s.kind != .marker { continue }
+      if s.kind == .fill {
+        if s.bounds.contains(p) && insideOutline(s.pts, p) { gone.append(s) }
+        continue
+      }
       guard let left = s.erased(from: from, to: p, radius: radius) else { continue }
       gone.append(s)
       if eraserMode != "stroke" { parts.append(contentsOf: left) }   // "stroke": the whole line goes
@@ -921,10 +940,12 @@ extension QuillCanvasView {
       tapeHost.layer.addSublayer(compassLayer)
       compassLayer.addSublayer(compassGuide)
       compassLayer.addSublayer(compassArms)
+      compassLayer.addSublayer(compassDots)
+      compassDots.fillColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
       compassLayer.addSublayer(compassLabel)
       compassGuide.fillColor = nil
       compassGuide.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 0.35).cgColor
-      compassArms.fillColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      compassArms.fillColor = nil
       compassArms.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
       compassLabel.alignmentMode = .center
       compassLabel.foregroundColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
@@ -945,16 +966,18 @@ extension QuillCanvasView {
     let arms = UIBezierPath()
     let mid = CGPoint(x: (c.x + tip.x) / 2, y: (c.y + tip.y) / 2)
     let lift = max(r * 0.55, 34 * k)
-    let side: CGFloat = sin(compassAngle) > 0 ? -1 : 1      // the hinge stays on the upper side
-    let hinge = CGPoint(x: mid.x - sin(compassAngle) * lift * -side, y: mid.y + cos(compassAngle) * lift * side)
+    var nx = -sin(compassAngle), ny = cos(compassAngle)
+    if ny > 0 { nx = -nx; ny = -ny }                       // the hinge stays on the upper side
+    let hinge = CGPoint(x: mid.x + nx * lift, y: mid.y + ny * lift)
+    let dots = UIBezierPath(arcCenter: c, radius: 4.5 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true)
     if r > 1 {
       arms.move(to: c); arms.addLine(to: hinge); arms.addLine(to: tip)
-      arms.append(UIBezierPath(arcCenter: hinge, radius: 4 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
-      arms.append(UIBezierPath(arcCenter: tip, radius: 6 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
+      dots.append(UIBezierPath(arcCenter: hinge, radius: 4 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
+      dots.append(UIBezierPath(arcCenter: tip, radius: 6 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
     }
-    arms.append(UIBezierPath(arcCenter: c, radius: 4.5 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
     compassArms.lineWidth = 1.5 * k
     compassArms.path = arms.cgPath
+    compassDots.path = dots.cgPath
 
     let inches = r / 72
     compassLabel.isHidden = r < 8
@@ -964,5 +987,95 @@ extension QuillCanvasView {
     compassLabel.contentsScale = UIScreen.main.scale * max(1, canvas.zoomScale)
     let w = 140 * k, h = 20 * k
     compassLabel.frame = CGRect(x: hinge.x - w / 2, y: hinge.y - h - 8 * k, width: w, height: h)
+  }
+}
+
+// MARK: - Shapes
+
+/// The outline of a shape dragged from `a` to `b`. With `lock`, lines keep to 15 degree steps, and
+/// boxes and ellipses are square and round.
+func shapeOutline(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) -> (points: [CGPoint], closed: Bool) {
+  var end = b
+  if lock {
+    if kind == "line" || kind == "arrow" {
+      let step = CGFloat.pi / 12
+      let angle = (atan2(b.y - a.y, b.x - a.x) / step).rounded() * step
+      let length = hypot(b.x - a.x, b.y - a.y)
+      end = CGPoint(x: a.x + cos(angle) * length, y: a.y + sin(angle) * length)
+    } else {
+      let side = max(abs(b.x - a.x), abs(b.y - a.y))
+      end = CGPoint(x: a.x + (b.x >= a.x ? side : -side), y: a.y + (b.y >= a.y ? side : -side))
+    }
+  }
+  let box = CGRect(x: min(a.x, end.x), y: min(a.y, end.y), width: abs(end.x - a.x), height: abs(end.y - a.y))
+  switch kind {
+  case "arrow":
+    let angle = atan2(end.y - a.y, end.x - a.x)
+    let head = min(26, hypot(end.x - a.x, end.y - a.y) * 0.3)
+    let left = CGPoint(x: end.x - cos(angle - 0.5) * head, y: end.y - sin(angle - 0.5) * head)
+    let right = CGPoint(x: end.x - cos(angle + 0.5) * head, y: end.y - sin(angle + 0.5) * head)
+    return (ShapeSnap.dense([a, end, left, end, right]), false)
+  case "rect":
+    let pts = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.minX, y: box.minY)]
+    return (ShapeSnap.dense(pts), true)
+  case "triangle":
+    let pts = [CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.midX, y: box.minY)]
+    return (ShapeSnap.dense(pts), true)
+  case "ellipse":
+    let n = max(24, Int((box.width + box.height) / 3))
+    return ((0...n).map { i in
+      let t = CGFloat(i) / CGFloat(n) * 2 * .pi
+      return CGPoint(x: box.midX + cos(t) * box.width / 2, y: box.midY + sin(t) * box.height / 2)
+    }, true)
+  default:
+    return (ShapeSnap.dense([a, end]), false)
+  }
+}
+
+extension QuillCanvasView {
+  private func shapeInk(_ pts: [CGPoint]) -> [InkPoint] {
+    let look = pen.shape(p: 0.5, dirX: 1, dirY: 0, altitude: .pi / 2)
+    return pts.map { InkPoint(x: Float($0.x), y: Float($0.y), r: look.r, a: look.a) }
+  }
+
+  func shapeBegan(_ p: CGPoint) {
+    guard let page = frames.first(where: { $0.contains(p) }) else { return }
+    shapeStart = p
+    shapePage = page
+    shapePoints = []
+    capture = PenCapture(pen: pen, seq: document.nextSeq(), zoom: canvas.zoomScale, at: p, time: CACurrentMediaTime())
+    ink.wet = capture?.wet
+    ink.penDown()
+  }
+
+  func shapeMoved(_ p: CGPoint) {
+    guard let c = capture else { return }
+    let end = CGPoint(x: min(shapePage.maxX, max(shapePage.minX, p.x)), y: min(shapePage.maxY, max(shapePage.minY, p.y)))
+    shapePoints = shapeOutline(shapeKind, from: shapeStart, to: end, lock: shapeLock).points
+    c.wet.reset(shapeInk(shapePoints))
+    ink.drawNow()
+  }
+
+  func shapeEnded() {
+    guard let c = capture else { return }
+    capture = nil
+    ink.wet = nil
+    ink.penUp()
+    let box = shapePoints.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
+    guard shapePoints.count > 1, max(box.width, box.height) * canvas.zoomScale > 6 else { ink.setNeedsInk(); return }
+    let closed = shapeKind == "rect" || shapeKind == "ellipse" || shapeKind == "triangle"
+    let now = Date().timeIntervalSince1970
+    var added: [InkStroke] = []
+    if closed && shapeFill {
+      // The outline's own number goes on top, so the fill sits underneath it.
+      added.append(InkStroke(pts: shapePoints.map { InkPoint(x: Float($0.x), y: Float($0.y), r: 0, a: 0.35) }, rgb: pen.rgb, kind: .fill, seq: c.wet.seq, ts: now))
+      added.append(InkStroke(pts: shapeInk(shapePoints), rgb: pen.rgb, kind: pen.kind, seq: document.nextSeq(), ts: now))
+    } else {
+      added.append(InkStroke(pts: shapeInk(shapePoints), rgb: pen.rgb, kind: pen.kind, seq: c.wet.seq, ts: now))
+    }
+    document.apply(removed: [], added: added)
+    record(InkEdit(removed: [], added: added))
+    ink.settle(added)
+    ink.drawNow(finishing: true)
   }
 }

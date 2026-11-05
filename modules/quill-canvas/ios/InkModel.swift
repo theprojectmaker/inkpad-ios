@@ -12,7 +12,7 @@ struct InkPoint {
 }
 
 enum InkKind: UInt32 {
-  case pen = 0, marker = 1, pencil = 2, dash = 3, dot = 4
+  case pen = 0, marker = 1, pencil = 2, dash = 3, dot = 4, fill = 5, spray = 6
 }
 
 final class InkStroke {
@@ -133,10 +133,11 @@ struct InkPen {
   var style = ""       // dash | dot: the same pen, broken into dashes or dots
   var angle: Float = 40    // calligraphy: the nib's slant, in degrees
   var stabilize = false    // calligraphy: a much steadier line
+  var streamline: Float = 0   // 0...1: how much the hand's wobble is smoothed out
 
-  var kind: InkKind { style == "dash" ? .dash : style == "dot" ? .dot : type == "marker" ? .marker : type == "pencil" ? .pencil : .pen }
+  var kind: InkKind { style == "dash" ? .dash : style == "dot" ? .dot : type == "spray" ? .spray : type == "marker" || type == "watercolor" ? .marker : type == "pencil" || type == "crayon" ? .pencil : .pen }
   /// Pens that start thin and grow into the line.
-  var tapers: Bool { type == "pen" || type == "fountain" }
+  var tapers: Bool { type == "pen" || type == "fountain" || type == "brushpen" }
 
   /// Radius and opacity for one moment of the stroke. `p` is pressure 0...1.
   func shape(p: Float, dirX: Float, dirY: Float, altitude: Float) -> (r: Float, a: Float) {
@@ -156,6 +157,20 @@ struct InkPen {
       return (half * (0.7 + 0.5 * p + 2.6 * tilt), max(0.28, min(1, 0.38 + 0.75 * p)) * (1 - 0.4 * tilt))
     case "marker":
       return (half, 0.42)
+    case "brushpen":
+      // A soft brush tip: almost nothing when light, thick when pressed.
+      return (half * (0.08 + 1.9 * pow(p, 1.5)), 1)
+    case "feltTip":
+      return (half * (0.92 + 0.16 * p), 0.95)
+    case "crayon":
+      return (half * (1.3 + 0.5 * p), 0.55 + 0.4 * p)
+    case "chisel":
+      let across = abs(dirX * -sin(Float.pi / 4) + dirY * cos(Float.pi / 4))
+      return (half * (0.18 + 0.82 * across), 1)
+    case "watercolor":
+      return (half * (0.8 + 0.6 * p), 0.28)
+    case "spray":
+      return (half * 2.2, 0.75)
     default:  // the pressure pen: a hairline when light, bold when pressed
       return (half * (0.16 + 1.5 * pow(p, 1.25)), 1)
     }

@@ -26,12 +26,13 @@ struct Ribbon {
   private var walked: Float = 0
   private var lastX: Float = 0, lastY: Float = 0, hasLast = false
   private var nextDot: Float = 0
+  private var speck: UInt32 = 12345
 
   init(stroke rgb: UInt32, kind: InkKind, seq: UInt32) {
     self.rgb = rgb
     self.z = Ribbon.depth(seq)
     self.grain = kind == .pencil ? 1 : 0
-    self.broken = kind == .dash || kind == .dot ? kind : nil
+    self.broken = kind == .dash || kind == .dot || kind == .spray ? kind : nil
   }
 
   static func depth(_ seq: UInt32) -> Float { Float(seq % 16_000_000 + 1) / 16_777_216 }
@@ -42,6 +43,22 @@ struct Ribbon {
     guard let broken else { solid(p, to: &out); return }
     if hasLast { walked += ((p.x - lastX) * (p.x - lastX) + (p.y - lastY) * (p.y - lastY)).squareRoot() }
     lastX = p.x; lastY = p.y; hasLast = true
+    if broken == .spray {
+      // Specks scattered around the line. The same stroke always scatters the same way.
+      if walked >= nextDot {
+        for _ in 0..<6 {
+          speck = speck &* 1664525 &+ 1013904223
+          let angle = Float(speck >> 16) / 65536 * 2 * .pi
+          speck = speck &* 1664525 &+ 1013904223
+          let reach = (Float(speck >> 16) / 65536).squareRoot() * p.r
+          x = p.x + cos(angle) * reach; y = p.y + sin(angle) * reach
+          r = max(0.3, p.r * 0.08); a = p.a
+          disc(to: &out)
+        }
+        nextDot = walked + max(1, p.r * 0.3)
+      }
+      return
+    }
     if broken == .dot {
       // A round dot every so often.
       if walked >= nextDot {
@@ -175,7 +192,44 @@ enum InkMesh {
     curve(pts[max(0, s - 1)], pts[s], pts[s + 1], pts[min(pts.count - 1, s + 2)], ribbon: &ribbon, out: &out)
   }
 
+  /// A filled shape: thin bands across it, so any outline fills correctly, even one that crosses itself.
+  /// The band edges sit under the shape's outline, which is drawn on top.
+  static func filled(_ stroke: InkStroke) -> [Vtx] {
+    let pts = stroke.pts
+    var out: [Vtx] = []
+    guard pts.count >= 3 else { return out }
+    let ys = pts.map(\.y)
+    let lo = ys.min() ?? 0, hi = ys.max() ?? 0
+    let step = max(0.6, (hi - lo) / 1200)
+    let z = Ribbon.depth(stroke.seq)
+    let c = stroke.rgb | UInt32(max(0, min(255, (pts[0].a) * 255 + 0.5))) << 24
+    var y = lo
+    while y < hi {
+      let mid = y + step / 2
+      var xs: [Float] = []
+      for i in 0..<pts.count {
+        let a = pts[i], b = pts[(i + 1) % pts.count]
+        if (a.y <= mid) != (b.y <= mid) { xs.append(a.x + (mid - a.y) / (b.y - a.y) * (b.x - a.x)) }
+      }
+      xs.sort()
+      var k = 0
+      while k + 1 < xs.count {
+        let l = xs[k], r = xs[k + 1], top = y, bottom = y + step
+        out.append(Vtx(x: l, y: top, z: z, c: c, g: 0))
+        out.append(Vtx(x: r, y: top, z: z, c: c, g: 0))
+        out.append(Vtx(x: l, y: bottom, z: z, c: c, g: 0))
+        out.append(Vtx(x: l, y: bottom, z: z, c: c, g: 0))
+        out.append(Vtx(x: r, y: top, z: z, c: c, g: 0))
+        out.append(Vtx(x: r, y: bottom, z: z, c: c, g: 0))
+        k += 2
+      }
+      y += step
+    }
+    return out
+  }
+
   static func triangles(_ stroke: InkStroke) -> [Vtx] {
+    if stroke.kind == .fill { return filled(stroke) }
     var out: [Vtx] = []
     out.reserveCapacity(stroke.pts.count * 18 + 120)
     var ribbon = Ribbon(stroke: stroke.rgb, kind: stroke.kind, seq: stroke.seq)

@@ -2,7 +2,8 @@
 // (tests/quill-study, a Cloudflare Pages function that holds the model keys).
 import * as ImageManipulator from 'expo-image-manipulator';
 
-import { askLocal, pageText, shrinkImage } from './ondevice';
+import { offlineAction, offlineAnswer, offlineCards, offlineQuiz, offlineSummary } from './offline-study';
+import { askLocal, localAIStatus, pageText, shrinkImage } from './ondevice';
 
 const ENDPOINT = 'https://quill-study.pages.dev/api/ai';
 // Keeps random traffic off the endpoint. It is not in the (public) code: builds get it
@@ -73,26 +74,49 @@ const OFFLINE: Record<Exclude<AiTask, 'clean'>, string> = {
 
 const jsonIn = (s: string) => { const a = s.indexOf('{'), b = s.lastIndexOf('}'); if (a < 0 || b <= a) return null; try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; } };
 
+const NO_RULES = 'Not enough writing on this page to make that from.';
+
+/** No AI to ask: what can be worked out from the words on the page alone. It says so in what it returns. */
+function byRules(task: Exclude<AiTask, 'clean'>, notes: string, extra: { question?: string; action?: string }) {
+  const note = '_Made offline from the words on your page._\n\n';
+  if (task === 'flashcards') {
+    const data = offlineCards(notes);
+    if (!data.cards.length) throw new Error(NO_RULES);
+    return { data, offline: true };
+  }
+  if (task === 'quiz') {
+    const data = offlineQuiz(notes);
+    if (!data.questions.length) throw new Error(NO_RULES);
+    return { data, offline: true };
+  }
+  if (extra.action === 'verbatim') return { text: notes, offline: true };
+  if (task === 'summary' || task === 'explain') return { text: note + offlineSummary(notes), offline: true };
+  if (extra.action) return { text: note + offlineAction(extra.action, notes), offline: true };
+  return { text: note + offlineAnswer(extra.question ?? '', notes), offline: true };
+}
+
 /**
- * The study AI. `pages` are pictures of the pages (file:// uris). With internet it
- * uses Quill's AI (it reads the pictures); with none, the iPad reads the writing
- * itself and Apple's on-device model answers.
+ * The study AI. `pages` are pictures of the pages (file:// uris). It always tries, in this order:
+ * Quill's AI online (it reads the pictures); Apple's model on the iPad, with the iPad reading the
+ * writing itself; and rules that work from the words on the page, on any iPad with no internet.
  */
-export async function askStudy(task: Exclude<AiTask, 'clean'>, pages: string[], extra: { question?: string; history?: { role: 'user' | 'assistant'; text: string }[] } = {}): Promise<{ text?: string; data?: any; offline?: boolean }> {
+export async function askStudy(task: Exclude<AiTask, 'clean'>, pages: string[], extra: { question?: string; action?: string; history?: { role: 'user' | 'assistant'; text: string }[] } = {}): Promise<{ text?: string; data?: any; offline?: boolean }> {
   if (await aiOnline()) {
     try { return await askAi(task, await Promise.all(pages.map((u) => imageDataUrl(u, 1600))), extra); }
-    catch (e) { if (!/No internet|took too long|didn't answer \(5/i.test(String((e as Error)?.message))) throw e; reach = { ok: false, at: Date.now() }; }
+    catch { reach = { ok: false, at: Date.now() }; }   // whatever went wrong online, carry on offline
   }
   const texts = await Promise.all(pages.map((u) => pageText(u).catch(() => '')));
   const notes = texts.map((t, i) => (pages.length > 1 ? `--- Page ${i + 1} ---\n` : '') + t).join('\n\n').trim();
   if (!notes) throw new Error("Couldn't find any writing to read on this page.");
-  const chat = (extra.history ?? []).slice(-6).map((m) => `${m.role === 'user' ? 'Student' : 'You'}: ${m.text}`).join('\n');
-  const prompt = `NOTES:\n${notes}\n\n${chat ? chat + '\n' : ''}${extra.question ? `Student: ${extra.question}\n` : ''}`;
-  const out = await askLocal(`${OFFLINE_RULES}\n\n${OFFLINE[task]}`, prompt);
-  if (task === 'flashcards' || task === 'quiz') {
-    const data = jsonIn(out);
-    if (!data) throw new Error("The offline AI's answer came out garbled. Try again.");
-    return { data, offline: true };
+  if (localAIStatus() === 'ready') {
+    try {
+      const chat = (extra.history ?? []).slice(-6).map((m) => `${m.role === 'user' ? 'Student' : 'You'}: ${m.text}`).join('\n');
+      const prompt = `NOTES:\n${notes}\n\n${chat ? chat + '\n' : ''}${extra.question ? `Student: ${extra.question}\n` : ''}`;
+      const out = await askLocal(`${OFFLINE_RULES}\n\n${OFFLINE[task]}`, prompt);
+      if (task !== 'flashcards' && task !== 'quiz') return { text: out, offline: true };
+      const data = jsonIn(out);
+      if (data) return { data, offline: true };
+    } catch {}
   }
-  return { text: out, offline: true };
+  return byRules(task, notes, extra);
 }

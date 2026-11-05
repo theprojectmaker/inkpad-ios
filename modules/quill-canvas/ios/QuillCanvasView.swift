@@ -14,6 +14,7 @@ struct ToolSpec: Record {
   @Field var stabilize: Bool = false
   @Field var italic: Bool = false
   @Field var underline: Bool = false
+  @Field var streamline: Double = 0
 }
 
 struct LegacyStroke: Record {
@@ -119,6 +120,13 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   lazy var formatBar: UIView = makeFormatBar()
   var zoomWriter: ZoomWriter?
   var zoomPreviewing = false
+  var shapeKind = "line"
+  var shapeLock = false
+  var shapeFill = false
+  var shapeStart = CGPoint.zero
+  var shapePage = CGRect.infinite
+  var shapePoints: [CGPoint] = []
+  let compassDots = CAShapeLayer()
   var angleVertex = CGPoint.zero
   var angleArmA: CGPoint?
   var angleArmB: CGPoint?
@@ -449,7 +457,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     dragStartOffset = canvas.contentOffset
-    if fingerDraws || inkMode == .compass { inkGesture.fingerGesturing() }
+    if fingerDraws || inkMode == .compass || inkMode == .shape { inkGesture.fingerGesturing() }
     ink.moving = true
     syncInk()
   }
@@ -703,6 +711,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   /// The app's own toolbar picks the tool.
   func setTool(_ t: ToolSpec) {
+    compassLayer.isHidden = true
     let w = CGFloat(t.width)
     setTextMode(t.kind == "text")
     if t.kind == "text" {
@@ -724,7 +733,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     canvas.panGestureRecognizer.allowedTouchTypes = scrollers.map { NSNumber(value: $0.rawValue) }
     updatePanFingers()
     if handMode { clearSelection(); selTap.isEnabled = false; return }
-    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : t.kind == "measure" ? .measure : t.kind == "compass" ? .compass : .write
+    let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : t.kind == "measure" ? .measure : t.kind == "compass" ? .compass : t.kind == "shape" ? .shape : .write
     if mode != .lasso { clearSelection() }
     inkMode = mode
     applyFingerRules()
@@ -736,7 +745,16 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if mode == .laser { laserColor = UIColor(hex: t.color) }
     if mode == .measure { measureMode = t.mode } else { measureLayer.path = nil }
     if mode != .measure || t.mode != "angle" { angleLabel.isHidden = true; angleArmA = nil; angleArmB = nil }
-    if mode == .write || mode == .compass { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: t.mode, angle: Float(t.angle), stabilize: t.stabilize) }
+    if mode == .shape {
+      let parts = t.mode.split(separator: ",").map(String.init)
+      shapeKind = parts.first ?? "line"
+      shapeLock = parts.contains("lock")
+      shapeFill = parts.contains("fill")
+    }
+    if mode == .write || mode == .compass || mode == .shape {
+      let exact = mode != .write    // drawn geometry: an even line, no dashes from the pen's mode
+      pen = InkPen(type: exact ? "monoline" : t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: exact ? "" : t.mode, angle: Float(t.angle), stabilize: t.stabilize, streamline: Float(t.streamline))
+    }
   }
 
   func setFingerDraws(_ on: Bool) {
@@ -746,13 +764,13 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   /// The compass works with a finger as well as the Pencil, whatever the writing setting is.
   private func applyFingerRules() {
-    let finger = fingerDraws || inkMode == .compass
+    let finger = fingerDraws || inkMode == .compass || inkMode == .shape
     inkGesture.allowedTouchTypes = (finger ? [UITouch.TouchType.pencil, .direct] : [UITouch.TouchType.pencil]).map { NSNumber(value: $0.rawValue) }
     updatePanFingers()
   }
 
   /// When a finger writes, scrolling takes two (except while typing).
-  func updatePanFingers() { canvas.panGestureRecognizer.minimumNumberOfTouches = (fingerDraws || inkMode == .compass) && !textMode && !handMode ? 2 : 1 }
+  func updatePanFingers() { canvas.panGestureRecognizer.minimumNumberOfTouches = (fingerDraws || inkMode == .compass || inkMode == .shape) && !textMode && !handMode ? 2 : 1 }
 
   // MARK: - Export
 

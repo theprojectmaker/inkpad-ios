@@ -1,0 +1,75 @@
+# Shapes, fill, brushes, and the toolbar on each edge.
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- tapOn: { text: "Settings" }
+- extendedWaitUntil: { visible: "Draw with finger", timeout: 15000, optional: true }
+- tapOn: { text: "Draw with finger", optional: true }
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "New" }
+- tapOn: { text: "Note" }
+- extendedWaitUntil: { visible: "More tools", timeout: 20000 }
+- waitForAnimationToEnd
+- tapOn: { text: "More tools" }
+- tapOn: { text: "Shapes" }
+- waitForAnimationToEnd
+- takeScreenshot: d01-shape-tool
+- tapOn: { text: "Rectangle" }
+- swipe: { start: "15%, 20%", end: "40%, 35%", duration: 700 }
+- tapOn: { text: "Circle" }
+- tapOn: { text: "Fill shapes" }
+- swipe: { start: "55%, 20%", end: "85%, 35%", duration: 700 }
+- tapOn: { text: "Triangle" }
+- swipe: { start: "15%, 42%", end: "40%, 58%", duration: 700 }
+- tapOn: { text: "Arrow" }
+- tapOn: { text: "Fill shapes" }
+- tapOn: { text: "Lock angles and sides" }
+- swipe: { start: "55%, 45%", end: "85%, 57%", duration: 700 }
+- waitForAnimationToEnd
+- takeScreenshot: d02-shapes
+- tapOn: { text: "Brushes" }
+- waitForAnimationToEnd
+- swipe: { start: "10%, 66%", end: "90%, 66%", duration: 800 }
+- tapOn: { text: "Brush pen", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: d03-brush-menu
+- tapOn: { text: "Spray", optional: true }
+- swipe: { start: "10%, 72%", end: "90%, 72%", duration: 800 }
+- waitForAnimationToEnd
+- takeScreenshot: d04-spray
+- tapOn: { text: "Back to the main tools" }
+- tapOn: { text: "Lasso" }
+- tapOn: { text: "Boxed", optional: true }
+- swipe: { start: "10%, 15%", end: "45%, 38%", duration: 700 }
+- waitForAnimationToEnd
+- takeScreenshot: d05-selected
+- tapOn: { text: "Style", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Fill", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: d06-fill-popover
+- tapOn: { point: "40%, 72%", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Close style", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: d07-filled
+- tapOn: { text: "Pen" }
+- tapOn: { text: "More tools" }
+- tapOn: { text: "Toolbox settings" }
+- waitForAnimationToEnd
+- tapOn: { text: "Toolbar on the left" }
+- tapOn: { text: "Done with toolbox" }
+- waitForAnimationToEnd
+- takeScreenshot: d08-left
+- tapOn: { text: "Toolbox settings" }
+- tapOn: { text: "Toolbar on the bottom" }
+- tapOn: { text: "Done with toolbox" }
+- waitForAnimationToEnd
+- takeScreenshot: d09-bottom
+- tapOn: { text: "Toolbox settings" }
+- tapOn: { text: "Toolbar on the right" }
+- tapOn: { text: "Done with toolbox" }
+- waitForAnimationToEnd
+- takeScreenshot: d10-right

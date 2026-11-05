@@ -85,7 +85,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
     if (saved.more?.[id] && !again) return;
     setBusy(true); setErr('');
     try {
-      const r = await askStudy('ask', await pageImages(), { question: `${a.ask} Use as much length as this needs.` });
+      const r = await askStudy('ask', await pageImages(), { question: `${a.ask} Use as much length as this needs.`, action: a.id });
       keep({ more: { ...saved.more, [id]: r.text ?? '' } });
     } catch (e) { setErr(String((e as Error)?.message ?? e)); }
     finally { setBusy(false); }

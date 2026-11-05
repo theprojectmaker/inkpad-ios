@@ -122,7 +122,7 @@ export default function Editor() {
   const { width } = useWindowDimensions();
   const tool = useMemo(() => currentTool(s),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady, s.measureMode]);
+    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady, s.measureMode, s.brushType, s.shapeType, s.shapeLock, s.shapeFill, s.streamline]);
   const [menu, setMenu] = useState(false);
   const [opts, setOpts] = useState(false);     // the picked pen's options card (tap the pen again)
   const [sidebar, setSidebar] = useState(false);
@@ -600,7 +600,7 @@ export default function Editor() {
           const question = kind === 'math'
             ? 'Copy this handwritten math exactly as typed text, using plain Unicode math symbols like ², √, ×, ÷, π. Only the math, nothing else.'
             : 'Read this handwritten function and give only the equation to graph, written like y = x^2 + 1. Nothing else.';
-          out = (await askStudy('ask', ['file://' + path], { question })).text?.trim() ?? '';
+          out = (await askStudy('ask', ['file://' + path], { question, action: 'verbatim' })).text?.trim() ?? '';
         }
         setConvert({ kind, busy: false, text: out || "Couldn't read any writing there." });
       } catch (err) { setConvert({ kind, busy: false, text: String((err as Error)?.message ?? err) }); }
@@ -700,7 +700,7 @@ export default function Editor() {
       {!focus ? (
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
-            onRuler={setRuler} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
+            onRuler={setRuler} raised={audioOpen} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
           <View style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 2, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
             <TopBtn icon="back" label="Back to notes" onPress={back} />
             {tabs.length > 1 ? <TopBtn icon="tabs" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} /> : null}
@@ -731,7 +731,8 @@ export default function Editor() {
         </View>
       )}
       {selStyle ? <StylePopover color={selStyle.color} width={selStyle.width} onClose={() => setSelStyle(null)}
-        onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')} /> : null}
+        onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')}
+        onFill={async (c) => { const n = await canvas.current?.fillSelection(c); if (c && !n) toast("That shape isn't closed. Join its ends, then fill it."); }} /> : null}
       <MenuSheet topRight visible={menu} onClose={() => setMenu(false)} items={[
         { group: 1, label: 'Share settings', sub: meta?.link ? 'Link is on' : undefined, icon: 'person.badge.plus', onPress: () => setShareOpen(true) },
         { group: 1, label: 'Quick export', sub: 'PDF, All pages', icon: 'square.and.arrow.up', onPress: share },

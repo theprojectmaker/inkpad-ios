@@ -587,6 +587,40 @@ extension QuillCanvasView {
     onSelectionAction(["action": "style", "text": String(format: "#%02X%02X%02X", rgb & 255, rgb >> 8 & 255, rgb >> 16 & 255), "width": Double(total / Float(n)) * 2])
   }
 
+  /// From the Style popover: fills the closed shapes in the selection. No colour takes fills away.
+  /// Says how many shapes it filled.
+  func fillSelection(color: String) -> Int {
+    commitSelection()
+    let old = selection
+    guard !old.isEmpty else { return 0 }
+    let lines = old.filter { $0.kind != .fill }
+    var new: [InkStroke] = []
+    var count = 0
+    if color.isEmpty {
+      new = lines
+    } else {
+      let rgb = UIColor(hex: color).inkRGB
+      for s in lines {
+        guard let a = s.pts.first, let b = s.pts.last, s.pts.count >= 4 else { new.append(s); continue }
+        let reach = max(24, min(s.bounds.width, s.bounds.height) * 0.2)
+        guard CGFloat(hypot(a.x - b.x, a.y - b.y)) <= reach, min(s.bounds.width, s.bounds.height) > 2 else { new.append(s); continue }
+        // Fill first, then the same line with a later number, so the line stays on top.
+        new.append(InkStroke(pts: s.pts.map { InkPoint(x: $0.x, y: $0.y, r: 0, a: 1) }, rgb: rgb, kind: .fill, seq: document.nextSeq(), ts: s.ts))
+        new.append(InkStroke(pts: s.pts, rgb: s.rgb, kind: s.kind, seq: document.nextSeq(), ts: s.ts))
+        count += 1
+      }
+      if count == 0 { return 0 }
+    }
+    document.apply(removed: old, added: new)
+    selection = new
+    new.forEach { $0.lifted = true }
+    ink.lifted = new
+    finishObjects(removed: old, added: new)
+    ink.setNeedsInk(rebuild: true)
+    placeSelectionUI()
+    return count
+  }
+
   /// From the Style popover. Empty or zero leaves that part as it is.
   func styleSelection(color: String, width: Double, style: String) {
     commitSelection()
@@ -599,6 +633,7 @@ extension QuillCanvasView {
         let k = Float(width / 2) / max(0.05, avg)
         pts = pts.map { InkPoint(x: $0.x, y: $0.y, r: $0.r * k, a: $0.a) }
       }
+      if s.kind == .fill { return InkStroke(pts: pts, rgb: rgb ?? s.rgb, kind: .fill, seq: s.seq, ts: s.ts) }
       var kind = s.kind
       if style == "dash" { kind = .dash } else if style == "dot" { kind = .dot } else if !style.isEmpty && (s.kind == .dash || s.kind == .dot) { kind = .pen }
       return InkStroke(pts: pts, rgb: rgb ?? s.rgb, kind: kind, seq: s.seq, ts: s.ts)

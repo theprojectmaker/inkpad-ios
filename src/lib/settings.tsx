@@ -52,11 +52,17 @@ export type Settings = {
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
   inkStats?: boolean;        // numbers on the page: how fast the ink is
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
+  toolDock?: 'top' | 'bottom' | 'left' | 'right';   // which edge of the screen the toolbar sits on
+  brushType?: 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray';
+  shapeType?: 'line' | 'arrow' | 'rect' | 'ellipse' | 'triangle';
+  shapeLock?: boolean;       // lines to 15 degree steps, square boxes, round circles
+  shapeFill?: boolean;
+  streamline?: number;       // 0 to 1: how much pens smooth the hand's wobble
   scribble?: boolean;        // Pencil handwriting in a text box turns into typing (on unless turned off)
   scheduleUnlocked?: boolean;   // the real Studento schedule, linked with a code
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };
-export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment' | 'measure' | 'compass';
+export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment' | 'measure' | 'compass' | 'shape' | 'brush';
 export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
 /** What each tool remembers: its colours, three sizes (1-12) and line style. */
 export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: number; line: PenLine };

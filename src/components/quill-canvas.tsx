@@ -27,6 +27,7 @@ export type CanvasHandle = {
   pageIsEmpty(index: number): Promise<boolean>;
   resizePage(index: number, delta: number): Promise<void>;
   styleSelection(color: string, width: number, style: string): Promise<void>;
+  fillSelection(color: string): Promise<number>;
   setComment(id: string, text: string): Promise<void>;
   replaceSelection(text: string): Promise<void>;
   addPageText(page: number, text: string): Promise<void>;
@@ -43,8 +44,8 @@ export type CanvasHandle = {
   setReplay(cut: number, from: number, to: number): Promise<void>;
 };
 
-export type ToolKind = 'compass' | 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
-export type CanvasTool = { kind: ToolKind; color: string; width: number; mode?: string; bold?: boolean; angle?: number; stabilize?: boolean; italic?: boolean; underline?: boolean };
+export type ToolKind = 'shape' | 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray' | 'compass' | 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
+export type CanvasTool = { kind: ToolKind; color: string; width: number; streamline?: number; mode?: string; bold?: boolean; angle?: number; stabilize?: boolean; italic?: boolean; underline?: boolean };
 
 type Props = ViewProps & {
   pages: CanvasPage[];
