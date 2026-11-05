@@ -458,8 +458,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     dragStartOffset = canvas.contentOffset
     if fingerDraws || inkMode == .compass || inkMode == .shape { inkGesture.fingerGesturing() }
-    ink.moving = true
-    syncInk()
+    ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale)
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -471,7 +470,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   /// The page has stopped: the ink goes back to covering just the screen.
   func settleInk() {
     guard ink.moving else { return }
-    ink.moving = false
+    ink.endMoving()
     syncInk()
   }
 

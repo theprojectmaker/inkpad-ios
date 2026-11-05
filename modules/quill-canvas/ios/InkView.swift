@@ -2,6 +2,7 @@
 // so each new frame only adds the stroke being written; a frame goes out as soon as
 // the Pencil moves. Sits inside the scroll view, covering just the visible part.
 import Metal
+import IOSurface
 import QuartzCore
 import UIKit
 
@@ -243,10 +244,18 @@ final class InkView: UIView {
   private var padOrigin: CGPoint?
   private var pageFrameQueued = false
   var paused = false            // pinching: the pages carry a picture of the ink instead
-  /// The page is being dragged. The ink then covers more than the screen and rides along with the
-  /// pages, so nothing has to be redrawn in step with them; it only catches up now and then.
-  var moving = false
-  private var pending: (rect: CGRect, zoom: CGFloat)?
+  /// The page is being dragged. The ink is then a finished picture sitting with the pages (a plain
+  /// layer, so it moves exactly as they do), bigger than the screen, and replaced as it's scrolled off.
+  private(set) var moving = false
+  private let plate = CALayer()
+  private var plateRect = CGRect.null
+  private var plateReady = false       // on screen, in place of the Metal ink
+  private var plateBusy = false
+  private var plateRun = 0
+  private var plateSurfaces: [(texture: MTLTexture, surface: IOSurfaceRef)] = []
+  private var plateMSAA: MTLTexture?, plateDepth: MTLTexture?
+  private var plateSize = (w: 0, h: 0)
+  private var plateNext = 0
   private var onShown: (() -> Void)?   // once the first frame after a pinch reaches the screen
 
   init(document: InkDocument) {
@@ -270,7 +279,7 @@ final class InkView: UIView {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window == nil { penUp() } else { matchScreen(); setNeedsInk(rebuild: true) }
+    if window == nil { penUp(); plateSurfaces = []; plateSize = (0, 0); plateMSAA = nil; plateDepth = nil } else { matchScreen(); setNeedsInk(rebuild: true) }
   }
 
   // MARK: - The zoom window
@@ -320,24 +329,153 @@ final class InkView: UIView {
 
   /// The scroll position or zoom moved: keep up in this very frame.
   func scrolled(to visible: CGRect, zoom z: CGFloat) {
-    var target = visible
+    if moving {
+      // Waiting for the first picture: the ink is a subview of the scroll view, so it's riding along already.
+      if !plateReady { return }
+      if !plateRect.insetBy(dx: 0, dy: visible.height * 0.15).contains(visible) { renderPlate(around: visible, zoom: z) }
+    }
     let now = CGRect(x: center.x - bounds.width / 2, y: center.y - bounds.height / 2, width: bounds.width, height: bounds.height)
-    if moving && zoom == z {
-      // Still covered, with some to spare: the pages and the ink are moving as one.
-      let spare = visible.height * 0.1
-      if pending == nil && now.width > visible.width - 1 && now.contains(visible.insetBy(dx: 0, dy: -spare)) { return }
-      let wide = ((superview as? UIScrollView)?.contentSize.width ?? 0) > visible.width + 1
-      target = visible.insetBy(dx: wide ? -visible.width * 0.25 : 0, dy: -visible.height * 0.6)
-    }
-    if pending == nil && now == target && zoom == z { return }
+    if now == visible && zoom == z { return }
     settledDirty = true
-    if paused || target.size != bounds.size {
-      pending = nil
-      place(target, z)
-    } else {
-      pending = (target, z)   // moves in the same frame that has the ink drawn for it
-    }
+    place(visible, z)
     if !paused { queuePageFrame() }
+  }
+
+  /// The page has started moving.
+  func beginMoving(visible: CGRect, zoom z: CGFloat) {
+    guard gpu != nil, !moving else { return }
+    moving = true
+    renderPlate(around: visible, zoom: z)
+  }
+
+  /// The page has stopped. The sharp ink goes back on, and only once it's really on the screen does
+  /// the picture go. If they overlap for a frame they're in the same place, so it can't be seen to jump.
+  func endMoving() {
+    guard moving else { return }
+    moving = false
+    plateRun += 1
+    plateBusy = false
+    guard plateReady else { return }
+    plateReady = false
+    let run = plateRun
+    resume { [weak self] in self?.hidePlate(run) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.hidePlate(run) }
+  }
+
+  /// A pinch has its own pictures on the pages.
+  func dropPlate() {
+    moving = false
+    plateRun += 1
+    plateBusy = false
+    plateReady = false
+    hidePlate(plateRun)
+  }
+
+  private func hidePlate(_ run: Int) {
+    guard run == plateRun, !moving else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    plate.isHidden = true
+    plate.contents = nil
+    CATransaction.commit()
+  }
+
+  private func makePlateTargets(w: Int, h: Int) -> Bool {
+    if plateSize.w == w && plateSize.h == h && plateSurfaces.count == 2 { return true }
+    plateSurfaces = []
+    guard let gpu else { return false }
+    for _ in 0..<2 {
+      let props: [String: Any] = [
+        kIOSurfaceWidth as String: w, kIOSurfaceHeight as String: h, kIOSurfaceBytesPerElement as String: 4,
+        kIOSurfacePixelFormat as String: 0x4247_5241,   // 'BGRA'
+      ]
+      guard let surface = IOSurfaceCreate(props as CFDictionary) else { plateSurfaces = []; return false }
+      let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+      d.usage = [.renderTarget, .shaderRead]
+      d.storageMode = .shared
+      guard let t = gpu.device.makeTexture(descriptor: d, iosurface: surface, plane: 0) else { plateSurfaces = []; return false }
+      plateSurfaces.append((t, surface))
+    }
+    func extra(_ format: MTLPixelFormat, _ usage: MTLTextureUsage) -> MTLTexture? {
+      let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: w, height: h, mipmapped: false)
+      d.textureType = .type2DMultisample
+      d.sampleCount = gpu.samples
+      d.usage = usage
+      d.storageMode = .private
+      #if !targetEnvironment(simulator)
+      d.storageMode = .memoryless
+      #endif
+      return gpu.device.makeTexture(descriptor: d)
+    }
+    plateMSAA = extra(.bgra8Unorm, [.renderTarget])
+    plateDepth = extra(.depth32Float, [.renderTarget])
+    plateSize = (w, h)
+    return plateMSAA != nil && plateDepth != nil
+  }
+
+  /// Draws off screen, and only when that's completely finished does the picture appear or change.
+  private func renderPlate(around visible: CGRect, zoom z: CGFloat) {
+    guard !plateBusy, let gpu, let cmd = gpu.queue.makeCommandBuffer() else { return }
+    let scale = contentScaleFactor
+    let wide = ((superview as? UIScrollView)?.contentSize.width ?? 0) > visible.width + 1
+    let limit = CGFloat(8192) / scale
+    let rect = visible.insetBy(dx: wide ? -min(visible.width * 0.25, (limit - visible.width) / 2) : 0, dy: -min(visible.height * 0.6, (limit - visible.height) / 2))
+    guard makePlateTargets(w: Int(rect.width * scale), h: Int(rect.height * scale)), let msaa = plateMSAA, let depth = plateDepth else { return }
+    plateBusy = true
+    plateNext = (plateNext + 1) % 2
+    let target = plateSurfaces[plateNext]
+    let run = plateRun
+    let view = ViewUniform(m: SIMD4(1, 0, 0, 1), t: SIMD2(0, 0),
+                           s: SIMD2(2 * Float(z) / Float(rect.width), -2 * Float(z) / Float(rect.height)),
+                           o: SIMD2(-1 - 2 * Float(rect.minX) / Float(rect.width), 1 + 2 * Float(rect.minY) / Float(rect.height)),
+                           k: 1)
+    let area = CGRect(x: rect.minX / z, y: rect.minY / z, width: rect.width / z, height: rect.height / z)
+    let strokes = document.strokes.filter { !$0.lifted && $0.bounds.intersects(area) }
+    encode(cmd, msaa, depth, into: target.texture) { enc in
+      if self.replay == nil {
+        self.drawStrokes(strokes, enc, gpu, view)
+      } else {
+        self.drawStrokes(strokes.filter { !self.isLater($0) }, enc, gpu, view)
+        var faint = view
+        faint.k = 0.16
+        self.drawStrokes(strokes.filter { self.isLater($0) }, enc, gpu, faint)
+      }
+      if !self.lifted.isEmpty {
+        var moved = view
+        let t = self.liftedTransform
+        moved.m = SIMD4(Float(t.a), Float(t.b), Float(t.c), Float(t.d))
+        moved.t = SIMD2(Float(t.tx), Float(t.ty))
+        self.drawStrokes(self.lifted, enc, gpu, moved)
+      }
+    }
+    cmd.addCompletedHandler { [weak self] _ in
+      DispatchQueue.main.async {
+        guard let self, run == self.plateRun, self.moving else { return }
+        self.plateBusy = false
+        self.showPlate(target.surface, rect)
+      }
+    }
+    cmd.commit()
+  }
+
+  private func showPlate(_ surface: IOSurfaceRef, _ rect: CGRect) {
+    if plate.superlayer == nil, let host = layer.superlayer {
+      plate.contentsGravity = .resize
+      plate.zPosition = layer.zPosition
+      host.insertSublayer(plate, below: layer)
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    plate.frame = rect
+    plate.contents = surface
+    plate.isHidden = false
+    CATransaction.commit()
+    plateRect = rect
+    if !plateReady {
+      // The picture's up: now the Metal ink can be cleared. Until then both are there, in the same place.
+      plateReady = true
+      blank()
+    }
   }
 
   private func place(_ r: CGRect, _ z: CGFloat) {
@@ -482,10 +620,6 @@ final class InkView: UIView {
       }
       return
     }
-    if let p = pending {
-      pending = nil
-      place(p.rect, p.zoom)
-    }
     let view = uniform(.identity)
     let shown = paused ? nil : onShown
     if !paused { onShown = nil }
@@ -531,6 +665,7 @@ final class InkView: UIView {
     // The simulator can't report when a frame reaches the screen.
     cmd.addCompletedHandler { [weak self] _ in
       DispatchQueue.main.async {
+        shown?()
         guard let self else { return }
         self.unshown = max(0, self.unshown - 1)
         if self.framePending { self.drawNow() }
@@ -541,6 +676,7 @@ final class InkView: UIView {
     drawable.addPresentedHandler { [weak self] onScreen in
       let at = onScreen.presentedTime
       DispatchQueue.main.async {
+        shown?()
         guard let self else { return }
         self.unshown = max(0, self.unshown - 1)
         if self.stats.on && input > 0 && at > 0 {
@@ -565,11 +701,9 @@ final class InkView: UIView {
       cmd.commit()
       cmd.waitUntilScheduled()
       drawable.present()
-      shown?()
     } else {
       cmd.present(drawable)
       cmd.commit()
-      shown?()
     }
   }
 
