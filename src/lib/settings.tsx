@@ -55,7 +55,7 @@ export type Settings = {
   scheduleUnlocked?: boolean;   // the real Studento schedule, linked with a code
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };
-export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment' | 'measure';
+export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment' | 'measure' | 'compass';
 export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
 /** What each tool remembers: its colours, three sizes (1-12) and line style. */
 export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: number; line: PenLine };

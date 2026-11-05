@@ -10,7 +10,7 @@ struct InkEdit {
   var objects: (before: InkObjects, after: InkObjects)? = nil
 }
 
-enum InkMode { case write, erase, lasso, tape, laser, comment, measure }
+enum InkMode { case write, erase, lasso, tape, laser, comment, measure, compass }
 
 /// Reports the Pencil (and a finger, if allowed) the instant it touches, with no waiting.
 ///
@@ -360,6 +360,7 @@ extension QuillCanvasView {
     case .laser: laserDown = true; beginLaser(p)
     case .comment: break
     case .measure: measureStart = p
+    case .compass: compassBegan(p)
     }
   }
 
@@ -373,6 +374,7 @@ extension QuillCanvasView {
     case .laser: moveLaser(location(t))
     case .comment: break
     case .measure: drawMeasure(to: location(t))
+    case .compass: compassMoved(location(t))
     }
   }
 
@@ -385,6 +387,7 @@ extension QuillCanvasView {
     case .tape: endTape(location(t))
     case .laser: laserDown = false
     case .measure: finishMeasure(at: location(t))
+    case .compass: compassEnded()
     case .comment: if t.type != .direct { tappedForComment(at: location(t)) }   // a finger tap arrives by its own route
     }
     letPageMove()
@@ -399,6 +402,8 @@ extension QuillCanvasView {
     if inkMode == .lasso { endLasso() }
     if inkMode == .tape { tapeDraft?.removeFromSuperview(); tapeDraft = nil }
     laserDown = false
+    compassGrab = .none
+    drawCompass()
     letPageMove()
   }
 
@@ -734,5 +739,174 @@ extension QuillCanvasView {
     r.center = CGPoint(x: bounds.midX, y: bounds.midY)
     addSubview(r)
     ruler = r
+  }
+}
+
+// MARK: - The compass
+
+enum CompassGrab { case none, needle, leg, arc }
+
+/// Points around a circle, close enough together to look smooth at any zoom up to the maximum.
+func compassPoints(centre c: CGPoint, radius r: CGFloat, from start: CGFloat, sweep: CGFloat) -> [CGPoint] {
+  let n = max(2, Int(ceil(abs(sweep) * max(r, 1) / 1.5)) + 1)
+  return (0..<n).map { i in
+    let a = start + sweep * CGFloat(i) / CGFloat(n - 1)
+    return CGPoint(x: c.x + cos(a) * r, y: c.y + sin(a) * r)
+  }
+}
+
+/// Only what's on the page gets drawn; a circle running off it comes back as separate pieces.
+func compassRuns(_ pts: [CGPoint], inside page: CGRect) -> [[CGPoint]] {
+  var runs: [[CGPoint]] = []
+  var cur: [CGPoint] = []
+  for p in pts {
+    if page.contains(p) { cur.append(p) } else if !cur.isEmpty { runs.append(cur); cur = [] }
+  }
+  if !cur.isEmpty { runs.append(cur) }
+  return runs.filter { $0.count > 1 }
+}
+
+extension QuillCanvasView {
+  private var compassTip: CGPoint { CGPoint(x: compassCentre.x + cos(compassAngle) * compassRadius, y: compassCentre.y + sin(compassAngle) * compassRadius) }
+
+  func compassBegan(_ p: CGPoint) {
+    let reach = 30 / max(0.01, canvas.zoomScale)
+    if compassPlaced {
+      if hypot(p.x - compassCentre.x, p.y - compassCentre.y) < reach { compassGrab = .needle; return }
+      if compassRadius > 0, hypot(p.x - compassTip.x, p.y - compassTip.y) < reach { compassGrab = .leg; return }
+      guard compassRadius > 1 else { compassGrab = .leg; compassMoved(p); return }
+      compassGrab = .arc
+      compassLast = atan2(p.y - compassCentre.y, p.x - compassCentre.x)
+      compassStart = compassLast
+      compassSweep = 0
+      capture = PenCapture(pen: pen, seq: document.nextSeq(), zoom: canvas.zoomScale, at: p, time: CACurrentMediaTime())
+      ink.wet = capture?.wet
+      ink.penDown()
+      return
+    }
+    // The needle goes in only on a page.
+    guard frames.contains(where: { $0.contains(p) }) else { return }
+    compassPlaced = true
+    compassCentre = p
+    compassRadius = 0
+    compassGrab = .leg
+    drawCompass()
+  }
+
+  func compassMoved(_ p: CGPoint) {
+    switch compassGrab {
+    case .needle:
+      if frames.contains(where: { $0.contains(p) }) { compassCentre = p }
+    case .leg:
+      compassRadius = hypot(p.x - compassCentre.x, p.y - compassCentre.y)
+      compassAngle = atan2(p.y - compassCentre.y, p.x - compassCentre.x)
+    case .arc:
+      let a = atan2(p.y - compassCentre.y, p.x - compassCentre.x)
+      var d = a - compassLast
+      if d > .pi { d -= 2 * .pi } else if d < -.pi { d += 2 * .pi }
+      compassLast = a
+      compassSweep = max(-2 * .pi, min(2 * .pi, compassSweep + d))
+      compassAngle = a
+      if let c = capture {
+        c.wet.reset(compassInk(compassPoints(centre: compassCentre, radius: compassRadius, from: compassStart, sweep: compassSweep)))
+        ink.drawNow()
+      }
+    case .none: return
+    }
+    drawCompass()
+  }
+
+  func compassEnded() {
+    defer { compassGrab = .none; drawCompass() }
+    guard compassGrab == .arc, let c = capture else { return }
+    capture = nil
+    ink.wet = nil
+    ink.penUp()
+    if abs(compassSweep) > 0.02 {
+      compassCommit(compassPoints(centre: compassCentre, radius: compassRadius, from: compassStart, sweep: compassSweep), seq: c.wet.seq)
+    } else { ink.setNeedsInk() }
+  }
+
+  /// From the toolbar: the whole circle at the size it's set to.
+  func compassFullCircle() {
+    guard compassPlaced, compassRadius > 1 else { return }
+    compassCommit(compassPoints(centre: compassCentre, radius: compassRadius, from: compassAngle, sweep: 2 * .pi), seq: document.nextSeq())
+  }
+
+  func compassReset() {
+    compassPlaced = false
+    compassRadius = 0
+    drawCompass()
+  }
+
+  private func compassInk(_ pts: [CGPoint]) -> [InkPoint] {
+    let look = pen.shape(p: 0.5, dirX: 1, dirY: 0, altitude: .pi / 2)
+    return pts.map { InkPoint(x: Float($0.x), y: Float($0.y), r: look.r, a: look.a) }
+  }
+
+  /// Real ink, so it undoes, erases, selects and exports like any other stroke.
+  private func compassCommit(_ pts: [CGPoint], seq: UInt32) {
+    let page = frames.first { $0.contains(compassCentre) } ?? .infinite
+    let now = Date().timeIntervalSince1970
+    let strokes = compassRuns(pts, inside: page).enumerated().map { i, run in
+      InkStroke(pts: compassInk(run), rgb: pen.rgb, kind: pen.kind, seq: i == 0 ? seq : document.nextSeq(), ts: now)
+    }
+    guard !strokes.isEmpty else { ink.setNeedsInk(); return }
+    document.apply(removed: [], added: strokes)
+    record(InkEdit(removed: [], added: strokes))
+    ink.settle(strokes)
+    ink.drawNow(finishing: true)
+    markDirty()
+  }
+
+  /// The compass itself: needle at the point, a pencil leg at the size, the circle it would draw, and its size.
+  func drawCompass() {
+    if compassLayer.superlayer == nil {
+      tapeHost.layer.addSublayer(compassLayer)
+      compassLayer.addSublayer(compassGuide)
+      compassLayer.addSublayer(compassArms)
+      compassLayer.addSublayer(compassLabel)
+      compassGuide.fillColor = nil
+      compassGuide.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 0.35).cgColor
+      compassArms.fillColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      compassArms.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      compassLabel.alignmentMode = .center
+      compassLabel.foregroundColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    let show = inkMode == .compass && compassPlaced
+    compassLayer.isHidden = !show
+    guard show else { return }
+    let k = 1 / max(0.01, canvas.zoomScale)
+    let c = compassCentre, tip = compassTip, r = compassRadius
+    compassGuide.lineWidth = 1 * k
+    compassGuide.lineDashPattern = [NSNumber(value: Double(5 * k)), NSNumber(value: Double(4 * k))]
+    compassGuide.path = r > 1 ? UIBezierPath(arcCenter: c, radius: r, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath : nil
+
+    // The two legs meet at a hinge off to one side, like the real thing.
+    let arms = UIBezierPath()
+    let mid = CGPoint(x: (c.x + tip.x) / 2, y: (c.y + tip.y) / 2)
+    let lift = max(r * 0.55, 34 * k)
+    let side: CGFloat = sin(compassAngle) > 0 ? -1 : 1      // the hinge stays on the upper side
+    let hinge = CGPoint(x: mid.x - sin(compassAngle) * lift * -side, y: mid.y + cos(compassAngle) * lift * side)
+    if r > 1 {
+      arms.move(to: c); arms.addLine(to: hinge); arms.addLine(to: tip)
+      arms.append(UIBezierPath(arcCenter: hinge, radius: 4 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
+      arms.append(UIBezierPath(arcCenter: tip, radius: 6 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
+    }
+    arms.append(UIBezierPath(arcCenter: c, radius: 4.5 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
+    compassArms.lineWidth = 1.5 * k
+    compassArms.path = arms.cgPath
+
+    let inches = r / 72
+    compassLabel.isHidden = r < 8
+    compassLabel.string = String(format: "%.2f in  ·  %.1f cm", inches, inches * 2.54)
+    compassLabel.fontSize = 13 * k
+    compassLabel.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
+    compassLabel.contentsScale = UIScreen.main.scale * max(1, canvas.zoomScale)
+    let w = 140 * k, h = 20 * k
+    compassLabel.frame = CGRect(x: hinge.x - w / 2, y: hinge.y - h - 8 * k, width: w, height: h)
   }
 }

@@ -20,6 +20,7 @@ export const KITS: Record<string, ToolKit> = {
   eraser: { colors: [], color: 0, sizes: [2, 5, 9], size: 1, line: 'even' },
   text: { colors: ['#000000', '#0A66F0', '#E01E26', '#F28C0F'], color: 0, sizes: [14, 18, 26], size: 1, line: 'even' },
   calligraphy: { colors: ['#000000', '#0A66F0', '#E01E26', '#FFFFFF', '#F28C0F', '#12006C'], color: 0, sizes: [3, 5, 8], size: 1, line: 'even' },
+  compass: { colors: ['#000000', '#0A66F0', '#E01E26'], color: 0, sizes: [2, 3, 5], size: 1, line: 'even' },
   tape: { colors: ['#DFF0FC', '#F0AEAE', '#9AD3C8', '#F9CC98', '#D9D2E8'], color: 0, sizes: [3, 5, 8], size: 1, line: 'even' },
   laser: { colors: ['#E00014', '#0A33E0', '#18D018', '#F2E600'], color: 0, sizes: [3], size: 0, line: 'even' },
 };
@@ -52,6 +53,7 @@ export function currentTool(s: Settings): CanvasTool {
     case 'calligraphy': return { kind: 'fountain', color, width: widthOf('calligraphy', n), mode: broken, angle: s.nibAngle ?? 40, stabilize: !!s.nibSteady };
     case 'eraser': return { kind: 'eraser', color: '#000000', width: widthOf('eraser', n), mode: s.eraser ?? 'partial' };
     case 'tape': return { kind: 'tape', color, width: widthOf('tape', n) };
+    case 'compass': return { kind: 'compass', color, width: widthOf('pen', n) };
     case 'laser': return { kind: 'laser', color, width: 5 };
     case 'text': return { kind: 'text', color, width: n, mode: s.textFont ?? 'system', bold: !!s.textBold, italic: !!s.textItalic, underline: !!s.textUnderline };
     case 'hand': return { kind: 'hand', color: '#000000', width: 1 };
@@ -86,6 +88,7 @@ const TOOLS_B: { id: InkTool; icon: string; label: string }[] = [
   { id: 'tape', icon: 'tape', label: 'Tape' },
   { id: 'comment', icon: 'comment', label: 'Comment' },
   { id: 'measure', icon: 'measure', label: 'Measure' },
+  { id: 'compass', icon: 'compass', label: 'Compass' },
 ];
 
 const ALL_TOOLS: { id: string; icon: string; label: string }[] = [
@@ -240,9 +243,9 @@ const Card = ({ children, width, top = 84, align }: { children: React.ReactNode;
 
 const LINES: PenLine[] = ['even', 'pressure', 'dash', 'dot'];
 
-export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudio, onRuler, onZoom, onCalibrate, onSettings, onPaste, onTape }: {
+export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudio, onRuler, onZoom, onCalibrate, onSettings, onPaste, onTape, onCompass }: {
   recording: boolean; hasAudio: boolean; ruler: boolean; zoom: boolean; onInsert: () => void; onAudio: () => void; onRuler: (on: boolean) => void; onZoom: () => void; onCalibrate: () => void; onSettings: () => void;
-  onPaste: () => void; onTape: (what: 'show' | 'hide' | 'clear') => void;
+  onPaste: () => void; onTape: (what: 'show' | 'hide' | 'clear') => void; onCompass: (what: 'circle' | 'reset') => void;
 }) {
   const { s, set } = useSettings();
   const { width: screen } = useWindowDimensions();
@@ -348,6 +351,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 13 }}>Tap the page to leave a comment. Tap a pin to read or change it.</Text>;
   } else if (kind === 'laser') {
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }}>{dots}</View>;
+  } else if (kind === 'compass') {
+    row2 = <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }}>{dots}<Bar />{sizes}<Bar />{chip('Full circle', false, () => onCompass('circle'))}<View style={{ width: 6 }} />{chip('New point', false, () => onCompass('reset'))}</View>;
   } else if (kind === 'tape') {
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }}>{dots}<Bar />{sizes}<Bar />{chip('Reveal all', false, () => onTape('show'))}<View style={{ width: 6 }} />{chip('Hide all', false, () => onTape('hide'))}</View>;
   } else if (kind === 'text') {

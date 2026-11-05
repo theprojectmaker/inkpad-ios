@@ -34,12 +34,13 @@ export type CanvasHandle = {
   addPicture(file: string, width: number, height: number): Promise<void>;
   paste(): Promise<void>;
   setAllTape(shown: boolean): Promise<void>;
+  compass(what: 'circle' | 'reset'): Promise<void>;
   clearTape(): Promise<void>;
   flash(page: number, x: number, y: number, w: number, h: number): Promise<void>;
   setReplay(cut: number, from: number, to: number): Promise<void>;
 };
 
-export type ToolKind = 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
+export type ToolKind = 'compass' | 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
 export type CanvasTool = { kind: ToolKind; color: string; width: number; mode?: string; bold?: boolean; angle?: number; stabilize?: boolean; italic?: boolean; underline?: boolean };
 
 type Props = ViewProps & {

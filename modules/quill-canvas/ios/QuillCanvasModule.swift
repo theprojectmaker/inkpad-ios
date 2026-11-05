@@ -233,6 +233,10 @@ public final class QuillCanvasModule: Module {
         view.paste()
       }.runOnQueue(.main)
 
+      AsyncFunction("compass") { (view: QuillCanvasView, what: String) in
+        if what == "circle" { view.compassFullCircle() } else { view.compassReset() }
+      }.runOnQueue(.main)
+
       AsyncFunction("setAllTape") { (view: QuillCanvasView, shown: Bool) in
         view.setAllTape(shown: shown)
       }.runOnQueue(.main)

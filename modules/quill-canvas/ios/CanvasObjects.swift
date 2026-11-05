@@ -327,6 +327,7 @@ extension QuillCanvasView {
 
   /// Pins stay the same size on screen at any zoom.
   func keepPinsUpright() {
+    drawCompass()
     let k = 1 / max(0.01, canvas.zoomScale)
     for v in pinViews.values { v.transform = CGAffineTransform(scaleX: k, y: k) }
   }
