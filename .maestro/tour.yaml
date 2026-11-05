@@ -27,6 +27,9 @@ appId: com.solyapps.notes
 - takeScreenshot: 04-ink
 - tapOn: { text: "Undo.*", optional: true }
 - takeScreenshot: 05-after-undo
+- tapOn: { text: "Redo.*", optional: true }
+- takeScreenshot: 05b-after-redo
+- tapOn: { text: "Undo.*", optional: true }
 # Pen options: tap the picked pen again
 - tapOn: { text: "Pen", optional: true }
 - waitForAnimationToEnd
@@ -60,6 +63,12 @@ appId: com.solyapps.notes
 - swipe: { start: "50%, 80%", end: "50%, 25%", duration: 600 }
 - waitForAnimationToEnd
 - takeScreenshot: 07-scrolled
+- swipe: { start: "50%, 25%", end: "50%, 85%", duration: 500 }
+- swipe: { start: "50%, 25%", end: "50%, 85%", duration: 500 }
+- waitForAnimationToEnd
+- takeScreenshot: 07b-scrolled-back
+- swipe: { start: "50%, 80%", end: "50%, 25%", duration: 600 }
+- waitForAnimationToEnd
 # Tapping the very top of the screen must not jump back to page 1
 - tapOn: { point: "50%, 1%" }
 - waitForAnimationToEnd

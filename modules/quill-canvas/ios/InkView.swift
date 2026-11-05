@@ -208,7 +208,6 @@ final class InkView: UIView {
       m.isOpaque = false
       m.framebufferOnly = true
       m.maximumDrawableCount = 3
-      m.presentsWithTransaction = true
       m.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
     }
   }
@@ -242,7 +241,7 @@ final class InkView: UIView {
     center = middle
     zoom = z
     settledDirty = true
-    drawNow()
+    drawNow(withPages: true)
   }
 
   /// A finished stroke joins the settled ink in the same frame the wet one leaves, so nothing flashes.
@@ -251,7 +250,6 @@ final class InkView: UIView {
   }
 
   func penDown() {
-    (layer as? CAMetalLayer)?.presentsWithTransaction = false
     guard link == nil else { return }
     let l = CADisplayLink(target: self, selector: #selector(tick))
     l.preferredFrameRateRange = CAFrameRateRange(minimum: 80, maximum: 120, preferred: 120)
@@ -262,7 +260,6 @@ final class InkView: UIView {
   func penUp() {
     link?.invalidate()
     link = nil
-    (layer as? CAMetalLayer)?.presentsWithTransaction = true
   }
 
   @objc private func tick() {
@@ -301,13 +298,19 @@ final class InkView: UIView {
 
   // MARK: - A frame
 
-  func drawNow() {
+  /// withPages: goes out in the same screen update as the pages moving under it (scrolling).
+  /// Otherwise it goes straight out, the quickest path, for the Pencil.
+  func drawNow(withPages: Bool = false) {
     guard window != nil, bounds.width > 1 else { return }
     guard let gpu else { drawFallback(); return }
     if inFlight >= 2 { framePending = true; return }   // never wait on the GPU here
     framePending = false
-    guard let m = layer as? CAMetalLayer, let msaa, let depth, settled != nil, let drawable = m.nextDrawable(),
-          let cmd = gpu.queue.makeCommandBuffer() else { return }
+    guard let m = layer as? CAMetalLayer, let msaa, let depth, settled != nil else { return }
+    if m.presentsWithTransaction != withPages { m.presentsWithTransaction = withPages }
+    guard let drawable = m.nextDrawable(), let cmd = gpu.queue.makeCommandBuffer() else {
+      framePending = true
+      return
+    }
     let view = uniform(.identity)
 
     if settledDirty {
@@ -335,14 +338,15 @@ final class InkView: UIView {
     }
 
     inFlight += 1
-    cmd.addCompletedHandler { [weak self] _ in
+    cmd.addCompletedHandler { [weak self] done in
+      if let e = done.error { NSLog("Quill ink frame failed: %@", String(describing: e)) }
       DispatchQueue.main.async {
         guard let self else { return }
         self.inFlight -= 1
         if self.framePending { self.drawNow() }
       }
     }
-    if m.presentsWithTransaction {
+    if withPages {
       cmd.commit()
       cmd.waitUntilScheduled()
       drawable.present()
