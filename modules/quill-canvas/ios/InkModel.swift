@@ -145,7 +145,7 @@ struct InkPen {
     switch type {
     case "monoline":
       // An even, round line that barely answers the hand.
-      return (half * (0.86 + 0.28 * pow(p, 0.8)), 1)
+      return (half * (0.92 + 0.16 * pow(p, 0.8)), 1)
     case "fountain":
       // A nib held at an angle: thin along it, broad across it.
       let t = angle * .pi / 180

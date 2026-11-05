@@ -162,7 +162,8 @@ final class PenCapture {
     // made the ink visibly shift just after it appeared.
     if !first { lastSpeed += (speed - lastSpeed) * 0.2 }
     // Streamline eases the line from following the hand closely towards a slow, steady pull.
-    let follow = 24 + 0.2 * speed
+    // Moving slowly, there's little to lag behind, and the shake is most of what moves: filter more.
+    let follow = 13 + 0.27 * speed
     let tau = 1 / (2 * Float.pi * (pen.stabilize ? 7 : follow * (1 - pen.streamline) + 9 * pen.streamline))
     let k = first ? 1 : 1 / (1 + tau / dt)
     let oldX = fx, oldY = fy
@@ -183,10 +184,11 @@ final class PenCapture {
       wet.append(InkPoint(x: fx, y: fy, r: r, a: a))
       return
     }
-    let ease = 1 - exp(-dt / 0.02)
+    // Width and shade change gently, so pressure can't put lumps in a small curve.
+    let ease = 1 - exp(-dt / 0.06)
     r += (want.r - r) * ease
     a += (want.a - a) * ease
-    if hypot(fx - storedX, fy - storedY) * zoom >= 1 {
+    if hypot(fx - storedX, fy - storedY) * zoom >= 1.4 {
       wet.append(InkPoint(x: fx, y: fy, r: r, a: a))
       storedX = fx; storedY = fy
     }
@@ -222,8 +224,15 @@ final class PenCapture {
     if snap != nil { return wet.pts }
     var pts = wet.pts
     let close = 1.2 / zoom     // on screen, about a point
-    // The hand jitters as the Pencil lifts: those last tiny moves aren't part of the line.
-    while pts.count > 2, hypot(pts[pts.count - 1].x - pts[pts.count - 2].x, pts[pts.count - 1].y - pts[pts.count - 2].y) < close { pts.removeLast() }
+    // The hand jitters as the Pencil lifts: points bunched right at the end aren't part of the line.
+    // Measured from the end itself, and only a few: drawing slowly puts every point close to the next.
+    if let end = pts.last {
+      var dropped = 0
+      while pts.count > 2, dropped < 3, hypot(pts[pts.count - 2].x - end.x, pts[pts.count - 2].y - end.y) < close {
+        pts.remove(at: pts.count - 2)
+        dropped += 1
+      }
+    }
     if pen.streamline > 0.05 {
       // It finishes where the smoothing got to, plus the rest of the way in small steps.
       if let last = pts.last {
