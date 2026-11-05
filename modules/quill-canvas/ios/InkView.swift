@@ -243,6 +243,10 @@ final class InkView: UIView {
   private var padOrigin: CGPoint?
   private var pageFrameQueued = false
   var paused = false            // pinching: the pages carry a picture of the ink instead
+  /// The page is being dragged. The ink then covers more than the screen and rides along with the
+  /// pages, so nothing has to be redrawn in step with them; it only catches up now and then.
+  var moving = false
+  private var pending: (rect: CGRect, zoom: CGFloat)?
   private var onShown: (() -> Void)?   // once the first frame after a pinch reaches the screen
 
   init(document: InkDocument) {
@@ -316,15 +320,32 @@ final class InkView: UIView {
 
   /// The scroll position or zoom moved: keep up in this very frame.
   func scrolled(to visible: CGRect, zoom z: CGFloat) {
-    let middle = CGPoint(x: visible.midX, y: visible.midY)
-    if bounds.size == visible.size && center == middle && zoom == z { return }
+    var target = visible
+    let now = CGRect(x: center.x - bounds.width / 2, y: center.y - bounds.height / 2, width: bounds.width, height: bounds.height)
+    if moving && zoom == z {
+      // Still covered, with some to spare: the pages and the ink are moving as one.
+      let spare = visible.height * 0.1
+      if pending == nil && now.width > visible.width - 1 && now.contains(visible.insetBy(dx: 0, dy: -spare)) { return }
+      let wide = ((superview as? UIScrollView)?.contentSize.width ?? 0) > visible.width + 1
+      target = visible.insetBy(dx: wide ? -visible.width * 0.25 : 0, dy: -visible.height * 0.6)
+    }
+    if pending == nil && now == target && zoom == z { return }
+    settledDirty = true
+    if paused || target.size != bounds.size {
+      pending = nil
+      place(target, z)
+    } else {
+      pending = (target, z)   // moves in the same frame that has the ink drawn for it
+    }
+    if !paused { queuePageFrame() }
+  }
+
+  private func place(_ r: CGRect, _ z: CGFloat) {
     UIView.performWithoutAnimation {
-      if bounds.size != visible.size { bounds.size = visible.size; matchScreen() }
-      center = middle
+      if bounds.size != r.size { bounds.size = r.size; matchScreen() }
+      center = CGPoint(x: r.midX, y: r.midY)
     }
     zoom = z
-    settledDirty = true
-    if !paused { queuePageFrame() }
   }
 
   /// Pinching starts: an empty frame replaces the last one. Hiding the view instead would keep
@@ -460,6 +481,10 @@ final class InkView: UIView {
         }
       }
       return
+    }
+    if let p = pending {
+      pending = nil
+      place(p.rect, p.zoom)
     }
     let view = uniform(.identity)
     let shown = paused ? nil : onShown

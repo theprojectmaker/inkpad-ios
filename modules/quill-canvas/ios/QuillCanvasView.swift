@@ -119,6 +119,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   lazy var formatBar: UIView = makeFormatBar()
   var zoomWriter: ZoomWriter?
   var zoomPreviewing = false
+  var lastZoomEnd: TimeInterval = 0
   var inkPictures: [String: (version: Int, image: CGImage?)] = [:]
   var pageViewList: [PageTileView] { pageViews }
   var measureMode = "length"
@@ -416,12 +417,34 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     reportPage()
   }
 
-  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { dragStartOffset = canvas.contentOffset }
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    dragStartOffset = canvas.contentOffset
+    if fingerDraws { inkGesture.fingerGesturing() }
+    ink.moving = true
+    syncInk()
+  }
 
-  func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) { pinchBegan() }
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if !decelerate { settleInk() }
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { settleInk() }
+
+  /// The page has stopped: the ink goes back to covering just the screen.
+  func settleInk() {
+    guard ink.moving else { return }
+    ink.moving = false
+    syncInk()
+  }
+
+  func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+    inkGesture.fingerGesturing()
+    pinchBegan()
+  }
 
   func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
     updateTextScale()
+    lastZoomEnd = CACurrentMediaTime()
     pinchEnded()
   }
 

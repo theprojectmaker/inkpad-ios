@@ -260,6 +260,7 @@ extension QuillCanvasView {
       if inkPictures[id]?.version != version { inkPictures[id] = (version, inkPicture(strokes, page: frames[i])) }
       pageViewList[i].showInk(inkPictures[id]?.image)
     }
+    ink.moving = false
     ink.blank()
   }
 

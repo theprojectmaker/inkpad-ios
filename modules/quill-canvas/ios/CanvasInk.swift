@@ -13,50 +13,104 @@ struct InkEdit {
 enum InkMode { case write, erase, lasso, tape, laser, comment, measure }
 
 /// Reports the Pencil (and a finger, if allowed) the instant it touches, with no waiting.
+///
+/// A finger isn't known to be drawing straight away, because it may be the first half of a pinch.
+/// It counts once it has moved a little or stayed down a moment, and any second finger ends it.
 final class InkGesture: UIGestureRecognizer {
   weak var owner: QuillCanvasView?
   private var active: UITouch?
   private var startedAt: TimeInterval = 0
+  private var told = false              // the owner knows about this touch
+  private var downAt: CGPoint = .zero
+  private var lastEvent: UIEvent?
+  private var wait: DispatchWorkItem?
 
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-    guard active == nil, let t = touches.first else {
-      // A second finger right after the first means scrolling, not writing.
-      if let a = active, a.type == .direct, event.timestamp - startedAt < 0.2 {
-        owner?.inkCancelled()
-        state = .cancelled
-      } else {
-        touches.forEach { ignore($0, for: event) }
-      }
-      return
-    }
-    if t.type == .direct && t.majorRadius > 40 { state = .failed; return }   // a palm
-    active = t
-    startedAt = event.timestamp
+  private static let fingerWait: TimeInterval = 0.09
+  private static let fingerMove: CGFloat = 8
+  /// A finger stroke younger than this is thrown away when a second finger lands.
+  private static let youngStroke: TimeInterval = 1
+
+  private func begin(_ t: UITouch, _ event: UIEvent) {
+    wait?.cancel()
+    wait = nil
+    told = true
     state = .began
     owner?.inkBegan(t, event)
   }
 
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard active == nil, let t = touches.first else {
+      guard let a = active, a.type == .direct else {
+        touches.forEach { ignore($0, for: event) }
+        return
+      }
+      // Two fingers are never writing.
+      if told {
+        if event.timestamp - startedAt < Self.youngStroke { owner?.inkCancelled() } else { owner?.inkEnded(a, event) }
+        state = .cancelled
+      } else {
+        state = .failed
+      }
+      return
+    }
+    if t.type == .direct {
+      if touches.count > 1 || t.majorRadius > 40 { state = .failed; return }   // two fingers, or a palm
+      if owner?.fingerMayDraw(t) != true { state = .failed; return }
+    }
+    active = t
+    startedAt = event.timestamp
+    lastEvent = event
+    if t.type != .direct { begin(t, event); return }
+    downAt = t.location(in: view)
+    let w = DispatchWorkItem { [weak self] in
+      guard let self, let a = self.active, !self.told, let e = self.lastEvent else { return }
+      self.begin(a, e)
+    }
+    wait = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.fingerWait, execute: w)
+  }
+
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
     guard let a = active, touches.contains(a) else { return }
+    lastEvent = event
+    if !told {
+      let p = a.location(in: view)
+      if hypot(p.x - downAt.x, p.y - downAt.y) >= Self.fingerMove { begin(a, event) }
+      return
+    }
     state = .changed
     owner?.inkMoved(a, event)
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
     guard let a = active, touches.contains(a) else { return }
+    if !told { begin(a, event) }     // a quick tap is a dot
     owner?.inkEnded(a, event)
     state = .ended
+  }
+
+  /// The page has started zooming or scrolling: a finger stops writing.
+  func fingerGesturing() {
+    guard let a = active, a.type == .direct else { return }
+    if told { owner?.inkCancelled(); state = .cancelled } else { state = .failed }
   }
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
     guard let a = active, touches.contains(a) else { return }
     // The system took the Pencil's touch back: what was written stays. (A cancelled finger
     // is usually the start of a two-finger scroll, so that one is dropped.)
+    if !told { state = .cancelled; return }
     if a.type == .direct { owner?.inkCancelled() } else { owner?.inkEnded(a, event) }
     state = .cancelled
   }
 
-  override func reset() { active = nil }
+  override func reset() {
+    wait?.cancel()
+    wait = nil
+    active = nil
+    told = false
+    lastEvent = nil
+  }
 }
 
 /// A stroke while it's being written: steadies the raw points and applies the pen.
@@ -71,6 +125,7 @@ final class PenCapture {
   private var lastSpeed: Float = 0
   private var storedX: Float, storedY: Float
   var moveAnchor: CGPoint
+  var page: CGRect = .infinite     // the stroke stays on this page
   var lastMoveTime: TimeInterval
   var triedSnap = false
   var snap: (points: [CGPoint], closed: Bool, centre: CGPoint, anchor: CGPoint)?
@@ -264,6 +319,7 @@ extension QuillCanvasView {
     scrollBack?.cancel()
     scrollBack = nil
     let palm = canvas.isDragging
+    settleInk()
     canvas.panGestureRecognizer.isEnabled = false
     canvas.pinchGestureRecognizer?.isEnabled = false
     canvas.setContentOffset(palm ? dragStartOffset : canvas.contentOffset, animated: false)
@@ -278,6 +334,16 @@ extension QuillCanvasView {
     scrollBack = w
     // Long enough to cover the pause between words, when a resting hand would move the page.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
+  }
+
+  /// The page under a point, if there is one: there's nowhere to write beside or between pages.
+  private func pageRect(at p: CGPoint) -> CGRect? { frames.first { $0.contains(p) } }
+
+  /// Not right after a zoom (fingers rarely lift together), and writing has to start on a page.
+  func fingerMayDraw(_ t: UITouch) -> Bool {
+    if CACurrentMediaTime() - lastZoomEnd < 0.3 { return false }
+    if inkMode == .write && pageRect(at: location(t)) == nil { return false }
+    return true
   }
 
   func inkBegan(_ t: UITouch, _ event: UIEvent) {
@@ -347,8 +413,10 @@ extension QuillCanvasView {
   private func beginStroke(_ t: UITouch, _ event: UIEvent, _ p: CGPoint) {
     // A writing finger tapping tape is revealing it, not leaving a dot.
     if t.type == .direct && tapeAt(p) != nil { return }
+    guard let onPage = pageRect(at: p) else { return }
     let c = PenCapture(pen: pen, seq: document.nextSeq(), zoom: canvas.zoomScale, at: p, time: t.timestamp)
     if let ruler { c.rulerEdge = ruler.edge(near: ruler.convert(pageHost.convert(p, to: self), from: self)) }
+    c.page = onPage
     capture = c
     ink.wet = c.wet
     ink.penDown()
@@ -356,7 +424,12 @@ extension QuillCanvasView {
   }
 
   private func moveStroke(_ t: UITouch, _ event: UIEvent) {
-    guard let c = capture else { return }
+    guard let c = capture else {
+      // It came back onto a page: writing carries on from there.
+      let p = location(t)
+      if pageRect(at: p) != nil { beginStroke(t, event, p) }
+      return
+    }
     feed(c, t, event, first: false)
   }
 
@@ -374,6 +447,12 @@ extension QuillCanvasView {
       if let e = c.rulerEdge { p = onRuler(p, e) }
       let force = s.type == .pencil && s.maximumPossibleForce > 0 ? Float(s.force / s.maximumPossibleForce) : 0
       let altitude = s.type == .pencil ? Float(s.altitudeAngle) : Float.pi / 2
+      // Off the page: the stroke ends at its edge.
+      if c.snap == nil && !c.page.contains(p) {
+        c.add(CGPoint(x: min(c.page.maxX, max(c.page.minX, p.x)), y: min(c.page.maxY, max(c.page.minY, p.y))), force: force, altitude: altitude, time: s.timestamp, first: false)
+        finishStroke(c)
+        return
+      }
       if c.snap == nil { c.add(p, force: force, altitude: altitude, time: s.timestamp, first: first && i == 0) }
       let onScreen = hypot(p.x - c.moveAnchor.x, p.y - c.moveAnchor.y) * canvas.zoomScale
       if onScreen > 4 {
@@ -389,6 +468,7 @@ extension QuillCanvasView {
     } else {
       var ahead = (event.predictedTouches(for: t) ?? []).map { location($0) }
       if let e = c.rulerEdge { ahead = ahead.map { onRuler($0, e) } }
+      ahead = ahead.filter { c.page.contains($0) }
       c.refresh(predicted: ahead)
     }
     ink.drawNow()
@@ -434,8 +514,13 @@ extension QuillCanvasView {
       var p = location(t)
       if let e = c.rulerEdge { p = onRuler(p, e) }
       let force = t.type == .pencil && t.maximumPossibleForce > 0 ? Float(t.force / t.maximumPossibleForce) : 0
+      if !c.page.contains(p) { p = CGPoint(x: min(c.page.maxX, max(c.page.minX, p.x)), y: min(c.page.maxY, max(c.page.minY, p.y))) }
       c.add(p, force: force, altitude: t.type == .pencil ? Float(t.altitudeAngle) : Float.pi / 2, time: t.timestamp, first: false)
     }
+    finishStroke(c)
+  }
+
+  private func finishStroke(_ c: PenCapture) {
     capture = nil
     let stroke = InkStroke(pts: c.finishedPoints(), rgb: c.pen.rgb, kind: c.pen.kind, seq: c.wet.seq, ts: c.startedAt)
     document.apply(removed: [], added: [stroke])
