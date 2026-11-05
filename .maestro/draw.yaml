@@ -50,9 +50,9 @@ appId: com.solyapps.notes
 - tapOn: { text: "Fill", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: d06-fill-popover
-- tapOn: { point: "40%, 72%", optional: true }
+- tapOn: { point: "44%, 22%", optional: true }
 - waitForAnimationToEnd
-- tapOn: { text: "Close style", optional: true }
+- tapOn: { point: "50%, 85%", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: d07-filled
 - tapOn: { text: "Pen" }

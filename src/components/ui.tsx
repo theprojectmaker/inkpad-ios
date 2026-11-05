@@ -48,7 +48,7 @@ export function Button({ title, onPress, kind = 'plain', disabled, icon }: { tit
   const bg = kind === 'primary' ? t.accent : kind === 'danger' ? t.danger : t.chip;
   const fg = kind === 'plain' ? t.text : '#fff';
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={({ pressed }) => ({ backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1, paddingHorizontal: 16, height: 42, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} disabled={disabled} style={({ pressed }) => ({ backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1, paddingHorizontal: 16, height: 42, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 })}>
       {icon ? <Icon name={icon} size={17} color={fg} /> : null}
       <Text style={{ color: fg, fontSize: 16, fontWeight: '600' }}>{title}</Text>
     </Pressable>
