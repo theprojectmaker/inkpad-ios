@@ -3,6 +3,7 @@
 // explanations, or answers your questions. Results are saved with the note.
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
 
 import { Markdown } from '@/components/markdown';
 import type { CanvasHandle } from '@/components/quill-canvas';
@@ -154,7 +155,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   }
 
   return (
-    <View style={{ width: 380, backgroundColor: t.bg, borderLeftWidth: 1, borderLeftColor: t.line }}>
+    <Reanimated.View entering={FadeIn.duration(180)} style={{ width: 380, backgroundColor: t.bg, borderLeftWidth: 1, borderLeftColor: t.line, paddingTop: 66 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
         {tab !== 'home' ? <Pressable accessibilityLabel="Back to Learn" onPress={() => setTab('home')} hitSlop={8}><Icon name="chevron.left" size={16} color={t.sub} /></Pressable> : <Icon name="sparkles" size={18} color={t.accent} />}
         <Text style={{ flex: 1, marginLeft: 8, color: t.text, fontSize: 18, fontWeight: '800' }}>{tab === 'home' ? 'Learn' : TABS.find((x) => x.id === tab)?.label}</Text>
@@ -177,7 +178,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
           {body}
         </ScrollView>
       )}
-    </View>
+    </Reanimated.View>
   );
 }
 

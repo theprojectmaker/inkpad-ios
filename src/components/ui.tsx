@@ -1,7 +1,8 @@
 // Small shared UI pieces: icons, buttons, sheets, prompts, toasts.
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Component, createContext, Fragment, type ErrorInfo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle, type StyleProp } from 'react-native';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
 
 import { useTheme } from '@/lib/settings';
 
@@ -55,6 +56,20 @@ export function Button({ title, onPress, kind = 'plain', disabled, icon }: { tit
 }
 
 /** A centred card on a dimmed backdrop. */
+/** Gives under the finger and comes back gently. */
+export function PressScale({ onPress, onLongPress, label, style, children, delayLongPress }: {
+  onPress?: () => void; onLongPress?: () => void; label?: string; style?: StyleProp<ViewStyle>; children: ReactNode; delayLongPress?: number;
+}) {
+  const k = useSharedValue(1);
+  const look = useAnimatedStyle(() => ({ transform: [{ scale: k.value }] }));
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} onLongPress={onLongPress} delayLongPress={delayLongPress}
+      onPressIn={() => { k.value = withTiming(0.975, { duration: 90 }); }} onPressOut={() => { k.value = withTiming(1, { duration: 180 }); }}>
+      <Reanimated.View style={[style, look]}>{children}</Reanimated.View>
+    </Pressable>
+  );
+}
+
 export function Sheet({ visible, onClose, children, width = 420, title, topRight }: { visible: boolean; onClose: () => void; children: ReactNode; width?: number; title?: string; topRight?: boolean }) {
   const t = useTheme();
   return (
@@ -62,10 +77,10 @@ export function Sheet({ visible, onClose, children, width = 420, title, topRight
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} />
         <View style={topRight ? { flex: 1, alignItems: 'flex-end', justifyContent: 'flex-start', paddingTop: 70, paddingRight: 12 } : { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }} pointerEvents="box-none">
-          <View style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 18, padding: 18, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
+          <Reanimated.View entering={ZoomIn.duration(170).springify().damping(22).stiffness(260)} style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 18, padding: 18, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
             {title ? <Text style={{ color: t.text, fontSize: 19, fontWeight: '700', marginBottom: 12 }}>{title}</Text> : null}
             <ScrollView bounces={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
-          </View>
+          </Reanimated.View>
         </View>
       </KeyboardAvoidingView>
     </Modal>

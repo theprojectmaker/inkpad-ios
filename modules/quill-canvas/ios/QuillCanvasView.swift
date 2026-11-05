@@ -318,7 +318,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   func currentFit() -> CGFloat { fitScale() }
 
-  private func fitScale() -> CGFloat { max(0.05, bounds.width / max(1, contentW)) }
+  private func fitScale() -> CGFloat {
+    let across = bounds.width / max(1, contentW)
+    // A very long page (a tall scan) would come out tiny, so those just fill the width.
+    guard let h = frames.first?.height, h > 1, h <= contentW * 1.6 else { return max(0.05, across) }
+    return max(0.05, min(across, bounds.height / h))
+  }
 
   /// Page width fills the screen (with a small margin).
   func fitWidth() { refit(keepZoom: false) }

@@ -2,6 +2,7 @@
 // (read by the iPad), plus what was said in the recordings.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
 
 import type { CanvasHandle } from '@/components/quill-canvas';
 import { Icon, IconButton } from '@/components/ui';
@@ -67,7 +68,7 @@ export function FindPanel({ noteId, doc, canvas, absPath, stale, onRead, onHear,
   };
 
   return (
-    <View style={{ width: 320, backgroundColor: t.side, borderLeftWidth: 1, borderLeftColor: t.line }}>
+    <Reanimated.View entering={FadeIn.duration(180)} style={{ width: 320, backgroundColor: t.side, borderLeftWidth: 1, borderLeftColor: t.line, paddingTop: 66 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.chip }}>
           <Icon name="magnifyingglass" size={14} color={t.faint} />
@@ -89,6 +90,6 @@ export function FindPanel({ noteId, doc, canvas, absPath, stale, onRead, onHear,
             <Text style={{ color: t.faint, fontSize: 12, marginTop: 3 }}>{h.kind === 'page' ? `Page ${h.page + 1}` : `Recording · ${clock(h.t)}`}</Text>
           </Pressable>
         )} />
-    </View>
+    </Reanimated.View>
   );
 }

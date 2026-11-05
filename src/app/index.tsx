@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import Reanimated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PaperSheet } from '@/components/paper-sheet';
@@ -112,7 +113,9 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         try {
         if (f.endsWith('.jpg')) {
           const id = uid('n');
+          await note(`${f}: reading`);
           const pages = await imagePages(id, [fsx.uri(path)]);
+          await note(`${f}: saving`);
           await lib.createNote({ id, folderId: null, kind: 'image', title: f.replace(/.jpg$/, ''), pages, paper: { style: 'blank', color: 'white' } });
           await fsx.remove(path);
           await note(`${f}: ok in ${Date.now() - start} ms`);
@@ -202,12 +205,11 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
 
   const sideRow = (label: string, on: boolean, onPress: () => void, opts: { icon?: string; color?: string; count?: number; onLongPress?: () => void }) => (
     <Pressable key={label + (opts.color ?? '')} accessibilityRole="button" accessibilityLabel={label} onPress={onPress} onLongPress={opts.onLongPress} delayLongPress={350}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 42, paddingHorizontal: 12, borderRadius: 10, backgroundColor: on ? t.card : pressed ? t.chip : 'transparent',
-        shadowColor: '#000', shadowOpacity: on && !t.dark ? 0.05 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } })}>
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 42, paddingHorizontal: 12, borderRadius: 10, backgroundColor: on ? (t.dark ? t.card : '#E6E8ED') : pressed ? t.chip : 'transparent',
+      })}>
       {opts.color ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: opts.color, marginHorizontal: 4 }} />
-        : <Icon name={opts.icon ?? 'doc'} size={17} color={on ? t.accent : t.sub} />}
+        : <Icon name={opts.icon ?? 'doc'} size={18} color={t.text} />}
       <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 15.5, fontWeight: on ? '600' : '400' }}>{label}</Text>
-      {opts.count ? <Text style={{ color: t.faint, fontSize: 13 }}>{opts.count}</Text> : null}
     </Pressable>
   );
 
@@ -252,10 +254,10 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     return (
       <Pressable onPress={() => pressNote(n)} onLongPress={() => { setTarget(n); setSheet(n.trashed ? 'trashNote' : 'note'); }} delayLongPress={350}
         accessibilityLabel={n.title}
-        style={({ pressed }) => ({ width: cardW, transform: [{ scale: pressed ? 0.97 : 1 }] })}>
-        <View style={{ width: cardW, height: h, borderRadius: 10, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: t.dark ? 0.4 : 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
-          <View style={{ flex: 1, borderRadius: 10, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: t.dark ? '#00000000' : '#DEDEE3' }}>
-            {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        style={({ pressed }) => ({ width: cardW, opacity: pressed ? 0.85 : 1 })}>
+        <View style={{ width: cardW, borderRadius: 14, backgroundColor: t.card, shadowColor: '#000', shadowOpacity: t.dark ? 0.4 : 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }}>
+          <View style={{ height: cardW * 0.96, borderTopLeftRadius: 14, borderTopRightRadius: 14, overflow: 'hidden', backgroundColor: '#fff' }}>
+            {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: h }} resizeMode="cover" />
               : n.kind === 'pdf' ? (
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAFB' }}>
                   <Icon name="doc.richtext" size={28} color="#B8BCC4" />
@@ -263,12 +265,14 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
               ) : paperMock()}
           </View>
           {n.fav ? <View style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="star.fill" size={14} color="#F5B400" /></View> : null}
-          {n.audio ? <View style={{ position: 'absolute', bottom: 8, right: 8, width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,22,28,0.6)' }}><Icon name="waveform" size={13} color="#fff" /></View> : null}
-        </View>
-        <Text numberOfLines={1} style={{ marginTop: 10, color: t.text, fontSize: 14.5, fontWeight: '600' }}>{n.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-          {f ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: f.color }} /> : null}
-          <Text numberOfLines={1} style={{ flex: 1, color: t.faint, fontSize: 12.5 }}>{found ? `…${found}…` : fmtDate(n.updated)}</Text>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.line }}>
+            <Text numberOfLines={1} style={{ color: t.text, fontSize: 15, fontWeight: '500' }}>{n.title}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              {f ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: f.color }} /> : null}
+              <Text numberOfLines={1} style={{ flex: 1, color: t.sub, fontSize: 13 }}>{found ? `…${found}…` : fmtDate(n.updated)}</Text>
+              {n.audio ? <Icon name="waveform" size={13} color={t.faint} /> : null}
+            </View>
+          </View>
         </View>
       </Pressable>
     );
@@ -294,13 +298,12 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             {sideRow('Gallery', false, () => setSheet('paper'), { icon: 'photo.artframe' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
-            <Text style={{ color: t.faint, fontSize: 12, fontWeight: '600', letterSpacing: 0.4, marginTop: 24, marginBottom: 6, paddingHorizontal: 12 }}>Folders</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 4, paddingLeft: 12 }}>
+              <Text style={{ flex: 1, color: t.sub, fontSize: 14, fontWeight: '500' }}>Folders</Text>
+              <IconButton name="plus" label="New folder" onPress={() => setSheet('newFolder')} />
+            </View>
             {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
-            <Pressable onPress={() => setSheet('newFolder')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 42, paddingHorizontal: 12 }}>
-              <Icon name="plus" size={15} color={t.sub} />
-              <Text style={{ color: t.sub, fontSize: 15.5 }}>New folder</Text>
-            </Pressable>
           </ScrollView>
           <View style={{ paddingHorizontal: 12 }}>
             {sideRow('Recently Deleted', filter.kind === 'trash', () => setFilter({ kind: 'trash' }), { icon: 'trash', count: trashed })}
@@ -337,11 +340,12 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           </ScrollView>
         ) : null}
 
+        <Reanimated.View key={JSON.stringify(filter)} entering={FadeIn.duration(190)} style={{ flex: 1 }}>
         {showHome ? (
           <ScrollView contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: 60 }}>
             <View style={{ alignItems: 'center', marginTop: 8 }}>
               <Icon name="pencil.and.scribble" size={54} color="#3F6AF2" />
-              <Text style={{ color: t.text, fontSize: 32, fontWeight: '900', letterSpacing: -0.8, marginTop: 14 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+              <Text style={{ color: t.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6, marginTop: 14 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 16, marginTop: 32 }}>
               {[
@@ -350,15 +354,15 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
                 { label: 'Import a file', icon: 'square.and.arrow.down', bg: t.dark ? t.card : '#EDF2FE', line: '#C3D3F7', go: importPdf },
                 { label: 'Find a template', icon: 'doc.plaintext', bg: t.dark ? t.card : '#F4F5F8', line: t.line, go: () => setSheet('paper') },
               ].map((c) => (
-                <Pressable key={c.label} accessibilityLabel={c.label} onPress={c.go} style={({ pressed }) => ({ flex: 1, height: 124, borderRadius: 18, borderWidth: 1.2, borderColor: c.line, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', gap: 10, opacity: pressed ? 0.75 : 1 })}>
-                  <Icon name={c.icon} size={24} color={t.text} />
-                  <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', textAlign: 'center' }}>{c.label}</Text>
+                <Pressable key={c.label} accessibilityLabel={c.label} onPress={c.go} style={({ pressed }) => ({ flex: 1, height: 112, borderRadius: 14, borderWidth: 1, borderColor: c.line, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 8, opacity: pressed ? 0.8 : 1, shadowColor: '#000', shadowOpacity: t.dark ? 0 : 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } })}>
+                  <Icon name={c.icon} size={22} color={t.text} />
+                  <Text style={{ color: t.text, fontSize: 15, fontWeight: '600', textAlign: 'center' }}>{c.label}</Text>
                 </Pressable>
               ))}
             </View>
-            <Text style={{ color: t.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5, marginTop: 36, marginBottom: 16 }}>Recent notes</Text>
+            <Text style={{ color: t.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4, marginTop: 36, marginBottom: 16 }}>Recent notes</Text>
             {recent.length ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{recent.map((n) => <View key={n.id}>{card({ item: n })}</View>)}</View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{recent.map((n, i) => <Reanimated.View key={n.id} entering={FadeInDown.delay(i * 35).duration(240)}>{card({ item: n })}</Reanimated.View>)}</View>
             ) : <Text style={{ color: t.sub, fontSize: 16 }}>Your notes will show up here.</Text>}
           </ScrollView>
         ) : null}
@@ -386,6 +390,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             ) : null}
           </View>
         )}
+        </Reanimated.View>
       </View>
 
       <MenuSheet topRight visible={sheet === 'new'} onClose={() => setSheet(null)} items={[

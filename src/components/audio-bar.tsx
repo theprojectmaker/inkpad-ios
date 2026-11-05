@@ -10,7 +10,7 @@ import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withTim
 
 import { fsx } from '@/lib/fsx';
 import type { LiveNotes, NotesSource } from '@/lib/livenotes';
-import { pauseLive, startLive, stopLive, useLive } from '@/lib/liverec';
+import { liveNow, pauseLive, startLive, stopLive, useLive } from '@/lib/liverec';
 import { type Recording, uid } from '@/lib/model';
 import { notePath } from '@/lib/noteio';
 import { useTheme } from '@/lib/settings';
@@ -40,6 +40,9 @@ export function useNoteAudio(noteId: string, onError: (msg: string) => void) {
   const recRef = useRef(rec); recRef.current = rec;
   const [loaded, setLoaded] = useState<Recording | null>(null);
   const [rate, setRate] = useState(1);
+  const [marks, setMarks] = useState<number[]>([]);
+  const mark = useCallback(() => setMarks((m) => [...m, liveNow().elapsed]), []);
+  const marksRef = useRef(marks); marksRef.current = marks;
 
   const start = useCallback(async () => {
     try {
@@ -48,6 +51,7 @@ export function useNoteAudio(noteId: string, onError: (msg: string) => void) {
       if (player.playing) player.pause();
       const id = uid('r');
       await startLive(plainPath(fsx.uri(notePath(noteId, `rec_${id}.m4a`))));
+      setMarks([]);
       setRec({ id, started: Date.now() });
       return true;
     } catch (e) { onError("Couldn't start recording: " + String((e as Error)?.message ?? e)); return false; }
@@ -61,7 +65,7 @@ export function useNoteAudio(noteId: string, onError: (msg: string) => void) {
     try {
       const out = await stopLive();
       await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-      return { id: r.id, file: `rec_${r.id}.m4a`, dur: out.dur || Date.now() - r.started, created: r.started, transcript: out.lines };
+      return { id: r.id, file: `rec_${r.id}.m4a`, dur: out.dur || Date.now() - r.started, created: r.started, transcript: out.lines, marks: marksRef.current };
     } catch (e) { onError("Couldn't save the recording: " + String((e as Error)?.message ?? e)); return null; }
   }, [onError]);
 
@@ -92,7 +96,7 @@ export function useNoteAudio(noteId: string, onError: (msg: string) => void) {
     try { player.setPlaybackRate(next); } catch {}
   }, [rate, player]);
 
-  return { rec, loaded, status, rate, start, stop, load, unload, toggle, seek, play, cycleRate };
+  return { rec, loaded, status, rate, marks, mark, start, stop, load, unload, toggle, seek, play, cycleRate };
 }
 
 export type NoteAudio = ReturnType<typeof useNoteAudio>;
@@ -131,7 +135,7 @@ function Meter() {
   );
 }
 
-function RecordingBar({ onStop, toNotes, panelOpen, onPanel }: { onStop: () => void; toNotes: boolean; panelOpen: boolean; onPanel: () => void }) {
+function RecordingBar({ onStop, onMark, toNotes, panelOpen, onPanel }: { onStop: () => void; onMark: () => void; toNotes: boolean; panelOpen: boolean; onPanel: () => void }) {
   const t = useTheme();
   const live = useLive();
   const lastLine = live.lines.length ? live.lines[live.lines.length - 1].text : '';
@@ -146,6 +150,7 @@ function RecordingBar({ onStop, toNotes, panelOpen, onPanel }: { onStop: () => v
       <IconButton name={live.paused ? 'record.circle' : 'pause.fill'} label={live.paused ? 'Resume recording' : 'Pause recording'} onPress={() => pauseLive(!live.paused)} color="#3B4252" />
       <Meter />
       <Text numberOfLines={1} ellipsizeMode="head" style={{ flex: 1, color: words && !live.note ? t.text : t.faint, fontSize: 14, paddingHorizontal: 6 }}>{hint}</Text>
+      <IconButton name="bookmark" label="Mark this moment" onPress={onMark} color="#3B4252" />
       <IconButton name={toNotes ? 'sparkles' : 'text.quote'} label={toNotes ? 'Show live notes' : 'Show the words'} active={panelOpen} onPress={onPanel} color={panelOpen ? undefined : '#3B4252'} />
     </>
   );
@@ -179,7 +184,7 @@ export function AudioBar({ audio, noteId, recs, toNotes, panelOpen, onPanel, onS
     <Animated.View entering={FadeInDown.duration(200)} pointerEvents="box-none" style={{ position: 'absolute', left: 12, right: 12, bottom: 16, alignItems: 'center', zIndex: 6 }}>
       <View style={{ width: cur || recording ? '100%' : undefined, maxWidth: 760, height: 52, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, borderRadius: 16, backgroundColor: t.elev,
         borderWidth: t.dark ? 1 : 0, borderColor: t.line, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}>
-        {recording ? <RecordingBar onStop={onStopRec} toNotes={toNotes} panelOpen={panelOpen} onPanel={onPanel} /> : cur ? (
+        {recording ? <RecordingBar onStop={onStopRec} onMark={audio.mark} toNotes={toNotes} panelOpen={panelOpen} onPanel={onPanel} /> : cur ? (
           <>
             {startButton('', 'Record', false, false)}
             <IconButton name="gobackward.15" label="Back 15 seconds" onPress={() => audio.seek(Math.max(0, pos - 15000))} />
@@ -258,8 +263,8 @@ function SaidList({ lines, partial, pos, onSeek, empty }: { lines: { t: number; 
 }
 
 /** Notes and words for a class, while it's being recorded and after. */
-export function ClassPanel({ live, toNotes, rec, busy, pos, onMake, onSeek, onClose }: {
-  live: LiveNotes | null; toNotes: boolean; rec: Recording | null; busy: boolean; pos: number; onMake: () => void; onSeek: (ms: number) => void; onClose: () => void;
+export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSeek, onClose }: {
+  live: LiveNotes | null; toNotes: boolean; rec: Recording | null; busy: boolean; pos: number; marks?: number[]; onMake: () => void; onSeek: (ms: number) => void; onClose: () => void;
 }) {
   const t = useTheme();
   const words = useLive();
@@ -277,6 +282,18 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, onMake, onSeek, onCl
         <IconButton name="xmark" label="Close transcript" onPress={onClose} />
       </View>
       {hasNotes ? <Tabs tabs={['Notes', 'What was said']} at={tab} onPick={setTab} /> : null}
+      {marks?.length ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 8 }} contentContainerStyle={{ paddingHorizontal: 14, gap: 6 }}>
+          {marks.map((m, i) => (
+            <Animated.View key={i} entering={FadeIn.duration(200)}>
+              <Pressable accessibilityLabel={`Mark at ${fmtTime(m)}`} onPress={() => { if (!recording) onSeek(m); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 26, paddingHorizontal: 9, borderRadius: 13, backgroundColor: t.chip }}>
+                <Icon name="bookmark.fill" size={10} color={BLUE} />
+                <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{fmtTime(m)}</Text>
+              </Pressable>
+            </Animated.View>
+          ))}
+        </ScrollView>
+      ) : null}
 
       {showing === 0 ? (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 90, gap: 10 }}>

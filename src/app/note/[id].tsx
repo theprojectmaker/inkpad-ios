@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
 import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/audio-bar';
+import { NoteTabs } from '@/components/note-tabs';
+import { openTab, useTabs } from '@/lib/tabs';
 import { summarize, useLiveNotes } from '@/lib/livenotes';
 import { FindPanel } from '@/components/find-panel';
 import { currentTool, NoteToolbar, StylePopover } from '@/components/note-toolbar';
@@ -141,6 +143,9 @@ export default function Editor() {
   const [exportMenu, setExportMenu] = useState(false);
   const audio = useNoteAudio(id, toast);
   const [notesMode, setNotesMode] = useState(false);
+  const tabs = useTabs();
+  const [tabsOpen, setTabsOpen] = useState(false);
+  useEffect(() => { openTab(id); }, [id]);
   const pageOf = useCallback(() => pageNow.current, []);
   const live = useLiveNotes(notesMode && !!audio.rec, id, canvas, pageOf, absPath);
   // Leaving the text tool finishes the text being typed.
@@ -223,7 +228,8 @@ export default function Editor() {
   };
 
   const leaving = useRef(false);
-  const back = async () => {
+  const back = () => leave();
+  const leave = async (to?: string) => {
     if (leaving.current) return;
     leaving.current = true;
     if (audio.rec) await stopRecording();
@@ -242,7 +248,8 @@ export default function Editor() {
     // Keep Drive up to date: the PDF is made here (it needs the page), the upload finishes in the background.
     let pending: { path: string; title: string } | null = null;
     if (changed.current && (s.driveSync || meta?.drive)) { try { pending = await makePdf(); } catch {} }
-    if (router.canGoBack()) router.back(); else router.replace('/');
+    if (to) router.replace(`/note/${to}`);
+    else if (router.canGoBack()) router.back(); else router.replace('/');
     if (pending) uploadPdf(pending, true).catch(() => toast("Couldn't update the copy in Google Drive. It'll try again next time."));
     if (shots.length && doc) readPages(id, shots).then((t) => lib.updateNote(id, { hand: pageTextToSearch(t, doc.pages.map((p) => p.id)) })).catch(() => {});
   };
@@ -631,8 +638,8 @@ export default function Editor() {
               onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
           {page.count > 1 || doc?.pages.length ? (
-            <View pointerEvents="box-none" style={{ position: 'absolute', right: 8, top: 0, bottom: 0, justifyContent: 'center' }}>
-              <View style={{ width: 34, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
+            <View pointerEvents="box-none" style={{ position: 'absolute', right: 12, bottom: audioOpen ? 80 : 16 }}>
+              <View style={{ width: 34, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
                 <Pressable accessibilityLabel="Previous page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} style={{ padding: 5 }}><Icon name="chevron.up" size={13} color="#3B4252" /></Pressable>
                 <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ paddingVertical: 2, alignItems: 'center' }}>
                   <Text style={{ color: '#3B4252', fontSize: 11, fontWeight: '600' }}>{page.page + 1}</Text>
@@ -654,7 +661,7 @@ export default function Editor() {
             onHear={(r, sec) => hear(r, sec)} onClose={() => setFind(false)} />
         ) : null}
         {transcriptOpen && (cur || audio.rec) ? (
-          <ClassPanel live={audio.rec ? live : null} toNotes={notesMode} rec={cur ? recordings.find((x) => x.id === cur.id) ?? cur : null} busy={transcribing} pos={position * 1000} onMake={makeTranscript} onSeek={(ms) => { audio.seek(ms); audio.play(); }} onClose={() => setTranscriptOpen(false)} />
+          <ClassPanel live={audio.rec ? live : null} toNotes={notesMode} rec={cur ? recordings.find((x) => x.id === cur.id) ?? cur : null} busy={transcribing} pos={position * 1000} marks={audio.rec ? audio.marks : cur?.marks} onMake={makeTranscript} onSeek={(ms) => { audio.seek(ms); audio.play(); }} onClose={() => setTranscriptOpen(false)} />
         ) : null}
         {calcLoaded ? (
           <View style={{ width: calc ? Math.min(460, width * 0.42) : 0, overflow: 'hidden', borderLeftWidth: calc ? 1 : 0, borderLeftColor: t.line }}>
@@ -668,10 +675,11 @@ export default function Editor() {
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
             onRuler={setRuler} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
-          <View style={{ position: 'absolute', top: 12, left: 12, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          <View style={{ position: 'absolute', top: 12, left: 12, flexDirection: 'row', borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
             <IconButton name="arrow.left" label="Back to notes" onPress={back} color="#3B4252" />
+            {tabs.length > 1 ? <IconButton name="rectangle.stack" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} color={tabsOpen ? undefined : '#3B4252'} /> : null}
           </View>
-          <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', borderRadius: 14, backgroundColor: '#fff', paddingHorizontal: 2, shadowColor: '#000', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 2, shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
             <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} color="#3B4252" />
             <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} color="#3B4252" />
             <IconButton name="square.and.arrow.up" label="Share" onPress={share} color="#3B4252" />
@@ -792,6 +800,7 @@ export default function Editor() {
       <PromptSheet visible={!!comment} title="Comment" initial={comment?.text ?? ''} placeholder="Add a comment" confirm="Post"
         onCancel={() => { if (comment) canvas.current?.setComment(comment.id, comment.text); setComment(null); }}
         onSubmit={(v) => { if (comment) canvas.current?.setComment(comment.id, v); setComment(null); }} />
+      {tabsOpen ? <NoteTabs current={id} onClose={() => setTabsOpen(false)} onPick={(n) => { setTabsOpen(false); leave(n); }} /> : null}
       <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />
       <ConfirmSheet visible={delRec != null} title="Delete this recording?" message="Your writing stays. The audio and its transcript are removed." onCancel={() => setDelRec(null)}
