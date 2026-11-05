@@ -12,11 +12,14 @@ import { askStudy, type Flashcard, type QuizQ } from '@/lib/ai';
 import { fsx } from '@/lib/fsx';
 import { notePath, renderDir } from '@/lib/noteio';
 import { type OcrLine, readText } from '@/lib/ondevice';
+import { speak, stopSpeaking } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
+import { STUDY_ACTIONS } from '@/lib/study-actions';
+import { addDeck, logQuiz } from '@/lib/study-store';
 
-type Tab = 'home' | 'summary' | 'cards' | 'quiz' | 'explain' | 'help' | 'ask';
+type Tab = 'home' | 'summary' | 'cards' | 'quiz' | 'explain' | 'help' | 'ask' | 'more';
 type Scope = 'page' | 'note';
-type Saved = { summary?: string; explain?: string; cards?: Flashcard[]; quiz?: QuizQ[]; title?: string };
+type Saved = { summary?: string; explain?: string; cards?: Flashcard[]; quiz?: QuizQ[]; title?: string; more?: Record<string, string> };
 type Msg = { role: 'user' | 'assistant'; text: string; err?: boolean };
 
 const TABS: { id: Tab; label: string }[] = [
@@ -26,6 +29,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'explain', label: 'Explain' },
   { id: 'help', label: 'Question help' },
   { id: 'ask', label: 'Ask' },
+  { id: 'more', label: 'More ways to study' },
 ];
 const MAX_PAGES = 6;
 
@@ -39,6 +43,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   const [saved, setSaved] = useState<Saved>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [action, setAction] = useState<string | null>(null);
   const [chat, setChat] = useState<Msg[]>([]);       // kept here so switching tabs doesn't erase it
   const savePath = notePath(noteId, 'study.json');
 
@@ -69,6 +74,19 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
       else if (what === 'explain') keep({ explain: r.text });
       else if (what === 'flashcards') keep({ cards: (r.data?.cards ?? []).filter((c: Flashcard) => c?.q && c?.a), title: r.data?.title });
       else keep({ quiz: (r.data?.questions ?? []).filter((q: QuizQ) => q?.q && Array.isArray(q.choices) && q.choices.length >= 2), title: r.data?.title });
+    } catch (e) { setErr(String((e as Error)?.message ?? e)); }
+    finally { setBusy(false); }
+  };
+
+  const runAction = async (id: string, again = false) => {
+    const a = STUDY_ACTIONS.find((x) => x.id === id);
+    if (!a) return;
+    setAction(id);
+    if (saved.more?.[id] && !again) return;
+    setBusy(true); setErr('');
+    try {
+      const r = await askStudy('ask', await pageImages(), { question: `${a.ask} Use as much length as this needs.` });
+      keep({ more: { ...saved.more, [id]: r.text ?? '' } });
     } catch (e) { setErr(String((e as Error)?.message ?? e)); }
     finally { setBusy(false); }
   };
@@ -135,6 +153,9 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
         <Box tag="EXPLAIN" label="Explain" onPress={() => setTab('explain')}>
           <Text style={{ color: t.sub, fontSize: 14.5 }}>{saved.explain ? 'Your explanation is ready.' : 'Tap to explain the hard parts.'}</Text>
         </Box>
+        <Box tag="MORE" label="More ways to study" onPress={() => { setAction(null); setTab('more'); }}>
+          <Text style={{ color: t.sub, fontSize: 14.5 }}>{STUDY_ACTIONS.length} more: test questions, memory tricks, check my work, Hebrew and more.</Text>
+        </Box>
         <Box tag="QUESTION HELP" label="Question help" onPress={() => setTab('help')}>
           <Text style={{ color: t.sub, fontSize: 14.5 }}>Pick a question from the page and get help with it.</Text>
         </Box>
@@ -145,11 +166,48 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   } else if (tab === 'explain') {
     body = saved.explain ? <><Markdown text={saved.explain} /><Redo onPress={() => run('explain')} /></> : <MakeButton label="Explain the hard parts" onPress={() => run('explain')} />;
   } else if (tab === 'cards') {
-    body = saved.cards?.length ? <><Cards cards={saved.cards} /><Redo onPress={() => run('flashcards')} /></> : <MakeButton label="Make flashcards" onPress={() => run('flashcards')} />;
+    body = saved.cards?.length ? <><Cards cards={saved.cards} title={saved.title} /><Redo onPress={() => run('flashcards')} /></> : <MakeButton label="Make flashcards" onPress={() => run('flashcards')} />;
+  } else if (tab === 'more') {
+    const a = STUDY_ACTIONS.find((x) => x.id === action);
+    const out = action ? saved.more?.[action] : undefined;
+    if (a) {
+      body = (
+        <>
+          <Pressable accessibilityLabel="All study tools" onPress={() => { stopSpeaking(); setAction(null); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <Icon name="chevron.left" size={13} color={t.accent} />
+            <Text style={{ color: t.accent, fontSize: 14, fontWeight: '600' }}>All study tools</Text>
+          </Pressable>
+          <Text style={{ color: t.text, fontSize: 18, fontWeight: '700', marginBottom: 8 }}>{a.label}</Text>
+          {out ? (
+            <>
+              <Markdown text={out} />
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 18, marginTop: 16 }}>
+                <Pressable accessibilityLabel="Read aloud" onPress={() => speak(out.replace(/[#*_`]/g, ''))}><Text style={{ color: t.accent, fontSize: 14, fontWeight: '600' }}>Read aloud</Text></Pressable>
+                <Pressable accessibilityLabel="Make again" onPress={() => { runAction(a.id, true); }}><Text style={{ color: t.sub, fontSize: 14, fontWeight: '600' }}>Make again</Text></Pressable>
+              </View>
+            </>
+          ) : err ? <Pressable onPress={() => runAction(a.id)}><Text style={{ color: t.accent, fontSize: 15 }}>Try again</Text></Pressable> : null}
+        </>
+      );
+    } else {
+      const groups = [...new Set(STUDY_ACTIONS.map((x) => x.group))];
+      body = groups.map((g) => (
+        <View key={g} style={{ marginBottom: 14 }}>
+          <Text style={{ color: t.sub, fontSize: 13, fontWeight: '600', marginBottom: 6 }}>{g}</Text>
+          {STUDY_ACTIONS.filter((x) => x.group === g).map((x) => (
+            <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => runAction(x.id)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 42, paddingHorizontal: 10, borderRadius: 10, backgroundColor: pressed ? t.chip : 'transparent' })}>
+              <Icon name={x.icon} size={17} color={t.accent} />
+              <Text style={{ flex: 1, color: t.text, fontSize: 15 }}>{x.label}</Text>
+              {saved.more?.[x.id] ? <Icon name="checkmark" size={12} color={t.faint} /> : null}
+            </Pressable>
+          ))}
+        </View>
+      ));
+    }
   } else if (tab === 'help') {
     body = <Helper pages={pageImages} scopeLabel={scopeLabel} />;
   } else if (tab === 'quiz') {
-    body = saved.quiz?.length ? <><Quiz questions={saved.quiz} /><Redo onPress={() => run('quiz')} /></> : <MakeButton label="Quiz me" onPress={() => run('quiz')} />;
+    body = saved.quiz?.length ? <><Quiz questions={saved.quiz} title={saved.title} /><Redo onPress={() => run('quiz')} /></> : <MakeButton label="Quiz me" onPress={() => run('quiz')} />;
   } else {
     body = <Ask pageImages={pageImages} scopeLabel={scopeLabel} msgs={chat} setMsgs={setChat} />;
   }
@@ -182,8 +240,9 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   );
 }
 
-function Cards({ cards }: { cards: Flashcard[] }) {
+function Cards({ cards, title }: { cards: Flashcard[]; title?: string }) {
   const t = useTheme();
+  const [kept, setKept] = useState(false);
   const [order, setOrder] = useState(() => cards.map((_, i) => i));
   const [i, setI] = useState(0);
   const [flip, setFlip] = useState(false);
@@ -207,23 +266,39 @@ function Cards({ cards }: { cards: Flashcard[] }) {
         <Icon name="shuffle" size={14} color={t.accent} />
         <Text style={{ color: t.accent, fontSize: 13, fontWeight: '600' }}>Shuffle</Text>
       </Pressable>
+      <Pressable accessibilityLabel="Read aloud" onPress={() => speak(flip ? c.a : c.q)} style={{ alignSelf: 'center', height: 30, justifyContent: 'center' }}>
+        <Text style={{ color: t.accent, fontSize: 13, fontWeight: '600' }}>Read aloud</Text>
+      </Pressable>
+      <Pressable accessibilityLabel="Save to my flashcards" disabled={kept} onPress={() => { addDeck(title || 'From my notes', cards); setKept(true); }} style={{ alignSelf: 'center', height: 30, justifyContent: 'center' }}>
+        <Text style={{ color: kept ? t.faint : t.accent, fontSize: 13, fontWeight: '600' }}>{kept ? 'Saved to your flashcards' : 'Save to my flashcards'}</Text>
+      </Pressable>
     </View>
   );
 }
 
-function Quiz({ questions }: { questions: QuizQ[] }) {
+function Quiz({ questions: all, title }: { questions: QuizQ[]; title?: string }) {
   const t = useTheme();
+  const [questions, setQuestions] = useState(all);
+  const [wrong, setWrong] = useState<QuizQ[]>([]);
+  const logged = useRef(false);
   const [i, setI] = useState(0);
   const [pick, setPick] = useState<number | null>(null);
   const [score, setScore] = useState(0);
-  useEffect(() => { setI(0); setPick(null); setScore(0); }, [questions]);
+  useEffect(() => { setQuestions(all); setI(0); setPick(null); setScore(0); setWrong([]); logged.current = false; }, [all]);
+  const again = (list: QuizQ[]) => { setQuestions(list); setI(0); setPick(null); setScore(0); setWrong([]); logged.current = false; };
   if (i >= questions.length) {
+    if (!logged.current) { logged.current = true; logQuiz(title || 'A note', score, questions.length); }
     return (
       <View style={{ alignItems: 'center', paddingVertical: 30, gap: 10 }}>
         <Text style={{ color: t.text, fontSize: 34, fontWeight: '800' }}>{score} / {questions.length}</Text>
         <Text style={{ color: t.sub, fontSize: 15 }}>{score === questions.length ? 'Perfect!' : score >= questions.length * 0.7 ? 'Nice work.' : 'Keep going — try it again.'}</Text>
-        <Pressable onPress={() => { setI(0); setPick(null); setScore(0); }} style={{ marginTop: 8, height: 40, paddingHorizontal: 18, borderRadius: 20, backgroundColor: t.accent, justifyContent: 'center' }}>
-          <Text style={{ color: '#fff', fontWeight: '700' }}>Try again</Text>
+        {wrong.length ? (
+          <Pressable accessibilityLabel="Retry the ones I missed" onPress={() => again(wrong)} style={{ marginTop: 8, height: 40, paddingHorizontal: 18, borderRadius: 20, backgroundColor: t.accent, justifyContent: 'center' }}>
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Retry the {wrong.length} you missed</Text>
+          </Pressable>
+        ) : null}
+        <Pressable accessibilityLabel="Take the quiz again" onPress={() => again([...all].sort(() => Math.random() - 0.5))} style={{ marginTop: 4, height: 40, paddingHorizontal: 18, justifyContent: 'center' }}>
+          <Text style={{ color: t.accent, fontWeight: '700' }}>Take it again, shuffled</Text>
         </Pressable>
       </View>
     );
@@ -237,7 +312,7 @@ function Quiz({ questions }: { questions: QuizQ[] }) {
       {q.choices.map((c, k) => {
         const chosen = pick === k, right = pick != null && k === ans, wrong = chosen && k !== ans;
         return (
-          <Pressable key={k} disabled={pick != null} onPress={() => { setPick(k); if (k === ans) setScore((s) => s + 1); }}
+          <Pressable key={k} disabled={pick != null} onPress={() => { setPick(k); if (k === ans) setScore((s) => s + 1); else setWrong((w) => [...w, q]); }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1.5,
               borderColor: right ? '#16A34A' : wrong ? t.danger : t.line, backgroundColor: right ? '#16A34A14' : wrong ? t.danger + '14' : t.elev }}>
             <Text style={{ color: t.faint, fontWeight: '700', width: 18 }}>{'ABCD'[k] ?? k + 1}</Text>

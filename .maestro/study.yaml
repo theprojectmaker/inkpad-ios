@@ -1,0 +1,67 @@
+# The Study hub, flashcards in every mode, and Reference.
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- tapOn: { text: "Study" }
+- waitForAnimationToEnd
+- takeScreenshot: s01-hub
+- tapOn: { text: "Add test", optional: true }
+- tapOn: { text: "Add a test", optional: true }
+- waitForAnimationToEnd
+- inputText: "Biology chapter 4"
+- tapOn: { text: "Date" }
+- inputText: "12/15"
+- tapOn: { text: "Save" }
+- waitForAnimationToEnd
+- tapOn: { text: "Add homework" }
+- waitForAnimationToEnd
+- inputText: "Geometry page 42"
+- tapOn: { text: "Save" }
+- waitForAnimationToEnd
+- tapOn: { text: "Start focus" }
+- waitForAnimationToEnd
+- takeScreenshot: s02-hub-filled
+- tapOn: { text: "End timer" }
+- tapOn: { text: "Reference" }
+- waitForAnimationToEnd
+- takeScreenshot: s03-formulas
+- tapOn: { text: "Elements" }
+- waitForAnimationToEnd
+- takeScreenshot: s04-elements
+- tapOn: { text: "Units" }
+- waitForAnimationToEnd
+- takeScreenshot: s05-units
+- tapOn: { text: "Symbols" }
+- waitForAnimationToEnd
+- takeScreenshot: s06-symbols
+- tapOn: { text: "Back" }
+- waitForAnimationToEnd
+- tapOn: { text: "Study flashcards" }
+- waitForAnimationToEnd
+- tapOn: { text: "New set" }
+- waitForAnimationToEnd
+- tapOn: { text: "Set name" }
+- inputText: "Cells"
+- tapOn: { text: "Cards" }
+- inputText: "mitochondria - makes energy\nnucleus - holds the DNA\nribosome - builds proteins\n"
+- hideKeyboard
+- tapOn: { text: "Add 3 cards" }
+- waitForAnimationToEnd
+- tapOn: { text: "Cells" }
+- waitForAnimationToEnd
+- takeScreenshot: s07-deck
+- tapOn: { text: "Match game" }
+- waitForAnimationToEnd
+- takeScreenshot: s08-match
+- tapOn: { text: "Back" }
+- tapOn: { text: "Type the answers" }
+- waitForAnimationToEnd
+- takeScreenshot: s09-type
+- tapOn: { text: "Back" }
+- tapOn: { text: "Review what's due" }
+- waitForAnimationToEnd
+- tapOn: { text: "Flip card" }
+- waitForAnimationToEnd
+- takeScreenshot: s10-review
+- tapOn: { text: "Know it" }

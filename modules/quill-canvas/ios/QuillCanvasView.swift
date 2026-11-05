@@ -119,6 +119,11 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   lazy var formatBar: UIView = makeFormatBar()
   var zoomWriter: ZoomWriter?
   var zoomPreviewing = false
+  var angleVertex = CGPoint.zero
+  var angleArmA: CGPoint?
+  var angleArmB: CGPoint?
+  var angleSecond = false
+  let angleLabel = CATextLayer()
   var scribble = true
   var drawBoxStart = CGPoint.zero
   let textBoxLayer = CAShapeLayer()
@@ -722,6 +727,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if mode == .tape { tapeColor = t.color; tapeWidth = w }
     if mode == .laser { laserColor = UIColor(hex: t.color) }
     if mode == .measure { measureMode = t.mode } else { measureLayer.path = nil }
+    if mode != .measure || t.mode != "angle" { angleLabel.isHidden = true; angleArmA = nil; angleArmB = nil }
     if mode == .write || mode == .compass { pen = InkPen(type: t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: t.mode, angle: Float(t.angle), stabilize: t.stabilize) }
   }
 

@@ -370,6 +370,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         {chip('Ruler', m === 'ruler', () => { set({ measureMode: 'ruler' }); onRuler(true); })}
         {chip('Calculate length', m === 'length', () => { set({ measureMode: 'length' }); onCalibrate(); })}
         {chip('Calculate area', m === 'area', () => { set({ measureMode: 'area' }); onCalibrate(); })}
+        {chip('Angle', m === 'angle', () => { set({ measureMode: 'angle' }); onRuler(false); })}
         <Bar />
         <Pressable accessibilityLabel={ruler ? 'Hide ruler' : 'Show ruler'} onPress={() => onRuler(!ruler)} style={{ padding: 4 }}><Icon name={ruler ? 'eye.slash' : 'eye'} size={21} color={INK} /></Pressable>
       </View>

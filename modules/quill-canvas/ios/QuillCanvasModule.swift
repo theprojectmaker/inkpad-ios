@@ -43,6 +43,13 @@ public final class QuillCanvasModule: Module {
       return try await OnDevice.ask(instructions: instructions, prompt: prompt)
     }
 
+    Function("speak") { (text: String) in Speak.say(text) }
+    Function("stopSpeaking") { Speak.stop() }
+    AsyncFunction("defineWord") { (word: String) in
+      guard let vc = self.appContext?.utilities?.currentViewController() else { return }
+      Speak.define(word, from: vc)
+    }.runOnQueue(.main)
+
     // A picture made smaller, as a JPEG.
     AsyncFunction("imageShrink") { (src: String, dst: String, maxSide: Double, quality: Double, wantBase64: Bool) throws -> [String: Any] in
       return try ImageShrink.run(src: src, dst: dst, maxSide: maxSide, quality: quality, wantBase64: wantBase64)

@@ -13,6 +13,9 @@ type NativeOnDevice = {
   copyText(text: string): Promise<void>;
   pdfInfo(path: string, maxText: number): Promise<{ pages: [number, number][]; text: string }>;
   pdfCover(path: string, dst: string, width: number): Promise<boolean>;
+  speak(text: string): void;
+  stopSpeaking(): void;
+  defineWord(word: string): Promise<void>;
   imageShrink(src: string, dst: string, maxSide: number, quality: number, wantBase64: boolean): Promise<{ w: number; h: number; base64?: string }>;
   enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
   localAIStatus(): LocalAIStatus;
@@ -48,6 +51,12 @@ export async function shrinkImage(src: string, dst: string, maxSide: number, qua
 export async function pdfCover(uri: string, dstUri: string, width: number): Promise<boolean> {
   return (await Native?.pdfCover?.(plain(uri), plain(dstUri), width)) ?? false;
 }
+
+/** Reads text aloud, in its own language. Asking again while it's speaking stops it. */
+export const speak = (text: string) => { try { Native?.speak?.(text); } catch {} };
+export const stopSpeaking = () => { try { Native?.stopSpeaking?.(); } catch {} };
+/** Opens the iPad's dictionary on a word. */
+export const defineWord = (word: string) => Native?.defineWord?.(word);
 
 /** Apple's colour picker. Empty if closed without picking. */
 export async function pickColor(start: string): Promise<string> {

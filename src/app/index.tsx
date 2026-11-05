@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Reanimated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSchedule, whereNow } from '@/lib/schedule';
+import { studentoDay } from '@/lib/studento';
 
 import { PaperSheet } from '@/components/paper-sheet';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
@@ -75,9 +77,18 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
 
   const open = (id: string, record?: boolean) => router.push(record ? `/note/${id}?record=1` : `/note/${id}`);
 
+  // A new note during class is named for the class.
+  const { s: sched } = useSchedule();
+  const classTitle = () => {
+    if (!s.scheduleUnlocked || !sched.studento) return defaultTitle();
+    const now = new Date();
+    const w = whereNow({ periods: studentoDay(sched.studento, now).periods, theme: 0 }, now);
+    const name = w.kind === 'class' ? w.period.name : w.kind === 'passing' ? w.next.name : null;
+    return name ? `${name}, ${now.toLocaleDateString([], { month: 'short', day: 'numeric' })}` : defaultTitle();
+  };
   const newNote = async (style: PaperStyle = 'blank', color: PaperColor = 'white', size: PageSizeId = 'letter', record = false) => {
     try {
-      const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color, size }, title: defaultTitle() });
+      const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color, size }, title: classTitle() });
       open(id, record);
     } catch (e) { toast("Couldn't make the note: " + String((e as Error)?.message ?? e)); }
   };
@@ -297,6 +308,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length })}
             {sideRow('Gallery', false, () => setSheet('paper'), { icon: 'photo.artframe' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
+            {sideRow('Study', false, () => router.push('/study'), { icon: 'book' })}
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
             {s.scheduleUnlocked ? sideRow('My schedule', false, () => router.push('/clock'), { icon: 'clock' }) : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 4, paddingLeft: 12 }}>

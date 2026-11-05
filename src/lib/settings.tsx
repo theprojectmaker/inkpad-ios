@@ -30,7 +30,7 @@ export type Settings = {
   tk?: Record<string, Partial<ToolKit>>;
   toolOrder?: string[];      // the Toolbox: order of the tools
   toolHidden?: string[];     // and the ones taken off the toolbar
-  measureMode?: 'ruler' | 'length' | 'area';
+  measureMode?: 'ruler' | 'length' | 'area' | 'angle';
   measureScale?: { perPoint: number; unit: string };   // from Calibrate scale
   myTemplates?: string[];
   nibAngle?: number;         // calligraphy

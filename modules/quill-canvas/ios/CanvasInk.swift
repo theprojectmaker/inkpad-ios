@@ -359,7 +359,8 @@ extension QuillCanvasView {
     case .tape: beginTape(p)
     case .laser: laserDown = true; beginLaser(p)
     case .comment: break
-    case .measure: measureStart = p
+    case .measure:
+      if measureMode == "angle" { angleBegan(p) } else { measureStart = p }
     case .compass: compassBegan(p)
     }
   }
@@ -540,8 +541,59 @@ extension QuillCanvasView {
 
   // MARK: - Measuring
 
+  /// First drag: from the point along one side. Second drag: the other side, from the same point.
+  private func angleBegan(_ p: CGPoint) {
+    if angleArmA == nil || angleArmB != nil {
+      angleVertex = p
+      angleArmA = nil
+      angleArmB = nil
+      angleSecond = false
+    } else { angleSecond = true }
+  }
+
+  private func drawAngle(to p: CGPoint) {
+    if angleSecond { angleArmB = p } else { angleArmA = p }
+    let v = pageHost.convert(angleVertex, to: self)
+    let path = UIBezierPath()
+    for arm in [angleArmA, angleArmB].compactMap({ $0 }) {
+      path.move(to: v)
+      path.addLine(to: pageHost.convert(arm, to: self))
+    }
+    var label = "Now drag the other side"
+    if let a = angleArmA, let b = angleArmB {
+      let first = atan2(a.y - angleVertex.y, a.x - angleVertex.x), second = atan2(b.y - angleVertex.y, b.x - angleVertex.x)
+      var d = second - first
+      while d > .pi { d -= 2 * .pi }
+      while d < -.pi { d += 2 * .pi }
+      path.append(UIBezierPath(arcCenter: v, radius: 34, startAngle: first, endAngle: second, clockwise: d > 0))
+      label = String(format: "%.1f°", abs(d) * 180 / .pi)
+    }
+    if measureLayer.superlayer == nil {
+      measureLayer.fillColor = nil
+      measureLayer.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      measureLayer.lineWidth = 2
+      layer.addSublayer(measureLayer)
+    }
+    measureLayer.path = path.cgPath
+    if angleLabel.superlayer == nil {
+      layer.addSublayer(angleLabel)
+      angleLabel.foregroundColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      angleLabel.fontSize = 15
+      angleLabel.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
+      angleLabel.contentsScale = UIScreen.main.scale
+      angleLabel.alignmentMode = .center
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    angleLabel.isHidden = false
+    angleLabel.string = label
+    angleLabel.frame = CGRect(x: v.x - 90, y: v.y + 40, width: 180, height: 22)
+    CATransaction.commit()
+  }
+
   private func drawMeasure(to p: CGPoint) {
     if measureMode == "ruler" { return }
+    if measureMode == "angle" { drawAngle(to: p); return }
     let a = pageHost.convert(measureStart, to: self), b = pageHost.convert(p, to: self)
     let path = UIBezierPath()
     if measureMode == "area" {
@@ -570,6 +622,7 @@ extension QuillCanvasView {
 
   private func finishMeasure(at p: CGPoint) {
     if measureMode == "ruler" { return }
+    if measureMode == "angle" { drawAngle(to: p); return }
     drawMeasure(to: p)
     let w = abs(p.x - measureStart.x), h = abs(p.y - measureStart.y)
     if hypot(w, h) * canvas.zoomScale < 8 { measureLayer.path = nil; return }
