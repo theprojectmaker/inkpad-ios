@@ -313,8 +313,12 @@ final class LiveRecorder {
     guard let last = lastSegments.removeValue(forKey: gen) else { return }
     var out: [[String: Any]] = []
     Transcriber.group(last.segments, into: &out)
-    for var l in out {
-      l["t"] = (l["t"] as? Double ?? 0) + last.base
+    // Words still being worked out have no times yet: spread those lines over the time they took.
+    let timed = (last.segments.last?.timestamp ?? 0) > 0
+    let span = max(0, Double(frames) / rate - last.base)
+    for (i, var l) in out.enumerated() {
+      let at = timed ? (l["t"] as? Double ?? 0) : span * Double(i) / Double(max(1, out.count))
+      l["t"] = at + last.base
       lines.append(l)
     }
   }
