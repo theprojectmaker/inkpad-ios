@@ -123,6 +123,7 @@ final class PenCapture {
   private var r: Float = 0, a: Float = 1
   private var dirX: Float = 1, dirY: Float = 0
   private var lastSpeed: Float = 0
+  private var lastPressure: Float = 0
   private var storedX: Float, storedY: Float
   var moveAnchor: CGPoint
   var page: CGRect = .infinite     // the stroke stays on this page
@@ -144,7 +145,10 @@ final class PenCapture {
   }
 
   private func pressure(force: Float, speed: Float) -> Float {
-    if force > 0 { return min(1, force * 2.2) }
+    // The Pencil reports no pressure as it lifts. That's the end of a stroke, not a change of
+    // pressure, so the line keeps the weight it had instead of swelling into a blob.
+    if force > 0 { lastPressure = min(1, force * 2.2); return lastPressure }
+    if lastPressure > 0 { return lastPressure }
     return max(0.25, 0.6 - speed / 3000 * 0.35)   // a finger has no pressure: slow is a little heavier
   }
 
@@ -207,7 +211,15 @@ final class PenCapture {
   func finishedPoints() -> [InkPoint] {
     if snap != nil { return wet.pts }
     var pts = wet.pts
-    if let last = pts.last, hypot(last.x - rawX, last.y - rawY) > 0.05 { pts.append(InkPoint(x: rawX, y: rawY, r: r, a: a)) }
+    let close = 1.2 / zoom     // on screen, about a point
+    // The hand jitters as the Pencil lifts: those last tiny moves aren't part of the line.
+    while pts.count > 2, hypot(pts[pts.count - 1].x - pts[pts.count - 2].x, pts[pts.count - 1].y - pts[pts.count - 2].y) < close { pts.removeLast() }
+    if let last = pts.last, hypot(last.x - rawX, last.y - rawY) >= close { pts.append(InkPoint(x: rawX, y: rawY, r: last.r, a: last.a)) }
+    // And the end of a line never gets fatter than the line leading up to it.
+    let count = pts.count
+    if count > 2 {
+      for i in max(1, count - 8)..<count where pts[i].r > pts[i - 1].r * 1.02 { pts[i].r = pts[i - 1].r * 1.02 }
+    }
     return pts
   }
 }

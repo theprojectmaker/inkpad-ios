@@ -87,7 +87,8 @@ struct Ribbon {
     }
     let mx = p.x - x, my = p.y - y
     let len = (mx * mx + my * my).squareRoot()
-    if len < 0.01 { return }
+    // A step this small has no real direction, and treating one as a corner leaves a dot on the line.
+    if len < 0.12 { return }
     let nx = mx / len, ny = my / len
     if !turning {
       turning = true
