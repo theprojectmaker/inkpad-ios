@@ -137,6 +137,10 @@ public final class QuillCanvasModule: Module {
         view.setFingerDraws(on)
       }
 
+      Prop("scribble") { (view: QuillCanvasView, on: Bool) in
+        view.scribble = on
+      }
+
       Prop("shapeSnap") { (view: QuillCanvasView, on: Bool) in
         view.shapeSnap = on
       }
@@ -211,6 +215,14 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("addPageText") { (view: QuillCanvasView, page: Int, text: String) in
         view.addPageText(page: page, text: text)
+      }.runOnQueue(.main)
+
+      AsyncFunction("replaceSelectionWithGraph") { (view: QuillCanvasView, axes: [[[Double]]], curve: [[[Double]]], caption: String) in
+        view.replaceSelection(axes: axes, curve: curve, caption: caption)
+      }.runOnQueue(.main)
+
+      AsyncFunction("commentList") { (view: QuillCanvasView) -> [[String: Any]] in
+        return view.commentList()
       }.runOnQueue(.main)
 
       AsyncFunction("replaceSelection") { (view: QuillCanvasView, text: String) in

@@ -4,7 +4,7 @@
 // remembers its own colours and sizes.
 import { Canvas, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
+import { Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import type { CanvasTool } from '@/components/quill-canvas';
@@ -104,17 +104,51 @@ const fullOrder = (saved?: string[]) => {
   return [...(saved ?? []).filter((x) => ids.includes(x)), ...ids.filter((x) => !(saved ?? []).includes(x))];
 };
 
-/** Toolbox: reorder or hide the tools. */
+const TOOLBOX_ROW = 50;
+
+/** The grip on a Toolbox row. */
+function DragGrip({ label, onDrag, onDrop }: { label: string; onDrag: (dy: number) => void; onDrop: (dy: number) => void }) {
+  const on = useRef({ onDrag, onDrop });
+  on.current = { onDrag, onDrop };
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => on.current.onDrag(0),
+    onPanResponderMove: (_, g) => on.current.onDrag(g.dy),
+    onPanResponderRelease: (_, g) => on.current.onDrop(g.dy),
+    onPanResponderTerminate: () => on.current.onDrop(0),
+  })).current;
+  return (
+    <View {...pan.panHandlers} accessibilityLabel={label} style={{ width: 44, height: TOOLBOX_ROW, alignItems: 'center', justifyContent: 'center' }}>
+      <Icon name="line.3.horizontal" size={17} color="#9AA2B2" />
+    </View>
+  );
+}
+
+/** Toolbox: drag to reorder, or hide tools. */
 function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: () => void; onSettings: () => void }) {
   const { s, set } = useSettings();
   const order = fullOrder(s.toolOrder);
   const hidden = s.toolHidden ?? [];
-  const move = (i: number, d: number) => {
+  const [drag, setDrag] = useState<{ from: number; dy: number } | null>(null);
+  const clampTo = (from: number, dy: number) => Math.max(0, Math.min(order.length - 1, from + Math.round(dy / TOOLBOX_ROW)));
+  const drop = (from: number, dy: number) => {
+    setDrag(null);
+    const to = clampTo(from, dy);
+    if (to === from) return;
     const n = order.slice();
-    const j = i + d;
-    if (j < 0 || j >= n.length) return;
-    [n[i], n[j]] = [n[j], n[i]];
+    const [id] = n.splice(from, 1);
+    n.splice(to, 0, id);
     set({ toolOrder: n });
+  };
+  const shift = (i: number) => {
+    if (!drag) return 0;
+    if (i === drag.from) return drag.dy;
+    const to = clampTo(drag.from, drag.dy);
+    if (drag.from < i && i <= to) return -TOOLBOX_ROW;
+    if (to <= i && i < drag.from) return TOOLBOX_ROW;
+    return 0;
   };
   return (
     <Modal visible={visible} transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={onClose}>
@@ -126,20 +160,19 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#15171C' }}>Toolbox</Text>
             <Pressable accessibilityLabel="Done with toolbox" onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}><Icon name="checkmark" size={15} color="#fff" /></Pressable>
           </View>
-          <Text style={{ color: '#6B7385', fontSize: 14, paddingHorizontal: 18, paddingBottom: 10 }}>Reorder or hide the Toolbox tools.</Text>
-          <ScrollView>
+          <Text style={{ color: '#6B7385', fontSize: 14, paddingHorizontal: 18, paddingBottom: 10 }}>Drag to reorder, or hide the Toolbox tools.</Text>
+          <ScrollView scrollEnabled={!drag}>
             {order.map((id, i) => {
               const x = ALL_TOOLS.find((t) => t.id === id)!;
               const off = hidden.includes(id);
               return (
-                <View key={id} style={{ flexDirection: 'row', alignItems: 'center', height: 50, paddingHorizontal: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EC' }}>
+                <View key={id} style={{ flexDirection: 'row', alignItems: 'center', height: TOOLBOX_ROW, paddingLeft: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EC', backgroundColor: '#fff', zIndex: drag?.from === i ? 2 : 0, transform: [{ translateY: shift(i) }], shadowColor: '#000', shadowOpacity: drag?.from === i ? 0.14 : 0, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
                   <Pressable accessibilityLabel={(off ? 'Show ' : 'Hide ') + x.label} onPress={() => set({ toolHidden: off ? hidden.filter((h) => h !== id) : [...hidden, id] })} hitSlop={8}>
                     <Icon name={off ? 'eye.slash' : 'eye'} size={20} color="#9AA2B2" />
                   </Pressable>
                   {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <ToolIcon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
                   <Text style={{ flex: 1, fontSize: 16, color: off ? '#9AA2B2' : '#15171C' }}>{x.label}</Text>
-                  <Pressable accessibilityLabel={'Move ' + x.label + ' up'} onPress={() => move(i, -1)} hitSlop={6} style={{ padding: 6 }}><Icon name="chevron.up" size={14} color="#6B7385" /></Pressable>
-                  <Pressable accessibilityLabel={'Move ' + x.label + ' down'} onPress={() => move(i, 1)} hitSlop={6} style={{ padding: 6 }}><Icon name="chevron.down" size={14} color="#6B7385" /></Pressable>
+                  <DragGrip label={'Reorder ' + x.label} onDrag={(dy) => setDrag({ from: i, dy })} onDrop={(dy) => drop(i, dy)} />
                 </View>
               );
             })}

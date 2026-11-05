@@ -29,6 +29,8 @@ export type CanvasHandle = {
   setComment(id: string, text: string): Promise<void>;
   replaceSelection(text: string): Promise<void>;
   addPageText(page: number, text: string): Promise<void>;
+  replaceSelectionWithGraph(axes: number[][][], curve: number[][][], caption: string): Promise<void>;
+  commentList(): Promise<{ id: string; text: string; page: number }[]>;
   movePage(from: number, to: number): Promise<void>;
   duplicatePage(index: number): Promise<void>;
   addPicture(file: string, width: number, height: number): Promise<void>;
@@ -47,6 +49,7 @@ type Props = ViewProps & {
   pages: CanvasPage[];
   tool: CanvasTool;
   fingerDraws?: boolean;
+  scribble?: boolean;        // Apple Pencil handwriting turns into typing in text boxes
   ruler?: boolean;
   inkStats?: boolean;        // the on-screen readout of how fast the ink is
   shapeSnap?: boolean;       // hold the Pencil at the end of a stroke: it snaps to a line or shape

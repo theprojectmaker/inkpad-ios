@@ -12,6 +12,7 @@ extension QuillCanvasView {
     textHost.isUserInteractionEnabled = on
     tapGR.isEnabled = on
     panGR.isEnabled = on
+    textDrawGR.isEnabled = on
     if !on { commitEdit() }
     placeTextHost()
   }
@@ -63,6 +64,38 @@ extension QuillCanvasView {
       layoutLabel(texts[i])
     default:
       if dragId != nil { dragId = nil; saveTexts(); objectsChanged() }
+    }
+  }
+
+  /// The Text tool with the Pencil: drag out the box you want, at the width you want.
+  @objc func onTextDraw(_ gr: UIPanGestureRecognizer) {
+    let p = gr.location(in: textHost)
+    switch gr.state {
+    case .began:
+      if editingId != nil { commitEdit() }
+      drawBoxStart = gr.location(in: textHost)
+      if textBoxLayer.superlayer == nil {
+        textHost.layer.addSublayer(textBoxLayer)
+        textBoxLayer.fillColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 0.06).cgColor
+        textBoxLayer.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      }
+    case .changed:
+      let k = 1 / max(0.01, canvas.zoomScale)
+      textBoxLayer.lineWidth = 1.2 * k
+      textBoxLayer.lineDashPattern = [NSNumber(value: Double(5 * k)), NSNumber(value: Double(4 * k))]
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      textBoxLayer.path = UIBezierPath(rect: CGRect(x: min(drawBoxStart.x, p.x), y: min(drawBoxStart.y, p.y), width: abs(p.x - drawBoxStart.x), height: abs(p.y - drawBoxStart.y))).cgPath
+      CATransaction.commit()
+    default:
+      textBoxLayer.path = nil
+      guard gr.state == .ended, let f = frames.first(where: { $0.contains(drawBoxStart) }) else { return }
+      let x = max(f.minX + 4, min(drawBoxStart.x, p.x))
+      let w = min(abs(p.x - drawBoxStart.x), f.maxX - x - 4)
+      guard w > 40 else { return }
+      let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(max(f.minY + 4, min(drawBoxStart.y, p.y))), w: Double(w), text: "", size: textSize, color: textColor, font: textFont, bold: textBold, italic: textItalic, underline: textUnderline)
+      texts.append(b)
+      beginEdit(b)
     }
   }
 
@@ -121,6 +154,7 @@ extension QuillCanvasView {
     editingId = b.id
     labels[b.id]?.isHidden = true
     let ed = editor ?? UITextView()
+    if editor == nil { ed.addInteraction(UIScribbleInteraction(delegate: self)) }
     editor = ed
     ed.delegate = self
     ed.textContainerInset = UIEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
@@ -414,4 +448,8 @@ extension QuillCanvasView {
     tapes += tp.map { o in var n = o; n.id = UUID().uuidString; n.y1 += Double(d); n.y2 += Double(d); return n }
     contentMoved()
   }
+}
+
+extension QuillCanvasView: UIScribbleInteractionDelegate {
+  func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool { scribble }
 }

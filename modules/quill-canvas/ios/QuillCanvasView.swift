@@ -119,6 +119,16 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   lazy var formatBar: UIView = makeFormatBar()
   var zoomWriter: ZoomWriter?
   var zoomPreviewing = false
+  var scribble = true
+  var drawBoxStart = CGPoint.zero
+  let textBoxLayer = CAShapeLayer()
+  lazy var textDrawGR: UIPanGestureRecognizer = {
+    let g = UIPanGestureRecognizer(target: self, action: #selector(onTextDraw(_:)))
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+    g.maximumNumberOfTouches = 1
+    g.isEnabled = false
+    return g
+  }()
   var compassPlaced = false
   var compassCentre = CGPoint.zero
   var compassRadius: CGFloat = 0
@@ -266,6 +276,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     panGR.delegate = self
     panGR.maximumNumberOfTouches = 1
     textHost.addGestureRecognizer(panGR)
+    textHost.addGestureRecognizer(textDrawGR)
 
     // The Pencil only ever writes; scrolling and zooming are for fingers.
     // (The pinch recognizer only exists once there's a zoom range.)

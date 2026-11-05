@@ -11,7 +11,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
 import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/audio-bar';
+import { CommentSheet, firstLine } from '@/components/comment-sheet';
 import { NoteTabs } from '@/components/note-tabs';
+import { graphLines } from '@/lib/graph';
 import { ToolIcon } from '@/components/tool-icons';
 import { openTab, useTabs } from '@/lib/tabs';
 import { summarize, useLiveNotes } from '@/lib/livenotes';
@@ -142,6 +144,7 @@ export default function Editor() {
   const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
   const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
   const [comment, setComment] = useState<{ id: string; text: string } | null>(null);
+  const [commentsList, setCommentsList] = useState<{ id: string; text: string; page: number }[] | null>(null);
   const [zoomWin, setZoomWin] = useState(false);
   const [convert, setConvert] = useState<{ kind: string; busy: boolean; text: string } | null>(null);
   const [calibrate, setCalibrate] = useState<null | { need: boolean; length?: number }>(null);
@@ -640,7 +643,7 @@ export default function Editor() {
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
-            <QuillCanvas key={canvasKey} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
+            <QuillCanvas key={canvasKey} scribble={s.scribble !== false} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
               onPencilTap={onPencilTap} onSelectionAction={onSelectionAction} autoPage={s.autoPage !== false} onLastPageUsed={() => addPage(undefined, true)}
               inkTaps={audioOpen && !audio.rec && recordings.length > 0}
               onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && ms <= x.created + x.dur); if (r) hear(r, (ms - r.created) / 1000); }}
@@ -720,7 +723,7 @@ export default function Editor() {
         { group: 1, label: 'Share settings', icon: 'person.badge.plus', onPress: share },
         { group: 1, label: 'Quick export', sub: 'PDF, All pages', icon: 'square.and.arrow.up', onPress: share },
         { group: 1, label: 'Export as…', icon: 'square.and.arrow.up.on.square', onPress: () => setExportMenu(true) },
-        { group: 2, label: 'Comments', icon: 'bubble.left', onPress: () => set({ inkKind: 'comment', lastTool: s.inkKind }) },
+        { group: 2, label: 'Comments', icon: 'bubble.left', onPress: async () => { setCommentsList((await canvas.current?.commentList()) ?? []); } },
         { group: 2, label: 'Start study session', icon: 'timer', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
         { group: 3, label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
         { group: 3, label: 'View settings', icon: 'chevron.right', onPress: () => setViewMenu(true) },
@@ -807,9 +810,12 @@ export default function Editor() {
         onClose={() => setPaperFor(null)}
         onDone={(style: PaperStyle, color: PaperColor) => { const i = paperFor; setPaperFor(null); if (doc && i != null) savePages(doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'paper' as const, style, color } } : q))); }} />
       <NotePicker visible={picking} exclude={id} onClose={() => setPicking(false)} onPick={(n) => { setPicking(false); setSecond(n.id); }} />
-      <PromptSheet visible={!!comment} title="Comment" initial={comment?.text ?? ''} placeholder="Add a comment" confirm="Post"
-        onCancel={() => { if (comment) canvas.current?.setComment(comment.id, comment.text); setComment(null); }}
-        onSubmit={(v) => { if (comment) canvas.current?.setComment(comment.id, v); setComment(null); }} />
+      <CommentSheet raw={comment ? comment.text : null} onClose={() => setComment(null)}
+        onSave={(next) => { if (comment) canvas.current?.setComment(comment.id, next); }} />
+      <MenuSheet visible={!!commentsList} onClose={() => setCommentsList(null)} title="Comments" items={[
+        { label: 'Add a comment', icon: 'plus.bubble', onPress: () => set({ inkKind: 'comment', lastTool: s.inkKind }) },
+        ...(commentsList ?? []).map((c) => ({ label: firstLine(c.text) || 'Comment', sub: `Page ${c.page + 1}`, icon: 'bubble.left', onPress: () => { canvas.current?.scrollToPage(c.page); setComment({ id: c.id, text: c.text }); } })),
+      ]} />
       {tabsOpen ? <NoteTabs current={id} onClose={() => setTabsOpen(false)} onPick={(n) => { setTabsOpen(false); leave(n); }} /> : null}
       <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />
@@ -820,14 +826,18 @@ export default function Editor() {
           <>
             <TextInput accessibilityLabel="Converted text" multiline value={convert?.text ?? ''} onChangeText={(v) => setConvert((c) => (c ? { ...c, text: v } : c))}
               style={{ minHeight: 140, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: t.line, color: t.text, fontSize: 18, textAlignVertical: 'top' }} />
-            <Text style={{ color: t.sub, fontSize: 13, marginTop: 8 }}>{convert?.kind === 'graph' ? 'Opens the calculator with this copied, ready to paste.' : 'You can fix anything here first. Undo brings your writing back.'}</Text>
+            <Text style={{ color: t.sub, fontSize: 13, marginTop: 8 }}>{convert?.kind === 'graph' ? 'Write it like y = x^2 + 1. Your writing becomes this graph, and Undo brings it back.' : 'You can fix anything here first. Undo brings your writing back.'}</Text>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 14 }}>
               <Pressable accessibilityLabel="Cancel convert" onPress={() => setConvert(null)} style={{ height: 40, paddingHorizontal: 16, justifyContent: 'center' }}><Text style={{ color: t.text, fontSize: 16 }}>Cancel</Text></Pressable>
               <Pressable accessibilityLabel="Convert now" onPress={() => {
                 const c = convert;
                 setConvert(null);
                 if (!c?.text.trim()) return;
-                if (c.kind === 'graph') { copyText(c.text); closePanels(); setCalcLoaded(true); setCalc(true); toast('Copied. Paste it into the calculator.'); }
+                if (c.kind === 'graph') {
+                  const g = graphLines(c.text);
+                  if (g) canvas.current?.replaceSelectionWithGraph(g.axes, g.curve, g.caption);
+                  else { copyText(c.text); closePanels(); setCalcLoaded(true); setCalc(true); toast("Couldn't plot that here. It's copied, ready to paste into the calculator."); }
+                }
                 else canvas.current?.replaceSelection(c.text);
               }} style={{ height: 40, paddingHorizontal: 18, borderRadius: 10, justifyContent: 'center', backgroundColor: '#3F6AF2' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Convert</Text></Pressable>
             </View>

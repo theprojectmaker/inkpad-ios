@@ -349,6 +349,14 @@ extension QuillCanvasView {
     }
   }
 
+  /// Every comment in the note, with the page it's on, for the list.
+  func commentList() -> [[String: Any]] {
+    comments.map { c in
+      let page = frames.firstIndex { $0.contains(CGPoint(x: c.x, y: c.y)) } ?? 0
+      return ["id": c.id, "text": c.text, "page": page]
+    }
+  }
+
   /// From the comment sheet. Nothing written removes it.
   func setComment(id: String, text: String) {
     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

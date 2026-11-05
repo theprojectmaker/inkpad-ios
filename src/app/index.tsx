@@ -37,7 +37,7 @@ export default function LibraryScreen() {
 
   const [filter, setFilter] = useState<Filter>({ kind: 'home' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'trashNote' | 'purge' | 'purgeAll'>(null);
+  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'trashNote' | 'purge' | 'purgeAll'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
 
@@ -324,6 +324,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           {!showHome ? <IconButton name="arrow.up.arrow.down" label="Sort" onPress={() => setSheet('sort')} /> : null}
           {!showHome ? <IconButton name={list ? 'square.grid.2x2' : 'list.bullet'} label={list ? 'Show as grid' : 'Show as list'} onPress={() => set({ view: list ? 'grid' : 'list' })} /> : null}
           {!wide ? <IconButton name="gearshape" label="Settings" onPress={() => router.push('/settings')} /> : null}
+          {wide ? <IconButton name="ellipsis.circle" label="More" onPress={() => setSheet('home')} /> : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
             style={({ pressed }) => ({ flexDirection: 'row', gap: 8, height: 40, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3F6AF2', opacity: pressed ? 0.8 : 1 })}>
             <Icon name="plus" size={16} color="#fff" />
@@ -394,6 +395,14 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         </Reanimated.View>
       </View>
 
+      <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
+        { group: 1, label: 'Import a file', icon: 'square.and.arrow.down', onPress: importPdf },
+        { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
+        { group: 1, label: 'Import Flashcards', icon: 'rectangle.on.rectangle', onPress: () => router.push('/flashcards') },
+        { group: 2, label: list ? 'Show as grid' : 'Show as list', icon: list ? 'square.grid.2x2' : 'list.bullet', onPress: () => { set({ view: list ? 'grid' : 'list' }); setFilter({ kind: 'all' }); } },
+        { group: 2, label: 'Sort notes', icon: 'arrow.up.arrow.down', onPress: () => setSheet('sort') },
+        { group: 3, label: 'Settings', icon: 'gearshape', onPress: () => router.push('/settings') },
+      ]} />
       <MenuSheet topRight visible={sheet === 'new'} onClose={() => setSheet(null)} items={[
         { label: 'Note', icon: 'square.and.pencil', onPress: () => newNote(s.defaultPaper?.style ?? 'blank', s.defaultPaper?.color ?? 'white', s.defaultPaper?.size ?? 'letter') },
         { label: 'From a template…', icon: 'doc.plaintext', onPress: () => setSheet('paper') },

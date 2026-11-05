@@ -68,6 +68,7 @@ export default function SettingsScreen() {
         <Section title="Writing">
           <Row icon="hand.draw" label="Draw with finger" onPress={() => set({ fingerDraws: !s.fingerDraws })} note="Off: only Apple Pencil writes, fingers scroll and zoom."
             right={<Switch value={!!s.fingerDraws} onValueChange={(v) => set({ fingerDraws: v })} />} />
+          <Row icon="scribble" label="Scribble" onPress={() => set({ scribble: s.scribble === false })} note="In a text box, Pencil handwriting turns into typing." right={<Switch accessibilityLabel="Scribble" value={s.scribble !== false} onValueChange={(v) => set({ scribble: v })} />} />
           <Row icon="triangle" label="Shape lock" onPress={() => set({ holdToShape: s.holdToShape === false })} note="Draw a line, circle, box or triangle and hold the Pencil still: it snaps clean."
             right={<Switch value={s.holdToShape !== false} onValueChange={(v) => set({ holdToShape: v })} />} />
           <Row icon="doc.badge.plus" label="Add pages automatically" onPress={() => set({ autoPage: s.autoPage === false })} note="Write on the last page and a blank one appears after it. An empty last page is left out when you share or hand in."

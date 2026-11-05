@@ -52,6 +52,7 @@ export type Settings = {
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
   inkStats?: boolean;        // numbers on the page: how fast the ink is
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
+  scribble?: boolean;        // Pencil handwriting in a text box turns into typing (on unless turned off)
   scheduleUnlocked?: boolean;   // the real Studento schedule, linked with a code
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };

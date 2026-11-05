@@ -444,6 +444,32 @@ extension QuillCanvasView {
     onSelectionAction(["action": "convert", "text": kind, "path": path])
   }
 
+  /// From Convert > Graph: the writing becomes a graph, in real ink. Lines arrive from 0 to 1 across the box.
+  func replaceSelection(axes: [[[Double]]], curve: [[[Double]]], caption: String) {
+    commitSelection()
+    let picked = selection
+    guard !picked.isEmpty else { return }
+    let f = frames.first { $0.intersects(selBox) } ?? frames.first ?? .zero
+    let w = min(max(selBox.width, 320), f.width - 32), h = min(w * 0.75, max(selBox.height, 240))
+    let x = max(f.minX + 16, min(selBox.minX, f.maxX - w - 16)), y = max(f.minY + 16, min(selBox.minY, f.maxY - h - 40))
+    let rgb = picked.first?.rgb ?? 0x111111
+    func stroke(_ line: [[Double]], radius: Float, colour: UInt32) -> InkStroke {
+      let pts = line.map { InkPoint(x: Float(x + CGFloat($0[0]) * w), y: Float(y + CGFloat($0[1]) * h), r: radius, a: 1) }
+      return InkStroke(pts: pts, rgb: colour, kind: .monoline, seq: document.nextSeq(), ts: Date().timeIntervalSince1970)
+    }
+    let added = axes.map { stroke($0, radius: 0.4, colour: 0x8A8078) } + curve.map { stroke($0, radius: 0.9, colour: rgb) }
+    let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(y + h + 6), w: Double(w), text: caption, size: 11, color: "#5A6478", font: textFont, bold: false)
+    picked.forEach { $0.lifted = false }
+    selection = []; selTexts = []; selPics = []
+    ink.lifted = []
+    clearSelectionUI()
+    document.apply(removed: picked, added: added)
+    texts.append(b)
+    renderTexts()
+    finishObjects(removed: picked, added: added)
+    ink.setNeedsInk(rebuild: true)
+  }
+
   /// Typed notes across a page, like the ones Record to Notes writes.
   func addPageText(page: Int, text: String) {
     guard !frames.isEmpty else { return }
