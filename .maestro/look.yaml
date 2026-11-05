@@ -1,0 +1,41 @@
+# The look: Home, cards, sidebar, the note screen in both orientations, open notes.
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- extendedWaitUntil: { visible: "THeavy60.*", timeout: 200000 }
+- waitForAnimationToEnd
+- takeScreenshot: l01-home
+- tapOn: { text: "Notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: l02-notes-grid
+- tapOn: { text: "Home", optional: true }
+- tapOn: { text: "T5.*" }
+- extendedWaitUntil: { visible: "More", timeout: 20000 }
+- waitForAnimationToEnd
+- takeScreenshot: l03-note
+- tapOn: { text: "Audio", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: l04-record-choice
+- tapOn: { text: "Close audio", optional: true }
+- tapOn: { text: "Back to notes", optional: true }
+- extendedWaitUntil: { visible: "T200.*", timeout: 30000 }
+- tapOn: { text: "T200.*" }
+- extendedWaitUntil: { visible: "Open notes", timeout: 20000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: l05-second-note
+- tapOn: { text: "Open notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: l06-open-notes
+- tapOn: { text: "Open T5.*", optional: true }
+- extendedWaitUntil: { visible: "More", timeout: 20000 }
+- waitForAnimationToEnd
+- takeScreenshot: l07-switched
+- setOrientation: LANDSCAPE_LEFT
+- waitForAnimationToEnd
+- takeScreenshot: l08-landscape
+- setOrientation: PORTRAIT
+- waitForAnimationToEnd
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: l09-back-home
