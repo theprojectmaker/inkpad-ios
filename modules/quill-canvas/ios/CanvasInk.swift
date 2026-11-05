@@ -203,10 +203,14 @@ final class PenCapture {
     var ahead = [InkPoint(x: rawX, y: rawY, r: r, a: a)]
     // Barely moving: a guess at where the Pencil is going is only noise, and it makes the tip flicker.
     if lastSpeed > 150 {
-      let reach = 20 / zoom
+      // Only along the way the line is already going, and not far: on a tiny curve a guess at
+      // where the Pencil's heading points off the curve, and shows as a spike.
+      let reach = 6 / zoom
       for p in predicted {
         let x = Float(p.x), y = Float(p.y)
-        if hypot(x - rawX, y - rawY) > reach { break }
+        let mx = x - rawX, my = y - rawY, gone = hypot(mx, my)
+        if gone > reach { break }
+        if gone > 0.01 && (mx * dirX + my * dirY) / gone < 0.9 { break }
         ahead.append(InkPoint(x: x, y: y, r: r, a: a))
       }
     }
@@ -802,6 +806,44 @@ extension QuillCanvasView {
 
   // MARK: - Ruler
 
+  /// Automated tests only (launch argument -QuillTestInk 1): turning on the ruler draws tiny circles
+  /// through the real pen code, with a hand's wobble and pressure, at real Pencil timing.
+  private func testInkDots() {
+    let z = max(0.01, canvas.zoomScale)
+    let v = CGRect(x: canvas.bounds.minX / z, y: canvas.bounds.minY / z, width: canvas.bounds.width / z, height: canvas.bounds.height / z)
+    var seed: UInt32 = 77
+    func noise() -> CGFloat { seed = seed &* 1664525 &+ 1013904223; return CGFloat(seed >> 16) / 65536 - 0.5 }
+    var added: [InkStroke] = []
+    let radii: [CGFloat] = [1.5, 2.5, 4, 6, 9]
+    let times: [Double] = [0.12, 0.25, 0.5, 0.9]
+    for (row, time) in times.enumerated() {
+      for (col, radius) in radii.enumerated() {
+        let cx = v.minX + v.width * (CGFloat(col) + 0.7) / 5.5, cy = v.minY + v.height * (0.28 + CGFloat(row) * 0.14)
+        let n = max(6, Int(time * 240))
+        var t = 1000.0
+        var c: PenCapture?
+        for i in 0...n {
+          let a = CGFloat(i) / CGFloat(n) * 2.15 * .pi - .pi / 2
+          let wobble = 0.12 / z
+          let p = CGPoint(x: cx + cos(a) * radius + noise() * wobble, y: cy + sin(a) * radius + noise() * wobble)
+          let force = Float(0.28 + 0.1 * sin(Double(i) * 0.3)) * (i < 3 ? Float(i + 1) / 3 : 1)
+          if c == nil { c = PenCapture(pen: pen, seq: document.nextSeq(), zoom: z, at: p, time: t) }
+          c?.add(p, force: force, altitude: 1.0, time: t, first: i == 0)
+          t += 1.0 / 240
+        }
+        if let c {
+          let last = CGPoint(x: cx + cos(2.15 * .pi - .pi / 2) * radius, y: cy + sin(2.15 * .pi - .pi / 2) * radius)
+          c.add(last, force: 0, altitude: 1.0, time: t, first: false)
+          added.append(InkStroke(pts: c.finishedPoints(), rgb: pen.rgb, kind: pen.kind, seq: c.wet.seq, ts: 0))
+        }
+      }
+    }
+    document.apply(removed: [], added: added)
+    record(InkEdit(removed: [], added: added))
+    ink.settle(added)
+    ink.drawNow(finishing: true)
+  }
+
   /// Automated tests only (launch argument -QuillTestPinch 1): turning on the ruler runs
   /// the zoom in and out, the way a pinch does, about the middle of the screen.
   private func testZoomSweep() {
@@ -839,6 +881,7 @@ extension QuillCanvasView {
 
   func setRuler(_ on: Bool) {
     if on && UserDefaults.standard.double(forKey: "QuillTestPinch") > 0 { testZoomSweep() }
+    if on && UserDefaults.standard.double(forKey: "QuillTestInk") > 0 { testInkDots(); return }
     if !on { ruler?.removeFromSuperview(); ruler = nil; return }
     guard ruler == nil else { return }
     let r = RulerView()

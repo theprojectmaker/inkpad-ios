@@ -1,0 +1,33 @@
+# Tiny circles through the real pen code, looked at closely.
+appId: com.solyapps.notes
+---
+- launchApp:
+    arguments:
+      QuillTestInk: "1"
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- tapOn: { text: "New" }
+- tapOn: { text: "Note" }
+- extendedWaitUntil: { visible: "More tools", timeout: 20000 }
+- waitForAnimationToEnd
+- tapOn: { text: "More tools" }
+- tapOn: { text: "Measure" }
+- tapOn: { text: "Ruler" }
+- waitForAnimationToEnd
+- takeScreenshot: i01-even-pen-fit
+- tapOn: { text: "Back to the main tools" }
+- tapOn: { text: "Back to notes" }
+- waitForAnimationToEnd
+- launchApp:
+    arguments:
+      QuillTestInk: "1"
+      QuillTestZoom: "3"
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- tapOn: { text: "New" }
+- tapOn: { text: "Note" }
+- extendedWaitUntil: { visible: "More tools", timeout: 20000 }
+- extendedWaitUntil: { visible: "zzz-never-shown", timeout: 2500, optional: true }
+- tapOn: { text: "More tools" }
+- tapOn: { text: "Measure" }
+- tapOn: { text: "Ruler" }
+- waitForAnimationToEnd
+- takeScreenshot: i02-even-pen-zoomed
