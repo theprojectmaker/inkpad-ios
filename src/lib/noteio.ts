@@ -8,7 +8,7 @@ import { Image } from 'react-native';
 
 import { fsx } from './fsx';
 import { LETTER, type NoteDoc, type Page, uid } from './model';
-import { pdfCover, pdfInfo } from './ondevice';
+import { pdfCover, pdfInfo, shrinkImage } from './ondevice';
 import { engine } from './pdf-engine';
 
 export const LIB_PATH = 'inkpad/library.json';
@@ -124,7 +124,7 @@ export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: st
 }
 
 /** Gives up on a step that never answers, rather than leaving the app waiting for ever. */
-function inTime<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+export function inTime<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
   return new Promise((ok, no) => {
     const t = setTimeout(() => no(new Error(what)), ms);
     work.then((v) => { clearTimeout(t); ok(v); }, (e) => { clearTimeout(t); no(e); });
@@ -139,6 +139,7 @@ export async function makeCover(noteId: string, page: Page | undefined): Promise
   try {
     const src = fsx.uri(notePath(noteId, bg.file));
     if (bg.kind === 'pdf') return (await pdfCover(src, fsx.uri(notePath(noteId, name)), 360)) ? name : null;
+    if (await shrinkImage(src, fsx.uri(notePath(noteId, name)), 480, 0.8)) return name;
     const r = await inTime(ImageManipulator.manipulateAsync(src, [{ resize: { width: 360 } }], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }), 6000, 'cover');
     await fsx.copyIn(r.uri, notePath(noteId, name));
     return name;
@@ -147,6 +148,9 @@ export async function makeCover(noteId: string, page: Page | undefined): Promise
 
 /** Saves a picked image (downscaled) into the note; returns its file name and size. */
 export async function saveImage(noteId: string, uri: string, maxSide = 2800): Promise<{ file: string; w: number; h: number }> {
+  const named = `img_${uid()}.jpg`;
+  const quick = await shrinkImage(uri, fsx.uri(notePath(noteId, named)), maxSide, 0.88);
+  if (quick) return { file: named, w: quick.w || 1000, h: quick.h || 1000 };
   const WAIT = "That picture took too long to open. Try again.";
   let r = await inTime(ImageManipulator.manipulateAsync(uri, [], { compress: 1 }), 30000, WAIT);
   const big = Math.max(r.width, r.height);

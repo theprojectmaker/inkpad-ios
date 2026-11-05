@@ -43,6 +43,11 @@ public final class QuillCanvasModule: Module {
       return try await OnDevice.ask(instructions: instructions, prompt: prompt)
     }
 
+    // A picture made smaller, as a JPEG.
+    AsyncFunction("imageShrink") { (src: String, dst: String, maxSide: Double, quality: Double, wantBase64: Bool) throws -> [String: Any] in
+      return try ImageShrink.run(src: src, dst: dst, maxSide: maxSide, quality: quality, wantBase64: wantBase64)
+    }
+
     // A PDF's page sizes and some of its text, straight from the file.
     AsyncFunction("pdfInfo") { (path: String, maxText: Int) throws -> [String: Any] in
       return try PdfInfo.read(path, maxText: maxText)

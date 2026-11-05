@@ -13,6 +13,7 @@ type NativeOnDevice = {
   copyText(text: string): Promise<void>;
   pdfInfo(path: string, maxText: number): Promise<{ pages: [number, number][]; text: string }>;
   pdfCover(path: string, dst: string, width: number): Promise<boolean>;
+  imageShrink(src: string, dst: string, maxSide: number, quality: number, wantBase64: boolean): Promise<{ w: number; h: number; base64?: string }>;
   enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
   localAIStatus(): LocalAIStatus;
   localAI(instructions: string, prompt: string): Promise<string>;
@@ -35,6 +36,12 @@ export async function readText(uri: string): Promise<OcrLine[]> {
 export async function pdfInfo(uri: string, maxText = 12000) {
   if (!Native?.pdfInfo) return null;
   return Native.pdfInfo(plain(uri), maxText);
+}
+
+/** A picture made smaller, as a JPEG, on the iPad. `dst` empty: nothing is saved. Null where this can't be done (the browser preview). */
+export async function shrinkImage(src: string, dst: string, maxSide: number, quality: number, wantBase64 = false) {
+  if (!Native?.imageShrink) return null;
+  return Native.imageShrink(plain(src), dst ? plain(dst) : '', maxSide, quality, wantBase64);
 }
 
 /** The first page of a PDF as a small picture. False where that can't be done. */

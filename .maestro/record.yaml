@@ -3,7 +3,6 @@
 appId: com.solyapps.notes
 ---
 - launchApp:
-    clearState: true
     arguments:
       QuillTestAudio: "1"
 - extendedWaitUntil: { visible: "Home", timeout: 60000 }

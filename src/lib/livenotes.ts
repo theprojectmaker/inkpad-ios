@@ -12,7 +12,7 @@ import { fsx } from './fsx';
 import { basicNotes, matchPage, parseReply, wordsOf } from './livenotes-basic';
 import { liveNow } from './liverec';
 import type { LiveNote } from './model';
-import { notePath } from './noteio';
+import { inTime, notePath } from './noteio';
 import { askLocal, localAIStatus, pageText } from './ondevice';
 
 export type NotesSource = 'online' | 'device' | 'basic';
@@ -39,13 +39,13 @@ export const allSaid = () => {
 async function ask(instructions: string, prompt: string, image?: string): Promise<{ text: string; source: NotesSource } | null> {
   if (await aiOnline()) {
     try {
-      const images = image ? [await imageDataUrl(image, 1200)] : [];
-      const r = await askAi('ask', images, { question: `${instructions}\n\n${prompt}` });
+      const images = image ? [await inTime(imageDataUrl(image, 1200), 8000, 'picture')] : [];
+      const r = await inTime(askAi('ask', images, { question: `${instructions}\n\n${prompt}` }), 25_000, 'online');
       if (r.text) return { text: r.text, source: 'online' };
     } catch {}
   }
   if (localAIStatus() === 'ready') {
-    try { return { text: await askLocal(instructions, prompt), source: 'device' }; } catch {}
+    try { return { text: await inTime(askLocal(instructions, prompt), 30_000, 'device'), source: 'device' }; } catch {}
   }
   return null;
 }
@@ -92,9 +92,9 @@ export function useLiveNotes(on: boolean, noteId: string, canvas: RefObject<Canv
       let image: string | undefined;
       let screen = '';
       try {
-        if (await canvas.current?.pageThumb(page(), absPath(shot), 900)) {
+        if (await inTime(Promise.resolve(canvas.current?.pageThumb(page(), absPath(shot), 900)), 5000, 'page')) {
           image = fsx.uri(shot);
-          screen = await pageText(image).catch(() => '');
+          screen = await inTime(pageText(image), 10_000, 'reading').catch(() => '');
         }
       } catch {}
       const known = notesRef.current.map((n) => n.text);
@@ -133,8 +133,9 @@ export function useLiveNotes(on: boolean, noteId: string, canvas: RefObject<Canv
   }, [on, round]);
 
   const finish = useCallback(async () => {
-    if (running.current) await running.current;
-    await round().catch(() => {});
+    // Stopping never hangs: the recording is already safe, and these only add to the notes.
+    if (running.current) await inTime(running.current, 45_000, 'waiting').catch(() => {});
+    await inTime(round(), 60_000, 'last').catch(() => {});
     // setNotes has run by now, but the ref only catches up on the next draw.
     await new Promise((ok) => setTimeout(ok, 50));
     return notesRef.current;

@@ -1,6 +1,7 @@
 // What Quill needs to know about a PDF when it's imported, read directly from the file.
 // Nothing has to be loaded into memory or sent anywhere, so size doesn't matter.
 import CoreGraphics
+import ImageIO
 import Foundation
 import PDFKit
 import UIKit
@@ -46,5 +47,31 @@ enum PdfInfo {
     }
     let spaced = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
     return ["pages": pages, "text": String(spaced.prefix(maxText))]
+  }
+}
+
+/// A picture made smaller as a JPEG, read straight from its file, the right way up.
+enum ImageShrink {
+  static func run(src: String, dst: String, maxSide: Double, quality: Double, wantBase64: Bool) throws -> [String: Any] {
+    let fail = NSError(domain: "Quill", code: 5, userInfo: [NSLocalizedDescriptionKey: "That picture couldn't be opened."])
+    guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: src) as CFURL, nil) else { throw fail }
+    let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    let w = props?[kCGImagePropertyPixelWidth] as? Double ?? maxSide, h = props?[kCGImagePropertyPixelHeight] as? Double ?? maxSide
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: Int(min(max(w, h), maxSide)),
+    ]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+          let data = UIImage(cgImage: image).jpegData(compressionQuality: quality) else { throw fail }
+    var out: [String: Any] = ["w": image.width, "h": image.height]
+    if !dst.isEmpty {
+      let url = URL(fileURLWithPath: dst)
+      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try data.write(to: url, options: .atomic)
+    }
+    if wantBase64 { out["base64"] = data.base64EncodedString() }
+    return out
   }
 }

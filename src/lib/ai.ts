@@ -2,7 +2,7 @@
 // (tests/quill-study, a Cloudflare Pages function that holds the model keys).
 import * as ImageManipulator from 'expo-image-manipulator';
 
-import { askLocal, pageText } from './ondevice';
+import { askLocal, pageText, shrinkImage } from './ondevice';
 
 const ENDPOINT = 'https://quill-study.pages.dev/api/ai';
 // Keeps random traffic off the endpoint. It is not in the (public) code: builds get it
@@ -15,6 +15,8 @@ export type QuizQ = { q: string; choices: string[]; answer: number; why?: string
 
 /** A local image (file:// uri) as a JPEG data URL, no wider/taller than maxSide. */
 export async function imageDataUrl(uri: string, maxSide = 1600): Promise<string> {
+  const quick = await shrinkImage(uri, '', maxSide, 0.8, true);
+  if (quick?.base64) return 'data:image/jpeg;base64,' + quick.base64;
   const probe = await ImageManipulator.manipulateAsync(uri, [], {});
   const big = Math.max(probe.width, probe.height);
   const resize = big > maxSide ? [{ resize: probe.width >= probe.height ? { width: maxSide } : { height: maxSide } }] : [];
