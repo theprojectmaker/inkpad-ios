@@ -243,6 +243,7 @@ final class InkView: UIView {
   private var padOrigin: CGPoint?
   private var pageFrameQueued = false
   var paused = false            // pinching: the pages carry a picture of the ink instead
+  private var onShown: (() -> Void)?   // once the first frame after a pinch reaches the screen
 
   init(document: InkDocument) {
     self.document = document
@@ -326,9 +327,19 @@ final class InkView: UIView {
     if !paused { queuePageFrame() }
   }
 
+  /// Pinching starts: an empty frame replaces the last one. Hiding the view instead would keep
+  /// that frame, and it would flash at the old zoom, small and in the wrong place, on the way back.
+  func blank() {
+    paused = true
+    onShown = nil
+    if gpu == nil { isHidden = true } else { queuePageFrame() }
+  }
+
   /// Back to drawing the ink, sharp, in the same screen update as the pages.
-  func resume() {
+  func resume(onShown shown: (() -> Void)? = nil) {
     paused = false
+    isHidden = false
+    onShown = shown
     settledDirty = true
     queuePageFrame()
   }
@@ -451,8 +462,12 @@ final class InkView: UIView {
       return
     }
     let view = uniform(.identity)
+    let shown = paused ? nil : onShown
+    if !paused { onShown = nil }
 
-    if settledDirty {
+    if paused {
+      // Nothing to draw: the frame below comes out empty.
+    } else if settledDirty {
       settledDirty = false
       pendingSettle.removeAll()
       encode(cmd, msaa, depth, into: spare!) { enc in
@@ -478,6 +493,7 @@ final class InkView: UIView {
     }
 
     encode(cmd, msaa, depth, into: drawable.texture) { enc in
+      if self.paused { return }
       self.drawSheet(enc, gpu)
       if !self.lifted.isEmpty { self.drawStrokes(self.lifted, enc, gpu, self.uniform(self.liftedTransform)) }
       if let wet = self.wet { self.drawWet(wet, enc, gpu, view) }
@@ -490,6 +506,7 @@ final class InkView: UIView {
     // The simulator can't report when a frame reaches the screen.
     cmd.addCompletedHandler { [weak self] _ in
       DispatchQueue.main.async {
+        shown?()
         guard let self else { return }
         self.unshown = max(0, self.unshown - 1)
         if self.framePending { self.drawNow() }
@@ -497,9 +514,10 @@ final class InkView: UIView {
     }
     #else
     let input = wet == nil ? 0 : lastInputTime
-    drawable.addPresentedHandler { [weak self] shown in
-      let at = shown.presentedTime
+    drawable.addPresentedHandler { [weak self] onScreen in
+      let at = onScreen.presentedTime
       DispatchQueue.main.async {
+        shown?()
         guard let self else { return }
         self.unshown = max(0, self.unshown - 1)
         if self.stats.on && input > 0 && at > 0 {

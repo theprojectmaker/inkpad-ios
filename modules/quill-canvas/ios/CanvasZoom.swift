@@ -260,11 +260,7 @@ extension QuillCanvasView {
       if inkPictures[id]?.version != version { inkPictures[id] = (version, inkPicture(strokes, page: frames[i])) }
       pageViewList[i].showInk(inkPictures[id]?.image)
     }
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    ink.paused = true
-    ink.isHidden = true
-    CATransaction.commit()
+    ink.blank()
   }
 
   func pinchEnded() {
@@ -274,13 +270,13 @@ extension QuillCanvasView {
       return
     }
     zoomPreviewing = false
-    ink.isHidden = false
-    ink.resume()
-    // The pictures go once the sharp ink has had time to reach the screen.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+    // The pictures go once the sharp ink is on the screen (with a limit, in case that's never reported).
+    let clear = { [weak self] in
       guard let self, !self.zoomPreviewing else { return }
       self.pageViewList.forEach { $0.showInk(nil) }
     }
+    ink.resume(onShown: clear)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: clear)
   }
 }
 
