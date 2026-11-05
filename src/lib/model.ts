@@ -79,6 +79,7 @@ export type NoteMeta = {
   fav?: boolean;
   pages: number;
   kind: NoteKind;
+  link?: { id: string; secret: string; url: string; expires: number };   // shared link, if there is one
   thumb?: string;        // thumbnail file name inside the note folder
   text?: string;         // typed text, for search
   pdfText?: string;      // text inside imported PDFs, for search

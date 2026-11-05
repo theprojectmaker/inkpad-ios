@@ -455,7 +455,7 @@ extension QuillCanvasView {
     let rgb = picked.first?.rgb ?? 0x111111
     func stroke(_ line: [[Double]], radius: Float, colour: UInt32) -> InkStroke {
       let pts = line.map { InkPoint(x: Float(x + CGFloat($0[0]) * w), y: Float(y + CGFloat($0[1]) * h), r: radius, a: 1) }
-      return InkStroke(pts: pts, rgb: colour, kind: .monoline, seq: document.nextSeq(), ts: Date().timeIntervalSince1970)
+      return InkStroke(pts: pts, rgb: colour, kind: .pen, seq: document.nextSeq(), ts: Date().timeIntervalSince1970)
     }
     let added = axes.map { stroke($0, radius: 0.4, colour: 0x8A8078) } + curve.map { stroke($0, radius: 0.9, colour: rgb) }
     let b = TextBox(id: UUID().uuidString, x: Double(x), y: Double(y + h + 6), w: Double(w), text: caption, size: 11, color: "#5A6478", font: textFont, bold: false)

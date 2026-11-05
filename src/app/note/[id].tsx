@@ -13,6 +13,7 @@ import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke
 import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/audio-bar';
 import { CommentSheet, firstLine } from '@/components/comment-sheet';
 import { NoteTabs } from '@/components/note-tabs';
+import { ShareLinkSheet } from '@/components/share-link';
 import { graphLines } from '@/lib/graph';
 import { ToolIcon } from '@/components/tool-icons';
 import { openTab, useTabs } from '@/lib/tabs';
@@ -144,6 +145,7 @@ export default function Editor() {
   const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
   const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
   const [comment, setComment] = useState<{ id: string; text: string } | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const [commentsList, setCommentsList] = useState<{ id: string; text: string; page: number }[] | null>(null);
   const [zoomWin, setZoomWin] = useState(false);
   const [convert, setConvert] = useState<{ kind: string; busy: boolean; text: string } | null>(null);
@@ -720,7 +722,7 @@ export default function Editor() {
       {selStyle ? <StylePopover color={selStyle.color} width={selStyle.width} onClose={() => setSelStyle(null)}
         onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')} /> : null}
       <MenuSheet topRight visible={menu} onClose={() => setMenu(false)} items={[
-        { group: 1, label: 'Share settings', icon: 'person.badge.plus', onPress: share },
+        { group: 1, label: 'Share settings', sub: meta?.link ? 'Link is on' : undefined, icon: 'person.badge.plus', onPress: () => setShareOpen(true) },
         { group: 1, label: 'Quick export', sub: 'PDF, All pages', icon: 'square.and.arrow.up', onPress: share },
         { group: 1, label: 'Export as…', icon: 'square.and.arrow.up.on.square', onPress: () => setExportMenu(true) },
         { group: 2, label: 'Comments', icon: 'bubble.left', onPress: async () => { setCommentsList((await canvas.current?.commentList()) ?? []); } },
@@ -810,6 +812,13 @@ export default function Editor() {
         onClose={() => setPaperFor(null)}
         onDone={(style: PaperStyle, color: PaperColor) => { const i = paperFor; setPaperFor(null); if (doc && i != null) savePages(doc.pages.map((q, k) => (k === i ? { ...q, bg: { kind: 'paper' as const, style, color } } : q))); }} />
       <NotePicker visible={picking} exclude={id} onClose={() => setPicking(false)} onPick={(n) => { setPicking(false); setSecond(n.id); }} />
+      <ShareLinkSheet visible={shareOpen} noteId={id} title={meta?.title || 'Note'} onSendPdf={share} onClose={() => setShareOpen(false)}
+        makePdf={async () => {
+          try { await canvas.current?.save(); } catch {}
+          const path = `inkpad/out/share_${id}.pdf`;
+          await canvas.current?.exportPdf(absPath(path));
+          return path;
+        }} />
       <CommentSheet raw={comment ? comment.text : null} onClose={() => setComment(null)}
         onSave={(next) => { if (comment) canvas.current?.setComment(comment.id, next); }} />
       <MenuSheet visible={!!commentsList} onClose={() => setCommentsList(null)} title="Comments" items={[

@@ -1,0 +1,48 @@
+# The compass, the Toolbox and the new menus.
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- tapOn: { text: "More", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: t01-home-menu
+- tapOn: { point: "3%,50%", optional: true }
+- tapOn: { text: "New" }
+- tapOn: { text: "Note" }
+- extendedWaitUntil: { visible: "More tools", timeout: 20000 }
+- waitForAnimationToEnd
+- tapOn: { text: "More tools" }
+- tapOn: { text: "Compass" }
+- waitForAnimationToEnd
+- takeScreenshot: t02-compass-tool
+# Put the point down and drag out the size.
+- swipe: { start: "50%, 40%", end: "70%, 40%", duration: 900 }
+- waitForAnimationToEnd
+- takeScreenshot: t03-compass-placed
+# Sweep an arc away from the handles.
+- swipe: { start: "50%, 25%", end: "65%, 30%", duration: 900 }
+- waitForAnimationToEnd
+- takeScreenshot: t04-compass-arc
+- tapOn: { text: "Full circle" }
+- waitForAnimationToEnd
+- takeScreenshot: t05-compass-circle
+- tapOn: { text: "Undo" }
+- waitForAnimationToEnd
+- takeScreenshot: t06-undo
+- tapOn: { text: "New point" }
+- swipe: { start: "30%, 65%", end: "42%, 65%", duration: 900 }
+- tapOn: { text: "Full circle" }
+- waitForAnimationToEnd
+- takeScreenshot: t07-second-circle
+- tapOn: { text: "Toolbox settings" }
+- waitForAnimationToEnd
+- takeScreenshot: t08-toolbox
+- swipe: { start: "73%, 30%", end: "73%, 42%", duration: 900 }
+- waitForAnimationToEnd
+- takeScreenshot: t09-toolbox-dragged
+- tapOn: { text: "Done with toolbox" }
+- tapOn: { text: "More" }
+- waitForAnimationToEnd
+- tapOn: { text: "Share settings" }
+- waitForAnimationToEnd
+- takeScreenshot: t10-share-sheet
