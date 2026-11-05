@@ -854,6 +854,7 @@ func compassRuns(_ pts: [CGPoint], inside page: CGRect) -> [[CGPoint]] {
 }
 
 extension QuillCanvasView {
+  private static let compassSizeKey = "quill.compass.size"
   private var compassTip: CGPoint { CGPoint(x: compassCentre.x + cos(compassAngle) * compassRadius, y: compassCentre.y + sin(compassAngle) * compassRadius) }
 
   func compassBegan(_ p: CGPoint) {
@@ -875,8 +876,15 @@ extension QuillCanvasView {
     guard frames.contains(where: { $0.contains(p) }) else { return }
     compassPlaced = true
     compassCentre = p
-    compassRadius = 0
-    compassGrab = .leg
+    // Opens at the size it was last set to. Dragging now moves the point; the pencil leg changes the size.
+    let kept = CGFloat(UserDefaults.standard.double(forKey: Self.compassSizeKey))
+    if kept > 1 {
+      compassRadius = kept
+      compassGrab = .needle
+    } else {
+      compassRadius = 0
+      compassGrab = .leg
+    }
     drawCompass()
   }
 
@@ -905,6 +913,9 @@ extension QuillCanvasView {
 
   func compassEnded() {
     defer { compassGrab = .none; drawCompass() }
+    if compassGrab == .leg, compassRadius > 1 {
+      UserDefaults.standard.set(Double(compassRadius), forKey: Self.compassSizeKey)
+    }
     guard compassGrab == .arc, let c = capture else { return }
     capture = nil
     ink.wet = nil
@@ -920,9 +931,9 @@ extension QuillCanvasView {
     compassCommit(compassPoints(centre: compassCentre, radius: compassRadius, from: compassAngle, sweep: 2 * .pi), seq: document.nextSeq())
   }
 
+  /// A new point: the size stays as it was.
   func compassReset() {
     compassPlaced = false
-    compassRadius = 0
     drawCompass()
   }
 
