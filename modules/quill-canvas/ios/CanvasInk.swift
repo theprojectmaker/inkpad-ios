@@ -25,8 +25,8 @@ final class InkGesture: UIGestureRecognizer {
   private var lastEvent: UIEvent?
   private var wait: DispatchWorkItem?
 
-  private static let fingerWait: TimeInterval = 0.09
-  private static let fingerMove: CGFloat = 8
+  private static let fingerWait: TimeInterval = 0.12
+  private static let fingerMove: CGFloat = 10
   /// A finger stroke younger than this is thrown away when a second finger lands.
   private static let youngStroke: TimeInterval = 1
 
@@ -327,12 +327,13 @@ extension QuillCanvasView {
 
   private func letPageMove() {
     scrollBack?.cancel()
-    let w = DispatchWorkItem { [weak self] in
-      self?.canvas.panGestureRecognizer.isEnabled = true
-      self?.canvas.pinchGestureRecognizer?.isEnabled = true
-    }
+    // Two fingers scroll and zoom straight away. One touch can't, for long enough to cover the
+    // pause between words, when a resting hand would move the page.
+    canvas.panGestureRecognizer.isEnabled = true
+    canvas.pinchGestureRecognizer?.isEnabled = true
+    canvas.panGestureRecognizer.minimumNumberOfTouches = 2
+    let w = DispatchWorkItem { [weak self] in self?.updatePanFingers() }
     scrollBack = w
-    // Long enough to cover the pause between words, when a resting hand would move the page.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: w)
   }
 
