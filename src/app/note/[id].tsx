@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
 import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/audio-bar';
 import { NoteTabs } from '@/components/note-tabs';
+import { ToolIcon } from '@/components/tool-icons';
 import { openTab, useTabs } from '@/lib/tabs';
 import { summarize, useLiveNotes } from '@/lib/livenotes';
 import { FindPanel } from '@/components/find-panel';
@@ -44,6 +45,15 @@ const DRAWING = 'drawing.pkd';
 const TEXTS = 'texts.json';
 /** Absolute file path for the native side (fsx gives file:// uris). */
 const absPath = (path: string) => decodeURIComponent(fsx.uri(path).replace(/^file:\/\//, ''));
+
+function TopBtn({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} hitSlop={3}
+      style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1, backgroundColor: active ? '#E9EEFD' : pressed ? '#F0F1F4' : 'transparent' })}>
+      <ToolIcon name={icon} size={19} color={active ? '#3F6AF2' : '#3B4252'} />
+    </Pressable>
+  );
+}
 
 /** Text cut to fit pages of typed notes. */
 function pageChunks(text: string, perPage = 44, perLine = 86): string[] {
@@ -639,14 +649,14 @@ export default function Editor() {
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
           {page.count > 1 || doc?.pages.length ? (
             <View pointerEvents="box-none" style={{ position: 'absolute', right: 12, bottom: audioOpen ? 80 : 16 }}>
-              <View style={{ width: 34, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
-                <Pressable accessibilityLabel="Previous page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} style={{ padding: 5 }}><Icon name="chevron.up" size={13} color="#3B4252" /></Pressable>
+              <View style={{ width: 30, borderRadius: 11, backgroundColor: '#fff', alignItems: 'center', paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
+                <Pressable accessibilityLabel="Previous page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} style={{ padding: 5 }}><ToolIcon name="up" size={13} /></Pressable>
                 <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ paddingVertical: 2, alignItems: 'center' }}>
                   <Text style={{ color: '#3B4252', fontSize: 11, fontWeight: '600' }}>{page.page + 1}</Text>
                   <View style={{ width: 12, height: 1, backgroundColor: '#9AA2B2', marginVertical: 2 }} />
                   <Text style={{ color: '#7A8294', fontSize: 11 }}>{page.count}</Text>
                 </Pressable>
-                <Pressable accessibilityLabel="Next page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.min(page.count - 1, page.page + 1))} style={{ padding: 5 }}><Icon name="chevron.down" size={13} color="#3B4252" /></Pressable>
+                <Pressable accessibilityLabel="Next page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.min(page.count - 1, page.page + 1))} style={{ padding: 5 }}><ToolIcon name="down" size={13} /></Pressable>
               </View>
             </View>
           ) : null}
@@ -675,17 +685,17 @@ export default function Editor() {
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
             onRuler={setRuler} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
-          <View style={{ position: 'absolute', top: 12, left: 12, flexDirection: 'row', borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
-            <IconButton name="arrow.left" label="Back to notes" onPress={back} color="#3B4252" />
-            {tabs.length > 1 ? <IconButton name="rectangle.stack" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} color={tabsOpen ? undefined : '#3B4252'} /> : null}
+          <View style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 2, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+            <TopBtn icon="back" label="Back to notes" onPress={back} />
+            {tabs.length > 1 ? <TopBtn icon="tabs" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} /> : null}
           </View>
-          <View style={{ position: 'absolute', top: 12, right: 12, flexDirection: 'row', borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 2, shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
-            <IconButton name="arrow.uturn.backward" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} color="#3B4252" />
-            <IconButton name="arrow.uturn.forward" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} color="#3B4252" />
-            <IconButton name="square.and.arrow.up" label="Share" onPress={share} color="#3B4252" />
-            <IconButton name="ellipsis.circle" label="More" onPress={() => setMenu(true)} color="#3B4252" />
-            <IconButton name="sparkles" label="Study with AI" active={study} onPress={() => { const was = study; closePanels(); setStudy(!was); }} color={study ? undefined : '#3B4252'} />
-            <IconButton name="square.on.square" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} color={sidebar ? undefined : '#3B4252'} />
+          <View style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', borderRadius: 12, backgroundColor: '#fff', padding: 2, shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+            <TopBtn icon="undo" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
+            <TopBtn icon="redo" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
+            <TopBtn icon="share" label="Share" onPress={share} />
+            <TopBtn icon="more" label="More" onPress={() => setMenu(true)} />
+            <TopBtn icon="ai" label="Study with AI" active={study} onPress={() => { const was = study; closePanels(); setStudy(!was); }} />
+            <TopBtn icon="pages" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} />
           </View>
           {meta?.hw ? (
             <View style={{ position: 'absolute', top: 70, left: 12, flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 6, borderRadius: 18, backgroundColor: '#fff', maxWidth: 220, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>

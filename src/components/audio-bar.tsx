@@ -6,7 +6,7 @@ import { requireNativeModule } from 'expo-modules-core';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
-import Animated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { fsx } from '@/lib/fsx';
 import type { LiveNotes, NotesSource } from '@/lib/livenotes';
@@ -181,7 +181,7 @@ export function AudioBar({ audio, noteId, recs, toNotes, panelOpen, onPanel, onS
   );
 
   return (
-    <Animated.View entering={FadeInDown.duration(200)} pointerEvents="box-none" style={{ position: 'absolute', left: 12, right: 12, bottom: 16, alignItems: 'center', zIndex: 6 }}>
+    <Animated.View entering={FadeIn.duration(130)} pointerEvents="box-none" style={{ position: 'absolute', left: 12, right: 12, bottom: 16, alignItems: 'center', zIndex: 6 }}>
       <View style={{ width: cur || recording ? '100%' : undefined, maxWidth: 760, height: 52, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, borderRadius: 16, backgroundColor: t.elev,
         borderWidth: t.dark ? 1 : 0, borderColor: t.line, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}>
         {recording ? <RecordingBar onStop={onStopRec} onMark={audio.mark} toNotes={toNotes} panelOpen={panelOpen} onPanel={onPanel} /> : cur ? (
@@ -229,7 +229,7 @@ function Tabs({ tabs, at, onPick }: { tabs: string[]; at: number; onPick: (i: nu
   const x = useSharedValue(at);
   const w = useRef(0);
   const [width, setWidth] = useState(0);
-  useEffect(() => { x.value = withTiming(at, { duration: 200 }); }, [at, x]);
+  useEffect(() => { x.value = withTiming(at, { duration: 150 }); }, [at, x]);
   const slider = useAnimatedStyle(() => ({ transform: [{ translateX: x.value * (width / tabs.length) }] }));
   return (
     <View onLayout={(e) => { w.current = e.nativeEvent.layout.width; setWidth(w.current); }} style={{ flexDirection: 'row', height: 32, marginHorizontal: 14, marginBottom: 8, borderRadius: 9, backgroundColor: t.chip, padding: 2 }}>
@@ -276,7 +276,7 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSee
   const lines = recording ? words.lines : rec?.transcript;
 
   return (
-    <Animated.View entering={FadeIn.duration(180)} style={{ width: 340, backgroundColor: t.side, borderLeftWidth: 1, borderLeftColor: t.line, paddingTop: 76 }}>
+    <Animated.View entering={FadeIn.duration(130)} style={{ width: 340, backgroundColor: t.side, borderLeftWidth: 1, borderLeftColor: t.line, paddingTop: 76 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingLeft: 16, paddingBottom: 6 }}>
         <Text style={{ flex: 1, color: t.text, fontSize: 17, fontWeight: '600' }}>{hasNotes ? 'Class notes' : 'Transcript'}</Text>
         <IconButton name="xmark" label="Close transcript" onPress={onClose} />
@@ -304,7 +304,7 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSee
             </Animated.View>
           ) : null}
           {notes.map((n, i) => (
-            <Animated.View key={`${i}-${n.text}`} entering={FadeInDown.duration(240)}>
+            <Animated.View key={`${i}-${n.text}`} entering={FadeIn.duration(200)}>
               <Pressable onPress={() => { if (!recording) onSeek(n.t * 1000); }} accessibilityLabel={n.text} style={{ flexDirection: 'row', gap: 8, paddingVertical: 2 }}>
                 <Text style={{ color: t.faint, fontSize: 15, lineHeight: 21 }}>•</Text>
                 <Text style={{ flex: 1, color: t.text, fontSize: 15, lineHeight: 21 }}>{n.text}</Text>

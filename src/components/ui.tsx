@@ -2,7 +2,7 @@
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Component, createContext, Fragment, type ErrorInfo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle, type StyleProp } from 'react-native';
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, ZoomIn } from 'react-native-reanimated';
+import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { useTheme } from '@/lib/settings';
 
@@ -77,7 +77,7 @@ export function Sheet({ visible, onClose, children, width = 420, title, topRight
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} />
         <View style={topRight ? { flex: 1, alignItems: 'flex-end', justifyContent: 'flex-start', paddingTop: 70, paddingRight: 12 } : { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }} pointerEvents="box-none">
-          <Reanimated.View entering={ZoomIn.duration(170).springify().damping(22).stiffness(260)} style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 18, padding: 18, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
+          <Reanimated.View entering={FadeIn.duration(110)} style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 18, padding: 18, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
             {title ? <Text style={{ color: t.text, fontSize: 19, fontWeight: '700', marginBottom: 12 }}>{title}</Text> : null}
             <ScrollView bounces={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
           </Reanimated.View>

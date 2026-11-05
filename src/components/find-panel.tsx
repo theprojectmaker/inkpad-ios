@@ -68,7 +68,7 @@ export function FindPanel({ noteId, doc, canvas, absPath, stale, onRead, onHear,
   };
 
   return (
-    <Reanimated.View entering={FadeIn.duration(180)} style={{ width: 320, backgroundColor: t.side, borderLeftWidth: 1, borderLeftColor: t.line, paddingTop: 66 }}>
+    <Reanimated.View entering={FadeIn.duration(130)} style={{ width: 320, backgroundColor: t.side, borderLeftWidth: 1, borderLeftColor: t.line, paddingTop: 66 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 38, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.chip }}>
           <Icon name="magnifyingglass" size={14} color={t.faint} />

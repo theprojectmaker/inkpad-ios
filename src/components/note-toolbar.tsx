@@ -5,9 +5,10 @@
 import { Canvas, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
-import Reanimated, { FadeIn, FadeInLeft, FadeInRight, FadeInUp, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import type { CanvasTool } from '@/components/quill-canvas';
+import { ToolIcon } from '@/components/tool-icons';
 import { Icon } from '@/components/ui';
 import { pickColor } from '@/lib/ondevice';
 import { type InkTool, type PenLine, type Settings, type ToolKit, useSettings } from '@/lib/settings';
@@ -71,7 +72,7 @@ const PALETTES = [
 ];
 
 const TOOLS_A: { id: InkTool; icon: string; label: string }[] = [
-  { id: 'pen', icon: 'pencil.tip', label: 'Pen' },
+  { id: 'pen', icon: 'pen', label: 'Pen' },
   { id: 'pencil', icon: 'pencil', label: 'Pencil' },
   { id: 'marker', icon: 'highlighter', label: 'Highlighter' },
   { id: 'eraser', icon: 'eraser', label: 'Eraser' },
@@ -79,20 +80,20 @@ const TOOLS_A: { id: InkTool; icon: string; label: string }[] = [
   { id: 'lasso', icon: 'lasso', label: 'Lasso' },
 ];
 const TOOLS_B: { id: InkTool; icon: string; label: string }[] = [
-  { id: 'hand', icon: 'hand.point.up.left', label: 'Navigate' },
-  { id: 'laser', icon: 'cursorarrow.rays', label: 'Laser pointer' },
-  { id: 'calligraphy', icon: 'paintbrush.pointed', label: 'Calligraphy' },
-  { id: 'tape', icon: 'rectangle.fill', label: 'Tape' },
-  { id: 'comment', icon: 'bubble.left', label: 'Comment' },
-  { id: 'measure', icon: 'ruler', label: 'Measure' },
+  { id: 'hand', icon: 'hand', label: 'Navigate' },
+  { id: 'laser', icon: 'laser', label: 'Laser pointer' },
+  { id: 'calligraphy', icon: 'calligraphy', label: 'Calligraphy' },
+  { id: 'tape', icon: 'tape', label: 'Tape' },
+  { id: 'comment', icon: 'comment', label: 'Comment' },
+  { id: 'measure', icon: 'measure', label: 'Measure' },
 ];
 
 const ALL_TOOLS: { id: string; icon: string; label: string }[] = [
   ...TOOLS_A,
-  { id: 'media', icon: 'plus.circle', label: 'Media' },
+  { id: 'media', icon: 'media', label: 'Media' },
   { id: 'record', icon: 'mic', label: 'Record' },
   TOOLS_B[0],
-  { id: 'zoom', icon: 'plus.magnifyingglass', label: 'Zoom' },
+  { id: 'zoom', icon: 'zoom', label: 'Zoom' },
   ...TOOLS_B.slice(1),
 ];
 const fullOrder = (saved?: string[]) => {
@@ -132,7 +133,7 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
                   <Pressable accessibilityLabel={(off ? 'Show ' : 'Hide ') + x.label} onPress={() => set({ toolHidden: off ? hidden.filter((h) => h !== id) : [...hidden, id] })} hitSlop={8}>
                     <Icon name={off ? 'eye.slash' : 'eye'} size={20} color="#9AA2B2" />
                   </Pressable>
-                  {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <Icon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
+                  {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <ToolIcon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
                   <Text style={{ flex: 1, fontSize: 16, color: off ? '#9AA2B2' : '#15171C' }}>{x.label}</Text>
                   <Pressable accessibilityLabel={'Move ' + x.label + ' up'} onPress={() => move(i, -1)} hitSlop={6} style={{ padding: 6 }}><Icon name="chevron.up" size={14} color="#6B7385" /></Pressable>
                   <Pressable accessibilityLabel={'Move ' + x.label + ' down'} onPress={() => move(i, 1)} hitSlop={6} style={{ padding: 6 }}><Icon name="chevron.down" size={14} color="#6B7385" /></Pressable>
@@ -216,23 +217,22 @@ export function ColorGrid({ current, onPick }: { current?: string; onPick: (c: s
   );
 }
 
-/** The mark under the picked tool: grows in from the middle, and the tool lifts a little. */
+/** The mark under the picked tool fades in. */
 function ToolMark({ on, color, children }: { on: boolean; color: string; children: React.ReactNode }) {
   const k = useSharedValue(on ? 1 : 0);
-  useEffect(() => { k.value = withTiming(on ? 1 : 0, { duration: 170 }); }, [on, k]);
-  const mark = useAnimatedStyle(() => ({ opacity: k.value, transform: [{ scaleX: 0.4 + k.value * 0.6 }] }));
-  const lift = useAnimatedStyle(() => ({ transform: [{ translateY: k.value * -1.5 }] }));
+  useEffect(() => { k.value = withTiming(on ? 1 : 0, { duration: 110 }); }, [on, k]);
+  const mark = useAnimatedStyle(() => ({ opacity: k.value }));
   return (
     <>
-      <Reanimated.View style={lift}>{children}</Reanimated.View>
-      <Reanimated.View style={[{ position: 'absolute', bottom: 3, width: 22, height: 2.5, borderRadius: 2, backgroundColor: color }, mark]} />
+      {children}
+      <Reanimated.View style={[{ position: 'absolute', bottom: 2, width: 18, height: 2, borderRadius: 1, backgroundColor: color }, mark]} />
     </>
   );
 }
 
-const Card = ({ children, width, top = 96, align }: { children: React.ReactNode; width?: number; top?: number; align?: number }) => (
+const Card = ({ children, width, top = 84, align }: { children: React.ReactNode; width?: number; top?: number; align?: number }) => (
   <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center' }]}>
-    <Reanimated.View entering={FadeInUp.duration(170)} style={{ position: 'absolute', top, left: align, width, padding: 16, borderRadius: 18, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } }}>
+    <Reanimated.View entering={FadeIn.duration(110)} style={{ position: 'absolute', top, left: align, width, padding: 16, borderRadius: 18, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } }}>
       {children}
     </Reanimated.View>
   </View>
@@ -267,26 +267,26 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const tint = on && tk.colors.length ? tk.colors[tk.color] : null;
     const shown = tint && tint.toUpperCase() !== '#FFFFFF' ? tint : on ? BLUE : INK;
     return (
-      <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
         <ToolMark on={on} color={shown}>
           {x.id === 'text'
-            ? <Text style={{ fontSize: 21, fontWeight: '700', fontStyle: 'italic', color: shown, letterSpacing: -1 }}>Tt</Text>
-            : <Icon name={x.icon} size={22} color={shown} />}
+            ? <Text style={{ fontSize: 17, fontWeight: '500', color: shown, letterSpacing: -0.5 }}>Tt</Text>
+            : <ToolIcon name={x.icon} size={20} color={shown} />}
         </ToolMark>
       </Pressable>
     );
   };
   const plain = (icon: string, label: string, onPress: () => void, tint?: string, active?: boolean) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={() => { setPop(null); onPress(); }} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-      <Icon name={icon} size={22} color={tint ?? (active ? BLUE : INK)} />
+    <Pressable key={label} accessibilityLabel={label} onPress={() => { setPop(null); onPress(); }} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+      <ToolIcon name={icon} size={icon === 'next' || icon === 'prev' ? 15 : 20} color={tint ?? (active ? BLUE : INK)} />
     </Pressable>
   );
-  const Div = () => <View style={{ width: 1, height: 24, backgroundColor: '#D5D9E2', marginHorizontal: 4 }} />;
+  const Div = () => <View style={{ width: 1, height: 20, backgroundColor: '#D5D9E2', marginHorizontal: 4 }} />;
   const Bar = () => <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: '#E2E5EC', marginHorizontal: 8 }} />;
 
   const chip = (label: string, on: boolean, onPress: () => void) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 32, paddingHorizontal: 16, borderRadius: 16, justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
-      <Text style={{ color: INK, fontSize: 14 }}>{label}</Text>
+    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 27, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+      <Text style={{ color: INK, fontSize: 13 }}>{label}</Text>
     </Pressable>
   );
 
@@ -297,32 +297,32 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         const white = c.toUpperCase() === '#FFFFFF';
         return (
           <Pressable key={i + c} accessibilityLabel={`Colour ${c}`} onPress={() => { if (on) setPop(pop === 'colors' ? null : 'colors'); else { patch({ color: i }); setPop(null); } }}
-            style={{ width: 36, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-            <View style={{ width: on ? 28 : 24, height: on ? 28 : 24, borderRadius: 14, backgroundColor: c, borderWidth: white || on ? 1.5 : 0, borderColor: on ? BLUE : '#B8BFCC', alignItems: 'center', justifyContent: 'center' }}>
-              {on ? <Icon name="pencil" size={13} color={white || c.toUpperCase() === '#FFFF00' ? '#333' : '#fff'} /> : null}
+            style={{ width: 30, height: 34, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: on ? 25 : 21, height: on ? 25 : 21, borderRadius: 13, backgroundColor: c, borderWidth: white || on ? 1.5 : 0, borderColor: on ? BLUE : '#B8BFCC', alignItems: 'center', justifyContent: 'center' }}>
+              {on ? <Icon name="pencil" size={11} color={white || c.toUpperCase() === '#FFFF00' ? '#333' : '#fff'} /> : null}
             </View>
           </Pressable>
         );
       })}
-      <Pressable accessibilityLabel="More colours" onPress={() => setPop(pop === 'addColor' ? null : 'addColor')} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#ECEDF1', alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={12} color={INK} /></View>
+      <Pressable accessibilityLabel="More colours" onPress={() => setPop(pop === 'addColor' ? null : 'addColor')} style={{ width: 28, height: 34, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#ECEDF1', alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={10} color={INK} /></View>
       </Pressable>
     </>
   );
   const sizes = k.sizes.map((n, i) => {
     const on = i === k.size;
-    const d = [9, 14, 20][i] ?? 14;
+    const d = [6, 10, 15][i] ?? 10;
     return (
-      <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => { if (on) setPop(pop === 'size' ? null : 'size'); else { patch({ size: i }); setPop(null); } }} style={{ width: 36, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: on ? '#fff' : '#ECEDF1', borderWidth: on ? 1.5 : 0, borderColor: BLUE, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => { if (on) setPop(pop === 'size' ? null : 'size'); else { patch({ size: i }); setPop(null); } }} style={{ width: 30, height: 34, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: on ? '#fff' : '#ECEDF1', borderWidth: on ? 1.5 : 0, borderColor: BLUE, alignItems: 'center', justifyContent: 'center' }}>
           <View style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: INK }} />
         </View>
       </Pressable>
     );
   });
   const lineChip = (
-    <Pressable accessibilityLabel="Line style" onPress={() => setPop(pop === 'line' ? null : 'line')} style={{ height: 38, paddingHorizontal: 6, justifyContent: 'center' }}>
-      <LineGlyph line={k.line} />
+    <Pressable accessibilityLabel="Line style" onPress={() => setPop(pop === 'line' ? null : 'line')} style={{ height: 34, paddingHorizontal: 4, justifyContent: 'center' }}>
+      <LineGlyph line={k.line} width={32} />
     </Pressable>
   );
 
@@ -343,9 +343,9 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   } else if (kind === 'eraser') {
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' }}>{sizes}<Bar />{chip('Whole', s.eraser === 'stroke', () => set({ eraser: 'stroke' }))}<View style={{ width: 8 }} />{chip('Partial', s.eraser !== 'stroke', () => set({ eraser: 'partial' }))}</View>;
   } else if (kind === 'hand') {
-    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 14 }}>The Pencil scrolls the page. Pick a pen to write again.</Text>;
+    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 13 }}>The Pencil scrolls the page. Pick a pen to write again.</Text>;
   } else if (kind === 'comment') {
-    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 14 }}>Tap the page to leave a comment. Tap a pin to read or change it.</Text>;
+    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 13 }}>Tap the page to leave a comment. Tap a pin to read or change it.</Text>;
   } else if (kind === 'laser') {
     row2 = <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }}>{dots}</View>;
   } else if (kind === 'tape') {
@@ -358,20 +358,20 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
         {chip(fonts[fi][1], false, () => set({ textFont: fonts[(fi + 1) % fonts.length][0] }))}
         <Bar />
-        <Pressable accessibilityLabel="Smaller text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.max(8, n - 1); patch({ sizes: v }); }} style={{ padding: 6 }}><Icon name="minus.circle" size={20} color={INK} /></Pressable>
-        <Text style={{ width: 28, textAlign: 'center', color: INK, fontSize: 15 }}>{n}</Text>
-        <Pressable accessibilityLabel="Bigger text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.min(96, n + 1); patch({ sizes: v }); }} style={{ padding: 6 }}><Icon name="plus.circle" size={20} color={INK} /></Pressable>
+        <Pressable accessibilityLabel="Smaller text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.max(8, n - 1); patch({ sizes: v }); }} style={{ padding: 4 }}><Icon name="minus.circle" size={17} color={INK} /></Pressable>
+        <Text style={{ width: 24, textAlign: 'center', color: INK, fontSize: 13 }}>{n}</Text>
+        <Pressable accessibilityLabel="Bigger text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.min(96, n + 1); patch({ sizes: v }); }} style={{ padding: 4 }}><Icon name="plus.circle" size={17} color={INK} /></Pressable>
         <Bar />
         {dots}
         <Bar />
-        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 30, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E9EEFD' : 'transparent' }}>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: s.textBold ? BLUE : INK }}>B</Text>
+        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E9EEFD' : 'transparent' }}>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: s.textBold ? BLUE : INK }}>B</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 30, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? '#E9EEFD' : 'transparent' }}>
-          <Text style={{ fontSize: 18, fontStyle: 'italic', color: s.textItalic ? BLUE : INK }}>I</Text>
+        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? '#E9EEFD' : 'transparent' }}>
+          <Text style={{ fontSize: 15, fontStyle: 'italic', color: s.textItalic ? BLUE : INK }}>I</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 30, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? '#E9EEFD' : 'transparent' }}>
-          <Text style={{ fontSize: 18, textDecorationLine: 'underline', color: s.textUnderline ? BLUE : INK }}>U</Text>
+        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? '#E9EEFD' : 'transparent' }}>
+          <Text style={{ fontSize: 15, textDecorationLine: 'underline', color: s.textUnderline ? BLUE : INK }}>U</Text>
         </Pressable>
       </View>
     );
@@ -387,14 +387,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     );
   }
 
-  const pillW = Math.min(screen - 110, 540);
+  const pillW = Math.min(screen - 110, 450);
   const order = fullOrder(s.toolOrder);
   const hidden = s.toolHidden ?? [];
   const shown = order.filter((id) => !hidden.includes(id));
   const render = (id: string) => {
-    if (id === 'media') return plain('plus.circle', 'Insert', onInsert);
-    if (id === 'record') return plain(hasAudio && !recording ? 'play.circle' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined);
-    if (id === 'zoom') return plain('plus.magnifyingglass', 'Zoom', onZoom, undefined, zoom);
+    if (id === 'media') return plain('media', 'Insert', onInsert);
+    if (id === 'record') return plain(hasAudio && !recording ? 'play' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined);
+    if (id === 'zoom') return plain('zoom', 'Zoom', onZoom, undefined, zoom);
     const x = ALL_TOOLS.find((t) => t.id === id);
     return x ? toolBtn(x as { id: InkTool; icon: string; label: string }) : null;
   };
@@ -444,25 +444,25 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         )}
       </Modal> : null}
       <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center' }]}>
-        <View style={{ position: 'absolute', top: 12, width: pillW, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 14, shadowOffset: { width: 0, height: 3 } }}>
-          <View style={{ height: 48, overflow: 'hidden', justifyContent: 'center' }}>
+        <View style={{ position: 'absolute', top: 10, width: pillW, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } }}>
+          <View style={{ height: 40, overflow: 'hidden', justifyContent: 'center' }}>
             {!set2 ? (
-              <Reanimated.View key="first" entering={FadeInLeft.duration(190)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
+              <Reanimated.View key="first" entering={FadeIn.duration(120)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
                 {first.map(render)}
                 {second.length ? <Div /> : null}
                 {second[0] ? render(second[0]) : null}
-                {plain('chevron.right', 'More tools', () => setSet2(true))}
+                {plain('next', 'More tools', () => setSet2(true))}
               </Reanimated.View>
             ) : (
-              <Reanimated.View key="second" entering={FadeInRight.duration(190)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
+              <Reanimated.View key="second" entering={FadeIn.duration(120)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
                 {second.map(render)}
-                {plain('gearshape', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
-                {plain('chevron.left', 'Back to the main tools', () => setSet2(false))}
+                {plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
+                {plain('prev', 'Back to the main tools', () => setSet2(false))}
               </Reanimated.View>
             )}
           </View>
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: '#D5D9E2' }} />
-          <Reanimated.View key={kind} entering={FadeIn.duration(160)} style={{ height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 }}>{row2}</Reanimated.View>
+          <Reanimated.View key={kind} entering={FadeIn.duration(100)} style={{ height: 36, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }}>{row2}</Reanimated.View>
         </View>
       </View>
     </>

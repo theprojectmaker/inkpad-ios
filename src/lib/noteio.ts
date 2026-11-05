@@ -123,6 +123,14 @@ export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: st
   return { pages, text };
 }
 
+/** Gives up on a step that never answers, rather than leaving the app waiting for ever. */
+function inTime<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise((ok, no) => {
+    const t = setTimeout(() => no(new Error(what)), ms);
+    work.then((v) => { clearTimeout(t); ok(v); }, (e) => { clearTimeout(t); no(e); });
+  });
+}
+
 /** A picture of an imported page for the note's card, so it shows from the start. Its file name, or null. */
 export async function makeCover(noteId: string, page: Page | undefined): Promise<string | null> {
   const bg = page?.bg;
@@ -131,7 +139,7 @@ export async function makeCover(noteId: string, page: Page | undefined): Promise
   try {
     const src = fsx.uri(notePath(noteId, bg.file));
     if (bg.kind === 'pdf') return (await pdfCover(src, fsx.uri(notePath(noteId, name)), 360)) ? name : null;
-    const r = await ImageManipulator.manipulateAsync(src, [{ resize: { width: 360 } }], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG });
+    const r = await inTime(ImageManipulator.manipulateAsync(src, [{ resize: { width: 360 } }], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }), 6000, 'cover');
     await fsx.copyIn(r.uri, notePath(noteId, name));
     return name;
   } catch { return null; }
@@ -139,13 +147,14 @@ export async function makeCover(noteId: string, page: Page | undefined): Promise
 
 /** Saves a picked image (downscaled) into the note; returns its file name and size. */
 export async function saveImage(noteId: string, uri: string, maxSide = 2800): Promise<{ file: string; w: number; h: number }> {
-  let r = await ImageManipulator.manipulateAsync(uri, [], { compress: 1 });
+  const WAIT = "That picture took too long to open. Try again.";
+  let r = await inTime(ImageManipulator.manipulateAsync(uri, [], { compress: 1 }), 30000, WAIT);
   const big = Math.max(r.width, r.height);
   if (big > maxSide) {
     const k = maxSide / big;
-    r = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: Math.round(r.width * k), height: Math.round(r.height * k) } }], { compress: 0.86, format: ImageManipulator.SaveFormat.JPEG });
+    r = await inTime(ImageManipulator.manipulateAsync(uri, [{ resize: { width: Math.round(r.width * k), height: Math.round(r.height * k) } }], { compress: 0.86, format: ImageManipulator.SaveFormat.JPEG }), 30000, WAIT);
   } else {
-    r = await ImageManipulator.manipulateAsync(uri, [], { compress: 0.88, format: ImageManipulator.SaveFormat.JPEG });
+    r = await inTime(ImageManipulator.manipulateAsync(uri, [], { compress: 0.88, format: ImageManipulator.SaveFormat.JPEG }), 30000, WAIT);
   }
   const file = `img_${uid()}.jpg`;
   await fsx.copyIn(r.uri, notePath(noteId, file));

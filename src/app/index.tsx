@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import Reanimated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Reanimated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PaperSheet } from '@/components/paper-sheet';
@@ -340,7 +340,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           </ScrollView>
         ) : null}
 
-        <Reanimated.View key={JSON.stringify(filter)} entering={FadeIn.duration(190)} style={{ flex: 1 }}>
+        <Reanimated.View key={JSON.stringify(filter)} entering={FadeIn.duration(120)} style={{ flex: 1 }}>
         {showHome ? (
           <ScrollView contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: 60 }}>
             <View style={{ alignItems: 'center', marginTop: 8 }}>
@@ -362,7 +362,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             </View>
             <Text style={{ color: t.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4, marginTop: 36, marginBottom: 16 }}>Recent notes</Text>
             {recent.length ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{recent.map((n, i) => <Reanimated.View key={n.id} entering={FadeInDown.delay(i * 35).duration(240)}>{card({ item: n })}</Reanimated.View>)}</View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{recent.map((n, i) => <Reanimated.View key={n.id} entering={FadeIn.delay(i * 15).duration(140)}>{card({ item: n })}</Reanimated.View>)}</View>
             ) : <Text style={{ color: t.sub, fontSize: 16 }}>Your notes will show up here.</Text>}
           </ScrollView>
         ) : null}
