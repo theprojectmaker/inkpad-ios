@@ -458,7 +458,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     dragStartOffset = canvas.contentOffset
     if fingerDraws || inkMode == .compass || inkMode == .shape { inkGesture.fingerGesturing() }
-    ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale)
+    // A pinch is also a two-finger drag. Its pictures on the pages scale with them; the moving picture wouldn't.
+    if !zoomPreviewing && !canvas.isZooming { ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale) }
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {

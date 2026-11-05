@@ -217,7 +217,7 @@ extension QuillCanvasView {
 /// during a pinch the ink is a picture on each page, and they can't come apart.
 extension QuillCanvasView {
   private func inkPicture(_ strokes: [InkStroke], page f: CGRect) -> CGImage? {
-    let k: CGFloat = 2
+    let k: CGFloat = 3
     let fmt = UIGraphicsImageRendererFormat()
     fmt.scale = k
     fmt.opaque = false
@@ -273,7 +273,9 @@ extension QuillCanvasView {
 
   func pinchEnded() {
     guard zoomPreviewing else { return }
-    if canvas.isZooming || canvas.isZoomBouncing {
+    // A pinch usually ends still sliding or with a finger down. The pictures stay on the pages until
+    // everything has come to rest, because they can't come apart from them.
+    if canvas.isZooming || canvas.isZoomBouncing || canvas.isDragging || canvas.isDecelerating {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in self?.pinchEnded() }
       return
     }
