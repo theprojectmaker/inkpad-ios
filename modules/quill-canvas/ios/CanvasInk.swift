@@ -163,7 +163,7 @@ final class PenCapture {
     if !first { lastSpeed += (speed - lastSpeed) * 0.2 }
     // Streamline eases the line from following the hand closely towards a slow, steady pull.
     let follow = 24 + 0.2 * speed
-    let tau = 1 / (2 * Float.pi * (pen.stabilize ? 7 : follow * (1 - pen.streamline) + 4 * pen.streamline))
+    let tau = 1 / (2 * Float.pi * (pen.stabilize ? 7 : follow * (1 - pen.streamline) + 9 * pen.streamline))
     let k = first ? 1 : 1 / (1 + tau / dt)
     let oldX = fx, oldY = fy
     fx += (x - fx) * k
@@ -194,6 +194,12 @@ final class PenCapture {
 
   /// Redraws the end of the line, out to the Pencil and where it's heading.
   func refresh(predicted: [CGPoint]) {
+    // Streamline trails behind the Pencil on purpose. Running a straight line out to the tip would
+    // cut across the smoothed curve and leave chunks, so the line just ends where it's got to.
+    if pen.streamline > 0.05 {
+      wet.refresh(ahead: [InkPoint(x: fx, y: fy, r: r, a: a)])
+      return
+    }
     var ahead = [InkPoint(x: rawX, y: rawY, r: r, a: a)]
     // Barely moving: a guess at where the Pencil is going is only noise, and it makes the tip flicker.
     if lastSpeed > 150 {
@@ -214,7 +220,20 @@ final class PenCapture {
     let close = 1.2 / zoom     // on screen, about a point
     // The hand jitters as the Pencil lifts: those last tiny moves aren't part of the line.
     while pts.count > 2, hypot(pts[pts.count - 1].x - pts[pts.count - 2].x, pts[pts.count - 1].y - pts[pts.count - 2].y) < close { pts.removeLast() }
-    if let last = pts.last, hypot(last.x - rawX, last.y - rawY) >= close { pts.append(InkPoint(x: rawX, y: rawY, r: last.r, a: last.a)) }
+    if pen.streamline > 0.05 {
+      // It finishes where the smoothing got to, plus the rest of the way in small steps.
+      if let last = pts.last {
+        let gap = hypot(last.x - rawX, last.y - rawY)
+        let steps = Int(min(12, gap / max(close, 2)))
+        if steps > 0 {
+          for i in 1...steps {
+            let k = Float(i) / Float(steps)
+            let eased = k * k * (3 - 2 * k)
+            pts.append(InkPoint(x: last.x + (rawX - last.x) * eased, y: last.y + (rawY - last.y) * eased, r: last.r, a: last.a))
+          }
+        }
+      }
+    } else if let last = pts.last, hypot(last.x - rawX, last.y - rawY) >= close { pts.append(InkPoint(x: rawX, y: rawY, r: last.r, a: last.a)) }
     // And the end of a line never gets fatter than the line leading up to it.
     let count = pts.count
     if count > 2 {
