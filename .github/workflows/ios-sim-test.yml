@@ -69,7 +69,7 @@ jobs:
           cp scripts/scan-samples/doc-dim.jpg scripts/scan-samples/notes.jpg "$DOCS/quill-test-import/"
           sleep 2
           maestro test "${{ inputs.flow }}" --test-output-dir shots --debug-output out/maestro 2>&1 | tee out/maestro.txt
-          find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ ; 2>/dev/null || true
+          find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ \; 2>/dev/null || true
           kill -INT $(cat out/rec.pid) || true; sleep 3
           kill $(cat out/log.pid) || true
           cp "$DOCS/quill-test-import.log" out/ 2>/dev/null || echo "no import log"

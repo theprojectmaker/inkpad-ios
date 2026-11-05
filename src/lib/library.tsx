@@ -5,7 +5,7 @@ import { AppState } from 'react-native';
 
 import { fsx } from './fsx';
 import { emptyNote, FOLDER_COLORS, type Folder, type Library, type NoteDoc, type NoteKind, type NoteMeta, type Page, type PageSizeId, type PaperColor, type PaperStyle, uid } from './model';
-import { deleteNoteFiles, duplicateDoc, LIB_PATH, loadDoc, saveDoc } from './noteio';
+import { deleteNoteFiles, duplicateDoc, LIB_PATH, loadDoc, makeCover, saveDoc } from './noteio';
 
 type Ctx = {
   lib: Library;
@@ -106,6 +106,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     const now = Date.now();
     const count = libRef.current.notes.filter((n) => n.title.startsWith('Note ')).length;
     const meta: NoteMeta = { id, title: o.title?.trim() || `Note ${count + 1}`, folderId: o.folderId, created: now, updated: now, opened: now, pages: doc.pages.length, kind: o.kind };
+    const cover = await makeCover(id, o.pages?.[0]);
+    if (cover) meta.thumb = cover;
     commit((l) => ({ ...l, notes: [meta, ...l.notes] }));
     await write();
     return id;

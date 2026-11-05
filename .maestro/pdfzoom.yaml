@@ -12,7 +12,7 @@ appId: com.solyapps.notes
 - extendedWaitUntil: { visible: "T5.*", timeout: 200000 }
 - takeScreenshot: a01-imported
 - tapOn: { text: "Settings", optional: true }
-- waitForAnimationToEnd
+- extendedWaitUntil: { visible: "Draw with finger", timeout: 15000, optional: true }
 - tapOn: { text: "Draw with finger", optional: true }
 - tapOn: { text: "Back to notes", optional: true }
 # Short PDF: write on it, then sweep the zoom
@@ -24,11 +24,10 @@ appId: com.solyapps.notes
 - swipe: { start: "20%, 28%", end: "70%, 30%", duration: 500 }
 - swipe: { start: "20%, 34%", end: "70%, 38%", duration: 500 }
 - swipe: { start: "30%, 42%", end: "55%, 60%", duration: 500 }
-- tapOn: { text: "Saved pen 4", optional: true }
 - swipe: { start: "20%, 25%", end: "70%, 27%", duration: 500 }
-- tapOn: { text: "Saved pen 1", optional: true }
 - takeScreenshot: a03-written
-- tapOn: { text: "More", optional: true }
+- tapOn: { text: "More tools", optional: true }
+- tapOn: { text: "Measure", optional: true }
 - tapOn: { text: "Ruler", optional: true }
 - takeScreenshot: a04-sweep-start
 - takeScreenshot: a05-sweep-2
@@ -40,8 +39,9 @@ appId: com.solyapps.notes
 - takeScreenshot: a11-sweep-8
 - extendedWaitUntil: { visible: "Zoom sweep done", timeout: 30000, optional: true }
 - takeScreenshot: a12-after-sweep
-- tapOn: { text: "More", optional: true }
 - tapOn: { text: "Ruler", optional: true }
+- tapOn: { text: "Back to the main tools", optional: true }
+- tapOn: { text: "Pen", optional: true }
 - swipe: { start: "20%, 60%", end: "70%, 62%", duration: 500 }
 - takeScreenshot: a13-write-after-sweep
 - tapOn: { text: "Undo", optional: true }

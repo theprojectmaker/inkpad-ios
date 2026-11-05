@@ -8,7 +8,7 @@ import { Image } from 'react-native';
 
 import { fsx } from './fsx';
 import { LETTER, type NoteDoc, type Page, uid } from './model';
-import { pdfInfo } from './ondevice';
+import { pdfCover, pdfInfo } from './ondevice';
 import { engine } from './pdf-engine';
 
 export const LIB_PATH = 'inkpad/library.json';
@@ -121,6 +121,20 @@ export async function pdfPages(noteId: string, srcUri: string, onStep?: (msg: st
     bg: { kind: 'pdf', file, index }, strokes: [], texts: [], images: [],
   }));
   return { pages, text };
+}
+
+/** A picture of an imported page for the note's card, so it shows from the start. Its file name, or null. */
+export async function makeCover(noteId: string, page: Page | undefined): Promise<string | null> {
+  const bg = page?.bg;
+  if (bg?.kind !== 'pdf' && bg?.kind !== 'image') return null;
+  const name = `thumb_${uid()}.jpg`;
+  try {
+    const src = fsx.uri(notePath(noteId, bg.file));
+    if (bg.kind === 'pdf') return (await pdfCover(src, fsx.uri(notePath(noteId, name)), 360)) ? name : null;
+    const r = await ImageManipulator.manipulateAsync(src, [{ resize: { width: 360 } }], { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG });
+    await fsx.copyIn(r.uri, notePath(noteId, name));
+    return name;
+  } catch { return null; }
 }
 
 /** Saves a picked image (downscaled) into the note; returns its file name and size. */

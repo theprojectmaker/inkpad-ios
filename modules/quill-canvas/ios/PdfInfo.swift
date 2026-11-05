@@ -3,10 +3,22 @@
 import CoreGraphics
 import Foundation
 import PDFKit
+import UIKit
 
 enum PdfInfo {
   private static func fail(_ text: String) -> NSError {
     NSError(domain: "Quill", code: 3, userInfo: [NSLocalizedDescriptionKey: text])
+  }
+
+  /// The first page as a small picture, for the note's card.
+  static func cover(_ path: String, to dst: String, width: Double) -> Bool {
+    guard let doc = PDFDocument(url: URL(fileURLWithPath: path)), let page = doc.page(at: 0) else { return false }
+    let box = page.bounds(for: .cropBox)
+    let turned = abs(page.rotation) % 180 == 90
+    let ratio = (turned ? box.width : box.height) / max(1, turned ? box.height : box.width)
+    let size = CGSize(width: width, height: width * Double(ratio))
+    guard let data = page.thumbnail(of: size, for: .cropBox).jpegData(compressionQuality: 0.8) else { return false }
+    return (try? data.write(to: URL(fileURLWithPath: dst), options: .atomic)) != nil
   }
 
   /// Each page's size as displayed (rotation included) and some text for search.

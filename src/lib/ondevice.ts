@@ -12,6 +12,7 @@ type NativeOnDevice = {
   pickColor(start: string): Promise<string>;
   copyText(text: string): Promise<void>;
   pdfInfo(path: string, maxText: number): Promise<{ pages: [number, number][]; text: string }>;
+  pdfCover(path: string, dst: string, width: number): Promise<boolean>;
   enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
   localAIStatus(): LocalAIStatus;
   localAI(instructions: string, prompt: string): Promise<string>;
@@ -34,6 +35,11 @@ export async function readText(uri: string): Promise<OcrLine[]> {
 export async function pdfInfo(uri: string, maxText = 12000) {
   if (!Native?.pdfInfo) return null;
   return Native.pdfInfo(plain(uri), maxText);
+}
+
+/** The first page of a PDF as a small picture. False where that can't be done. */
+export async function pdfCover(uri: string, dstUri: string, width: number): Promise<boolean> {
+  return (await Native?.pdfCover?.(plain(uri), plain(dstUri), width)) ?? false;
 }
 
 /** Apple's colour picker. Empty if closed without picking. */

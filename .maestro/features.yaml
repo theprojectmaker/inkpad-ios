@@ -148,6 +148,7 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - takeScreenshot: 16-audio-bar
 - tapOn: { text: "Record", optional: true }
+- tapOn: { text: "Allow", optional: true }
 - waitForAnimationToEnd
 - swipe: { start: "30%, 72%", end: "60%, 74%", duration: 800 }
 - swipe: { start: "30%, 76%", end: "60%, 78%", duration: 800 }

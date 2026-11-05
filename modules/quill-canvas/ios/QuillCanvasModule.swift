@@ -48,6 +48,10 @@ public final class QuillCanvasModule: Module {
       return try PdfInfo.read(path, maxText: maxText)
     }
 
+    AsyncFunction("pdfCover") { (path: String, dst: String, width: Double) -> Bool in
+      return PdfInfo.cover(path, to: dst, width: width)
+    }
+
     // Apple's colour picker; resolves with a hex colour, or nothing if closed.
     AsyncFunction("pickColor") { (start: String, promise: Promise) in
       guard let vc = self.appContext?.utilities?.currentViewController() else { promise.resolve(""); return }

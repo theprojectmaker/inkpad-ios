@@ -216,7 +216,7 @@ export default function Editor() {
     try {
       if (doc) {
         const have = await loadPageText(id);
-        const unread = doc.pages.flatMap((p, i) => (have[p.id] ? [] : [i])).slice(0, 6);
+        const unread = doc.pages.flatMap((p, i) => (have[p.id] || p.bg.kind !== 'image' ? [] : [i])).slice(0, 6);
         shots = await snapPages(id, doc, [...new Set([...dirtyPages.current, ...unread])], canvas.current, absPath);
       }
     } catch {}
