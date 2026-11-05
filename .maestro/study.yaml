@@ -43,7 +43,7 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - tapOn: { text: "Set name" }
 - inputText: "Cells"
-- tapOn: { text: "Cards" }
+- tapOn: { point: "50%, 32%" }
 - inputText: "mitochondria - makes energy\nnucleus - holds the DNA\nribosome - builds proteins\n"
 - hideKeyboard
 - tapOn: { text: "Add 3 cards" }
