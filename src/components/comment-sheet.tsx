@@ -37,7 +37,12 @@ export function CommentSheet({ raw, onSave, onClose }: { raw: string | null; onS
     save(next);
   };
   // A new pin nothing was written on goes away.
-  const close = () => { if (!thread.length) save([]); onClose(); };
+  const close = () => {
+    const text = draft.trim();
+    if (text) save([...thread, { text, at: Date.now() }]);
+    else if (!thread.length) save([]);
+    onClose();
+  };
 
   return (
     <Sheet visible={raw != null} onClose={close} title="Comments" width={420}>

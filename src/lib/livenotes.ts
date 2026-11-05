@@ -92,7 +92,7 @@ export function useLiveNotes(on: boolean, noteId: string, canvas: RefObject<Canv
       let image: string | undefined;
       let screen = '';
       try {
-        if (await inTime(Promise.resolve(canvas.current?.pageThumb(page(), absPath(shot), 900)), 5000, 'page')) {
+        if (await inTime(Promise.resolve(canvas.current?.pageShot(page(), absPath(shot), 900)), 5000, 'page')) {
           image = fsx.uri(shot);
           screen = await inTime(pageText(image), 10_000, 'reading').catch(() => '');
         }

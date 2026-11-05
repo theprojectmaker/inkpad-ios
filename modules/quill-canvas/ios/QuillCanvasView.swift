@@ -281,12 +281,14 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     panGR.delegate = self
     panGR.maximumNumberOfTouches = 1
     textHost.addGestureRecognizer(panGR)
+    textDrawGR.delegate = self
     textHost.addGestureRecognizer(textDrawGR)
 
     // The Pencil only ever writes; scrolling and zooming are for fingers.
     // (The pinch recognizer only exists once there's a zoom range.)
     canvas.minimumZoomScale = 0.5
     canvas.maximumZoomScale = 6
+    canvas.bouncesZoom = false
     let fingers = [UITouch.TouchType.direct, .indirect, .indirectPointer].map { NSNumber(value: $0.rawValue) }
     canvas.panGestureRecognizer.allowedTouchTypes = fingers
     canvas.pinchGestureRecognizer?.allowedTouchTypes = fingers
@@ -478,6 +480,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     if gestureRecognizer === panGR { return panStartsOnBox() }
+    if gestureRecognizer === textDrawGR {
+      // Writing inside an open box is Scribble, and on an existing box it's that box.
+      let p = gestureRecognizer.location(in: textHost)
+      if let ed = editor, editingId != nil, ed.frame.insetBy(dx: -6, dy: -6).contains(p) { return false }
+      return box(at: p) == nil
+    }
     if gestureRecognizer === selPan { return selectionWantsTouch(at: selPan.location(in: self)) }
     if gestureRecognizer === zoomPan { return zoomWriter?.contains(viewPoint: zoomPan.location(in: self)) ?? false }
     return super.gestureRecognizerShouldBegin(gestureRecognizer)

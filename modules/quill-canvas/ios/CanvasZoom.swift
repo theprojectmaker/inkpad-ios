@@ -232,9 +232,15 @@ extension QuillCanvasView {
     return max(0, i - 3)...min(frames.count - 1, i + 3)
   }
 
+  private func trimInkPictures(_ near: ClosedRange<Int>) {
+    let keep = Set(near.compactMap { $0 < specs.count ? specs[$0].id : nil })
+    for id in inkPictures.keys where !keep.contains(id) { inkPictures[id] = nil }
+  }
+
   /// Keeps the pictures ready, so a pinch starts without a pause. Called after each save.
   func refreshInkPictures() {
     guard let near = nearPages(), !zoomPreviewing else { return }
+    trimInkPictures(near)
     let version = document.version
     let strokes = document.strokes.filter { !$0.lifted }
     let jobs = near.filter { inkPictures[specs[$0].id]?.version != version }.map { (specs[$0].id, frames[$0]) }
@@ -252,6 +258,7 @@ extension QuillCanvasView {
 
   func pinchBegan() {
     guard !zoomPreviewing, let near = nearPages() else { return }
+    trimInkPictures(near)
     zoomPreviewing = true
     let version = document.version
     let strokes = document.strokes.filter { !$0.lifted }

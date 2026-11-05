@@ -57,7 +57,24 @@ export type Page = {
 };
 
 export type LiveNote = { t: number; text: string };
-export type Recording = { id: string; file: string; dur: number; created: number; transcript?: { t: number; text: string }[]; notes?: LiveNote[]; summary?: string; marks?: number[] };
+export type Recording = { id: string; file: string; dur: number; created: number; transcript?: { t: number; text: string }[]; notes?: LiveNote[]; summary?: string; marks?: number[]; pauses?: [number, number][] };
+
+/** Where in the sound a moment on the clock falls, in ms: time spent paused isn't in the recording. */
+export function soundAt(r: Recording, clock: number) {
+  let at = clock - r.created;
+  for (const [start, len] of r.pauses ?? []) {
+    if (clock >= start + len) at -= len;
+    else if (clock > start) at -= clock - start;
+  }
+  return at;
+}
+
+/** The moment on the clock for a place in the sound, in ms. */
+export function clockAt(r: Recording, sound: number) {
+  let at = r.created + sound;
+  for (const [start, len] of r.pauses ?? []) if (at >= start) at += len;
+  return at;
+}
 
 export type NoteDoc = {
   v: 1;

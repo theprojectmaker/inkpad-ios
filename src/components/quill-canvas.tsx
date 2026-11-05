@@ -20,9 +20,10 @@ export type CanvasHandle = {
   snapshot(path: string, width: number): Promise<boolean>;
   scrollToPage(index: number): Promise<void>;
   pageThumb(index: number, path: string, width: number): Promise<boolean>;
+  pageShot(index: number, path: string, width: number): Promise<boolean>;
   deletePage(index: number): Promise<void>;
   endTextEdit(): Promise<void>;
-  insertPageSpace(after: number, height: number): Promise<void>;
+  insertPageSpace(after: number, height: number, resized?: number): Promise<void>;
   pageIsEmpty(index: number): Promise<boolean>;
   resizePage(index: number, delta: number): Promise<void>;
   styleSelection(color: string, width: number, style: string): Promise<void>;

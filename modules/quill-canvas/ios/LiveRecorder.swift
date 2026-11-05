@@ -19,6 +19,7 @@ final class LiveRecorder {
   private var paused = false
   private var running = false
   private var note = ""
+  private var micLost = false
 
   private var recognizer: SFSpeechRecognizer?
   private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -57,7 +58,7 @@ final class LiveRecorder {
     try session.setActive(true)
 
     lock.lock()
-    frames = 0; level = 0; paused = false; note = ""
+    frames = 0; level = 0; paused = false; note = ""; micLost = false
     lines = []; partials = [:]; lastSegments = [:]; failures = 0
     lock.unlock()
 
@@ -219,10 +220,15 @@ final class LiveRecorder {
   private func watchInterruptions(_ e: AVAudioEngine) {
     let c = NotificationCenter.default
     observers.append(c.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
-      guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-            AVAudioSession.InterruptionType(rawValue: raw) == .ended, self.running else { return }
-      try? AVAudioSession.sharedInstance().setActive(true)
-      try? self.engine?.start()
+      guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, self.running else { return }
+      if AVAudioSession.InterruptionType(rawValue: raw) == .began {
+        self.say("Recording stopped by the iPad (a call or Siri). It carries on when that ends.")
+      } else { self.restart() }
+    })
+    // iOS doesn't always say when an interruption ends, so coming back to the app tries too.
+    observers.append(c.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      guard let self, self.running, self.engine?.isRunning == false else { return }
+      self.restart()
     })
     observers.append(c.addObserver(forName: .AVAudioEngineConfigurationChange, object: e, queue: .main) { [weak self] _ in
       guard let self, self.running, let e = self.engine else { return }
@@ -233,13 +239,30 @@ final class LiveRecorder {
         // The new mic can't go in the same file. Whatever's recorded so far is safe.
         self.lock.lock()
         self.paused = true
+        self.micLost = true
         self.note = "The microphone changed. Stop and start again to keep recording."
         self.lock.unlock()
         return
       }
       input.installTap(onBus: 0, bufferSize: 4096, format: f) { [weak self] buffer, _ in self?.take(buffer) }
-      try? e.start()
+      self.lock.lock()
+      if self.micLost { self.micLost = false; self.paused = false; self.note = "" }
+      self.lock.unlock()
+      self.restart()
     })
+  }
+
+  private func say(_ text: String) {
+    lock.lock(); note = text; lock.unlock()
+  }
+
+  private func restart() {
+    try? AVAudioSession.sharedInstance().setActive(true)
+    guard let e = engine else { return }
+    do {
+      if !e.isRunning { try e.start() }
+      say("")
+    } catch { say("Recording stopped and couldn't restart. Stop to keep what you have, then record again.") }
   }
 
   // MARK: - Words

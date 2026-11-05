@@ -44,8 +44,10 @@ export function useNoteAudio(noteId: string, onError: (msg: string) => void) {
   const mark = useCallback(() => setMarks((m) => [...m, liveNow().elapsed]), []);
   const marksRef = useRef(marks); marksRef.current = marks;
 
+  const stopping = useRef<Promise<unknown> | null>(null);
   const start = useCallback(async () => {
     try {
+      await stopping.current;
       const p = await requestRecordingPermissionsAsync();
       if (!p.granted) { onError('Allow the microphone for Quill in Settings to record.'); return false; }
       if (player.playing) player.pause();
@@ -62,11 +64,15 @@ export function useNoteAudio(noteId: string, onError: (msg: string) => void) {
     const r = recRef.current;
     if (!r) return null;
     setRec(null);
-    try {
-      const out = await stopLive();
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-      return { id: r.id, file: `rec_${r.id}.m4a`, dur: out.dur || Date.now() - r.started, created: r.started, transcript: out.lines, marks: marksRef.current };
-    } catch (e) { onError("Couldn't save the recording: " + String((e as Error)?.message ?? e)); return null; }
+    const work = (async (): Promise<Recording | null> => {
+      try {
+        const out = await stopLive();
+        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => {});
+        return { id: r.id, file: `rec_${r.id}.m4a`, dur: out.dur || Date.now() - r.started, created: r.started, transcript: out.lines, marks: marksRef.current, pauses: out.pauses };
+      } catch (e) { onError("Couldn't save the recording: " + String((e as Error)?.message ?? e)); return null; }
+    })();
+    stopping.current = work;
+    return work;
   }, [onError]);
 
   const load = useCallback((r: Recording) => {

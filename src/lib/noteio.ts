@@ -71,7 +71,7 @@ export async function duplicateDoc(doc: NoteDoc, newId: string): Promise<NoteDoc
   return copy;
 }
 
-const VERSIONED = ['drawing.qink', 'texts.json', 'extras.json'];
+const VERSIONED = ['note.json', 'drawing.qink', 'texts.json', 'extras.json'];
 
 /** Keeps a copy of how the note looks now (the last ten are kept). */
 export async function saveVersion(id: string) {

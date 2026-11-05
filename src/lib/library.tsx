@@ -140,7 +140,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     catch (e) { await deleteNoteFiles(nid); throw e; }
     const now = Date.now();
     // The thumbnail is regenerated the next time the copy is opened.
-    commit((l) => ({ ...l, notes: [{ ...m, id: nid, title: m.title + ' copy', created: now, updated: now, thumb: undefined, fav: false }, ...l.notes] }));
+    commit((l) => ({ ...l, notes: [{ ...m, id: nid, title: m.title + ' copy', created: now, updated: now, thumb: undefined, fav: false, drive: undefined, link: undefined, hw: undefined }, ...l.notes] }));
     return nid;
   }, [commit]);
 

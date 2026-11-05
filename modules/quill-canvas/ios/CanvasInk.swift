@@ -320,6 +320,7 @@ extension QuillCanvasView {
     scrollBack = nil
     let palm = canvas.isDragging
     settleInk()
+    if zoomPreviewing { DispatchQueue.main.async { [weak self] in self?.pinchEnded() } }
     canvas.panGestureRecognizer.isEnabled = false
     canvas.pinchGestureRecognizer?.isEnabled = false
     canvas.setContentOffset(palm ? dragStartOffset : canvas.contentOffset, animated: false)
@@ -647,6 +648,7 @@ extension QuillCanvasView {
   func undo() {
     clearSelection()
     guard let e = undoStack.popLast() else { return }
+    e.removed.forEach { $0.lifted = false }
     document.apply(removed: e.added, added: e.removed)
     if let o = e.objects { restoreObjects(o.before) }
     redoStack.append(e)
@@ -658,6 +660,7 @@ extension QuillCanvasView {
   func redo() {
     clearSelection()
     guard let e = redoStack.popLast() else { return }
+    e.added.forEach { $0.lifted = false }
     document.apply(removed: e.removed, added: e.added)
     if let o = e.objects { restoreObjects(o.after) }
     undoStack.append(e)

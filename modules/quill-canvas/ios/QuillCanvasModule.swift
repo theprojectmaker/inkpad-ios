@@ -192,6 +192,11 @@ public final class QuillCanvasModule: Module {
         view.scrollToPage(index)
       }.runOnQueue(.main)
 
+      // For a look at the page in passing (Record to Notes): nothing being typed gets closed.
+      AsyncFunction("pageShot") { (view: QuillCanvasView, index: Int, path: String, width: Double) -> Bool in
+        return view.pageThumb(index, path: path, width: width, quiet: true)
+      }.runOnQueue(.main)
+
       AsyncFunction("pageThumb") { (view: QuillCanvasView, index: Int, path: String, width: Double) -> Bool in
         return view.pageThumb(index, path: path, width: width)
       }.runOnQueue(.main)
@@ -200,8 +205,8 @@ public final class QuillCanvasModule: Module {
         view.deletePage(index)
       }.runOnQueue(.main)
 
-      AsyncFunction("insertPageSpace") { (view: QuillCanvasView, after: Int, height: Double) in
-        view.insertPageSpace(after: after, height: height)
+      AsyncFunction("insertPageSpace") { (view: QuillCanvasView, after: Int, height: Double, resized: Double?) in
+        view.insertPageSpace(after: after, height: height, resized: resized ?? 0)
       }.runOnQueue(.main)
 
       AsyncFunction("pageIsEmpty") { (view: QuillCanvasView, index: Int) -> Bool in

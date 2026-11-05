@@ -37,7 +37,7 @@ import { shareImage, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
-import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid } from '@/lib/model';
+import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid, clockAt, soundAt } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
 import { imagePages, listVersions, loadDoc, notePath, renderDir, restoreVersion, saveDoc, saveImage, saveVersion, scanPages } from '@/lib/noteio';
 import { canScan, scanEnhanced } from '@/lib/scan';
@@ -59,7 +59,7 @@ function TopBtn({ icon, label, onPress, active, disabled }: { icon: string; labe
 }
 
 /** Text cut to fit pages of typed notes. */
-function pageChunks(text: string, perPage = 44, perLine = 86): string[] {
+function pageChunks(text: string, perPage = 36, perLine = 70): string[] {
   const out: string[] = [];
   let cur: string[] = [], used = 0;
   for (const line of text.split('\n')) {
@@ -110,6 +110,9 @@ export default function Editor() {
   const { toast, busy: tbusy } = useToast();
   const canvas = useRef<CanvasHandle>(null);
   const [doc, setDoc] = useState<NoteDoc | null>(null);
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const stopRun = useRef<Promise<void> | null>(null);
   const [legacy, setLegacy] = useState<LegacyStroke[]>([]);
   const [st, setSt] = useState<CanvasState>({ canUndo: false, canRedo: false, strokes: 0 });
   const [renaming, setRenaming] = useState(false);
@@ -247,7 +250,8 @@ export default function Editor() {
   const leave = async (to?: string) => {
     if (leaving.current) return;
     leaving.current = true;
-    if (audio.rec) await stopRecording();
+    // Recording, or just stopped: its notes and pages have to land before the note closes.
+    try { if (audio.rec) await stopRecording(); else if (stopRun.current) await stopRun.current; } catch {}
     try { await canvas.current?.save(); } catch {}
     if (changed.current) saveVersion(id).catch(() => {});
     // Handwriting search: pictures of what changed now, and they're read after the note closes.
@@ -316,7 +320,7 @@ export default function Editor() {
         // Pages after the filled one go in right behind it.
         const rest = add.slice(1);
         const restH = rest.reduce((h, p) => h + p.h + PAGE_GAP, 0);
-        if (rest.length && target < doc.pages.length - 1) await canvas.current?.insertPageSpace(target, restH - PAGE_GAP);
+        if (rest.length && target < doc.pages.length - 1) await canvas.current?.insertPageSpace(target, restH - PAGE_GAP, delta);
         const pages = [...doc.pages];
         pages.splice(target, 1, { ...add[0], id: old.id + 's' }, ...rest);
         const next = { ...doc, pages };
@@ -441,9 +445,15 @@ export default function Editor() {
       if (toNotes) { closePanels(); setTranscriptOpen(true); }
     }
   };
-  const stopRecording = async () => {
+  const stopRecording = () => {
+    const work = finishRecording().finally(() => { stopRun.current = null; });
+    stopRun.current = work;
+    return work;
+  };
+  const finishRecording = async () => {
     const r = await audio.stop();
-    if (!r || !doc) return;
+    if (!r || !docRef.current) return;
+    const atStop = docRef.current;
     let rec = r;
     let pagesToAdd: Page[] = [];
     let writes: { at: number; text: string }[] = [];
@@ -456,17 +466,18 @@ export default function Editor() {
         // They go on the empty last page if there is one, and on new pages after that.
         const when = new Date(r.created).toLocaleDateString([], { month: 'long', day: 'numeric' });
         const chunks = pageChunks(`Class notes, ${when}\n\n${summary}`);
-        const lastAt = doc.pages.length - 1;
-        const lastFree = doc.pages[lastAt]?.bg.kind === 'paper' && !!(await canvas.current?.pageIsEmpty(lastAt).catch(() => false));
-        const from = lastFree ? lastAt : doc.pages.length;
-        const size = pageSizeOf(doc.paper.size);
-        pagesToAdd = chunks.slice(lastFree ? 1 : 0).map(() => paperPage('blank', doc.paper.color, { w: size.w, h: size.h }));
+        const lastAt = atStop.pages.length - 1;
+        const lastFree = atStop.pages[lastAt]?.bg.kind === 'paper' && !!(await canvas.current?.pageIsEmpty(lastAt).catch(() => false));
+        const from = lastFree ? lastAt : atStop.pages.length;
+        const size = pageSizeOf(atStop.paper.size);
+        pagesToAdd = chunks.slice(lastFree ? 1 : 0).map(() => paperPage('blank', atStop.paper.color, { w: size.w, h: size.h }));
         writes = chunks.map((text, i) => ({ at: from + i, text }));
       }
       tbusy(null);
     }
-    const list = [...(doc.recordings ?? []), rec];
-    const next = { ...doc, recordings: list, pages: [...doc.pages, ...pagesToAdd] };
+    const latest = docRef.current ?? atStop;
+    const list = [...(latest.recordings ?? []), rec];
+    const next = { ...latest, recordings: list, pages: [...latest.pages, ...pagesToAdd] };
     setDoc(next);
     await saveDoc(next);
     lib.updateNote(id, { audio: list.length, pages: next.pages.length, said: list.flatMap((x) => (x.transcript ?? []).map((l) => l.text)).join(' ').slice(0, 12000) });
@@ -479,8 +490,8 @@ export default function Editor() {
     }
   };
   const setRecordings = async (list: Recording[]) => {
-    if (!doc) return;
-    const next = { ...doc, recordings: list };
+    if (!docRef.current) return;
+    const next = { ...docRef.current, recordings: list };
     setDoc(next);
     await saveDoc(next);
     lib.updateNote(id, { audio: list.length, said: list.flatMap((r) => (r.transcript ?? []).map((l) => l.text)).join(' ').slice(0, 12000) });
@@ -497,7 +508,7 @@ export default function Editor() {
     setTranscribing(true);
     try {
       const lines = await transcribe(id, r);
-      await setRecordings(recordings.map((x) => (x.id === r.id ? { ...x, transcript: lines } : x)));
+      await setRecordings((docRef.current?.recordings ?? []).map((x) => (x.id === r.id ? { ...x, transcript: lines } : x)));
       audio.load({ ...r, transcript: lines });
     } catch (e) { toast(String((e as Error)?.message ?? e)); }
     finally { setTranscribing(false); }
@@ -513,7 +524,7 @@ export default function Editor() {
   const position = cur ? audio.status.currentTime : 0;
   const replaying = !!cur && audioOpen && !audio.rec && (audio.status.playing || position > 0.1);
   useEffect(() => {
-    if (replaying && cur) canvas.current?.setReplay(cur.created / 1000 + position, cur.created / 1000, (cur.created + cur.dur) / 1000);
+    if (replaying && cur) canvas.current?.setReplay(clockAt(cur, position * 1000) / 1000, cur.created / 1000, clockAt(cur, cur.dur) / 1000);
     else canvas.current?.setReplay(-1, 0, 0);
   }, [replaying, cur, position]);
 
@@ -648,7 +659,7 @@ export default function Editor() {
             <QuillCanvas key={canvasKey} scribble={s.scribble !== false} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
               onPencilTap={onPencilTap} onSelectionAction={onSelectionAction} autoPage={s.autoPage !== false} onLastPageUsed={() => addPage(undefined, true)}
               inkTaps={audioOpen && !audio.rec && recordings.length > 0}
-              onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && ms <= x.created + x.dur); if (r) hear(r, (ms - r.created) / 1000); }}
+              onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && soundAt(x, ms) <= x.dur); if (r) hear(r, soundAt(r, ms) / 1000); }}
               drawingPath={absPath(notePath(id, DRAWING))} textsPath={absPath(notePath(id, TEXTS))} legacy={legacy}
               onDrawingChange={onChange} onPageChange={(e) => setPage(e.nativeEvent)} />
           ) : <View style={{ flex: 1, backgroundColor: '#ECECEE' }} />}
@@ -760,6 +771,8 @@ export default function Editor() {
           await canvas.current?.save();
           await saveVersion(id);
           await restoreVersion(id, v);
+          const restored = await loadDoc(id);
+          if (restored) { setDoc(restored); lib.updateNote(id, { pages: restored.pages.length }); }
           setCanvasKey((k) => k + 1);
           toast('Note restored. The version before this was kept too.');
         } })) : [{ label: 'Versions appear after you leave a note you changed', onPress: () => {} }];

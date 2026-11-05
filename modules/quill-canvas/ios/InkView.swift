@@ -531,7 +531,6 @@ final class InkView: UIView {
     // The simulator can't report when a frame reaches the screen.
     cmd.addCompletedHandler { [weak self] _ in
       DispatchQueue.main.async {
-        shown?()
         guard let self else { return }
         self.unshown = max(0, self.unshown - 1)
         if self.framePending { self.drawNow() }
@@ -542,7 +541,6 @@ final class InkView: UIView {
     drawable.addPresentedHandler { [weak self] onScreen in
       let at = onScreen.presentedTime
       DispatchQueue.main.async {
-        shown?()
         guard let self else { return }
         self.unshown = max(0, self.unshown - 1)
         if self.stats.on && input > 0 && at > 0 {
@@ -567,9 +565,11 @@ final class InkView: UIView {
       cmd.commit()
       cmd.waitUntilScheduled()
       drawable.present()
+      shown?()
     } else {
       cmd.present(drawable)
       cmd.commit()
+      shown?()
     }
   }
 

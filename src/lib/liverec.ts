@@ -31,6 +31,8 @@ if (Platform.OS === 'ios') {
 const EMPTY: LiveState = { elapsed: 0, level: 0, paused: false, speech: 'off', note: '', lines: [], partial: '' };
 let state = EMPTY;
 let timer: ReturnType<typeof setInterval> | null = null;
+let pauses: [number, number][] = [];
+let pausedAt = 0;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
@@ -52,20 +54,25 @@ export function useLive(): LiveState {
 export async function startLive(path: string) {
   if (!Native) throw new Error('Recording works in the iPad app.');
   state = EMPTY;
+  pauses = [];
+  pausedAt = 0;
   await Native.recStart(path);
   if (timer) clearInterval(timer);
   timer = setInterval(poll, 250);
 }
 
 export function pauseLive(on: boolean) {
+  if (on && !pausedAt) pausedAt = Date.now();
+  if (!on && pausedAt) { pauses.push([pausedAt, Date.now() - pausedAt]); pausedAt = 0; }
   Native?.recPause(on);
   poll();
 }
 
-export async function stopLive(): Promise<{ dur: number; lines: SaidLine[] }> {
+export async function stopLive(): Promise<{ dur: number; lines: SaidLine[]; pauses: [number, number][] }> {
   if (timer) { clearInterval(timer); timer = null; }
   const out = await Native!.recStop();
   state = { ...state, level: 0, partial: '', lines: out.lines };
   emit();
-  return out;
+  if (pausedAt) { pauses.push([pausedAt, Date.now() - pausedAt]); pausedAt = 0; }
+  return { ...out, pauses };
 }

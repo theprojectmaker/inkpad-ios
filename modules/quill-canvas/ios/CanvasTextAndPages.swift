@@ -288,9 +288,10 @@ extension QuillCanvasView {
   // MARK: - Page tools
 
   /// A picture of page `i` (background, ink and text) for the page sidebar or the library.
-  func pageThumb(_ i: Int, path: String, width: Double) -> Bool {
+  func pageThumb(_ i: Int, path: String, width: Double, quiet: Bool = false) -> Bool {
     guard i >= 0, i < specs.count, i < frames.count else { return false }
-    commitEdit()
+    if quiet && editingId != nil { return false }
+    if !quiet { commitEdit() }
     let p = specs[i], f = frames[i]
     let k = CGFloat(width) / CGFloat(p.w)
     let size = CGSize(width: CGFloat(p.w) * k, height: CGFloat(p.h) * k)
@@ -356,9 +357,10 @@ extension QuillCanvasView {
   }
 
   /// Makes room for a new page of height `h` right after page `i`: everything below it moves down.
-  func insertPageSpace(after i: Int, height h: Double) {
+  /// `resized`: how much page `i` just changed by, while the frames here still have its old size.
+  func insertPageSpace(after i: Int, height h: Double, resized: Double = 0) {
     guard i >= 0, i < frames.count else { return }
-    let below = frames[i].maxY + 14
+    let below = frames[i].maxY + 14 + CGFloat(resized)
     let d = CGFloat(h) + 28
     remapContent { $0 >= below ? d : 0 }
   }
