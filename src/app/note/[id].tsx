@@ -10,7 +10,8 @@ import { ActivityIndicator, Pressable, Text, TextInput, useWindowDimensions, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
-import { AudioBar, transcribe, TranscriptPanel, useNoteAudio } from '@/components/audio-bar';
+import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/audio-bar';
+import { summarize, useLiveNotes } from '@/lib/livenotes';
 import { FindPanel } from '@/components/find-panel';
 import { currentTool, NoteToolbar, StylePopover } from '@/components/note-toolbar';
 import { Markdown } from '@/components/markdown';
@@ -41,6 +42,20 @@ const DRAWING = 'drawing.pkd';
 const TEXTS = 'texts.json';
 /** Absolute file path for the native side (fsx gives file:// uris). */
 const absPath = (path: string) => decodeURIComponent(fsx.uri(path).replace(/^file:\/\//, ''));
+
+/** Text cut to fit pages of typed notes. */
+function pageChunks(text: string, perPage = 44, perLine = 86): string[] {
+  const out: string[] = [];
+  let cur: string[] = [], used = 0;
+  for (const line of text.split('\n')) {
+    const need = Math.max(1, Math.ceil(line.length / perLine));
+    if (used + need > perPage && cur.length) { out.push(cur.join('\n')); cur = []; used = 0; }
+    cur.push(line);
+    used += need;
+  }
+  if (cur.length) out.push(cur.join('\n'));
+  return out;
+}
 
 function canvasPages(id: string, doc: NoteDoc): CanvasPage[] {
   return doc.pages.map((p) => {
@@ -125,6 +140,9 @@ export default function Editor() {
   const [canvasKey, setCanvasKey] = useState(0);
   const [exportMenu, setExportMenu] = useState(false);
   const audio = useNoteAudio(id, toast);
+  const [notesMode, setNotesMode] = useState(false);
+  const pageOf = useCallback(() => pageNow.current, []);
+  const live = useLiveNotes(notesMode && !!audio.rec, id, canvas, pageOf, absPath);
   // Leaving the text tool finishes the text being typed.
   useEffect(() => { if (s.inkKind !== 'text') canvas.current?.endTextEdit(); }, [s.inkKind]);
   const meta = lib.lib.notes.find((n) => n.id === id);
@@ -392,15 +410,51 @@ export default function Editor() {
 
   // ----- audio -----
   const recordings = doc?.recordings ?? [];
-  const startRecording = async () => { if (await audio.start()) { setAudioOpen(true); audio.unload(); } };
+  const startRecording = async (toNotes = false) => {
+    setNotesMode(toNotes);
+    live.reset();
+    if (await audio.start()) {
+      setAudioOpen(true);
+      audio.unload();
+      if (toNotes) { closePanels(); setTranscriptOpen(true); }
+    }
+  };
   const stopRecording = async () => {
     const r = await audio.stop();
     if (!r || !doc) return;
-    const next = { ...doc, recordings: [...(doc.recordings ?? []), r] };
+    let rec = r;
+    let pagesToAdd: Page[] = [];
+    let writes: { at: number; text: string }[] = [];
+    if (notesMode) {
+      tbusy('Writing your notes…');
+      const notes = await live.finish();
+      const summary = await summarize(notes).catch(() => '');
+      rec = { ...r, notes, summary };
+      if (summary) {
+        // They go on the empty last page if there is one, and on new pages after that.
+        const when = new Date(r.created).toLocaleDateString([], { month: 'long', day: 'numeric' });
+        const chunks = pageChunks(`Class notes, ${when}\n\n${summary}`);
+        const lastAt = doc.pages.length - 1;
+        const lastFree = doc.pages[lastAt]?.bg.kind === 'paper' && !!(await canvas.current?.pageIsEmpty(lastAt).catch(() => false));
+        const from = lastFree ? lastAt : doc.pages.length;
+        const size = pageSizeOf(doc.paper.size);
+        pagesToAdd = chunks.slice(lastFree ? 1 : 0).map(() => paperPage('blank', doc.paper.color, { w: size.w, h: size.h }));
+        writes = chunks.map((text, i) => ({ at: from + i, text }));
+      }
+      tbusy(null);
+    }
+    const list = [...(doc.recordings ?? []), rec];
+    const next = { ...doc, recordings: list, pages: [...doc.pages, ...pagesToAdd] };
     setDoc(next);
     await saveDoc(next);
-    lib.updateNote(id, { audio: next.recordings!.length });
-    audio.load(r);
+    lib.updateNote(id, { audio: list.length, pages: next.pages.length, said: list.flatMap((x) => (x.transcript ?? []).map((l) => l.text)).join(' ').slice(0, 12000) });
+    setVer((v) => v + 1);
+    audio.load(rec);
+    if (writes.length) {
+      await new Promise((ok) => setTimeout(ok, 500));   // the canvas has to have the new pages first
+      for (const w of writes) await canvas.current?.addPageText(w.at, w.text);
+      toast(`Your notes are on page ${writes[0].at + 1}.`);
+    }
   };
   const setRecordings = async (list: Recording[]) => {
     if (!doc) return;
@@ -550,7 +604,7 @@ export default function Editor() {
   // Came from Home's Record a lecture: start once the page is up.
   const autoRecord = useRef(false);
   useEffect(() => {
-    if (record === '1' && doc && !autoRecord.current) { autoRecord.current = true; setAudioOpen(true); startRecording(); }
+    if (record === '1' && doc && !autoRecord.current) { autoRecord.current = true; setAudioOpen(true); startRecording(true); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record, doc]);
   const closePanels = () => { setCalc(false); setStudy(false); setFind(false); setTranscriptOpen(false); };
@@ -590,8 +644,8 @@ export default function Editor() {
             </View>
           ) : null}
           {audioOpen ? (
-            <AudioBar audio={audio} noteId={id} recs={recordings} onStartRec={startRecording} onStopRec={stopRecording} onDelete={setDelRec}
-              onTranscript={() => { closePanels(); setTranscriptOpen(true); }} onClose={() => { audio.unload(); setAudioOpen(false); setTranscriptOpen(false); }} />
+            <AudioBar audio={audio} noteId={id} recs={recordings} toNotes={notesMode} onStartRec={startRecording} onStopRec={stopRecording} panelOpen={transcriptOpen} onPanel={() => { const was = transcriptOpen; closePanels(); setTranscriptOpen(!was); }} onDelete={setDelRec}
+              onClose={() => { audio.unload(); setAudioOpen(false); setTranscriptOpen(false); }} />
           ) : null}
         </View>
         {second ? <View style={{ flex: 1 }}><SideNote noteId={second} tool={tool} fingerDraws={!!s.fingerDraws} onSwap={() => setPicking(true)} onClose={() => setSecond(null)} /></View> : null}
@@ -599,8 +653,8 @@ export default function Editor() {
           <FindPanel noteId={id} doc={doc} canvas={canvas} absPath={absPath} stale={() => { const d = [...dirtyPages.current]; dirtyPages.current.clear(); return d; }} onRead={() => {}}
             onHear={(r, sec) => hear(r, sec)} onClose={() => setFind(false)} />
         ) : null}
-        {transcriptOpen && cur ? (
-          <TranscriptPanel rec={recordings.find((x) => x.id === cur.id) ?? cur} busy={transcribing} pos={position * 1000} onMake={makeTranscript} onSeek={(ms) => { audio.seek(ms); audio.play(); }} onClose={() => setTranscriptOpen(false)} />
+        {transcriptOpen && (cur || audio.rec) ? (
+          <ClassPanel live={audio.rec ? live : null} toNotes={notesMode} rec={cur ? recordings.find((x) => x.id === cur.id) ?? cur : null} busy={transcribing} pos={position * 1000} onMake={makeTranscript} onSeek={(ms) => { audio.seek(ms); audio.play(); }} onClose={() => setTranscriptOpen(false)} />
         ) : null}
         {calcLoaded ? (
           <View style={{ width: calc ? Math.min(460, width * 0.42) : 0, overflow: 'hidden', borderLeftWidth: calc ? 1 : 0, borderLeftColor: t.line }}>

@@ -13,7 +13,7 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDisplayName": "Quill",
-        "NSSpeechRecognitionUsageDescription": "Quill turns a recording you made into a transcript you can read and search."
+        "NSSpeechRecognitionUsageDescription": "Quill turns what you record into text you can read and search, and uses it to write your notes."
       }
     },
     "web": {

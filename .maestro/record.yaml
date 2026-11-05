@@ -1,0 +1,45 @@
+# Record to Notes, end to end. The workflow makes a spoken lecture and the recorder hears that
+# instead of the microphone (launch argument QuillTestAudio).
+appId: com.solyapps.notes
+---
+- launchApp:
+    clearState: true
+    arguments:
+      QuillTestAudio: "1"
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- tapOn: { text: "Record a lecture", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Allow", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Allow", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: r01-started
+- extendedWaitUntil: { visible: "zzz-never-shown", timeout: 25000, optional: true }
+- takeScreenshot: r02-25s
+- extendedWaitUntil: { visible: "zzz-never-shown", timeout: 25000, optional: true }
+- takeScreenshot: r03-50s
+- tapOn: { text: "What was said", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: r04-said
+- tapOn: { text: "Notes", optional: true }
+- waitForAnimationToEnd
+- extendedWaitUntil: { visible: "zzz-never-shown", timeout: 20000, optional: true }
+- takeScreenshot: r05-notes
+- tapOn: { text: "Pause recording", optional: true }
+- takeScreenshot: r06-paused
+- tapOn: { text: "Resume recording", optional: true }
+- tapOn: { text: "Stop recording", optional: true }
+- extendedWaitUntil: { visible: "Play", timeout: 30000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: r07-stopped
+- tapOn: { text: "Play", optional: true }
+- takeScreenshot: r08-playing
+- tapOn: { text: "Pause", optional: true }
+- tapOn: { text: "Close transcript", optional: true }
+- tapOn: { text: "Close audio", optional: true }
+- swipe: { start: "85%, 80%", end: "85%, 15%", duration: 300 }
+- waitForAnimationToEnd
+- takeScreenshot: r09-notes-page
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: r10-home

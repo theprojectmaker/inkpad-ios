@@ -444,6 +444,16 @@ extension QuillCanvasView {
     onSelectionAction(["action": "convert", "text": kind, "path": path])
   }
 
+  /// Typed notes across a page, like the ones Record to Notes writes.
+  func addPageText(page: Int, text: String) {
+    guard !frames.isEmpty else { return }
+    let f = frames[max(0, min(frames.count - 1, page))]
+    let b = TextBox(id: UUID().uuidString, x: Double(f.minX + 48), y: Double(f.minY + 48), w: Double(f.width - 96), text: text, size: 15, color: "#15171C", font: textFont, bold: false)
+    texts.append(b)
+    renderTexts()
+    finishObjects(removed: [], added: [])
+  }
+
   /// From the preview: the writing becomes this typed text (Undo brings the writing back).
   func replaceSelection(text: String) {
     commitSelection()

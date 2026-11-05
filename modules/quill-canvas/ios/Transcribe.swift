@@ -12,7 +12,7 @@ enum Transcriber {
   }
 
   /// Words grouped into lines, each with the second it starts at.
-  private static func group(_ segments: [SFTranscriptionSegment], into out: inout [[String: Any]]) {
+  static func group(_ segments: [SFTranscriptionSegment], into out: inout [[String: Any]]) {
     var words: [String] = []
     var start = 0.0, last = 0.0
     func flush() {

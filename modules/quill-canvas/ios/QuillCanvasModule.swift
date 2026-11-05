@@ -52,6 +52,25 @@ public final class QuillCanvasModule: Module {
       return PdfInfo.cover(path, to: dst, width: width)
     }
 
+    // The recorder: sound to a file, and words as they're said.
+    AsyncFunction("recStart") { (path: String, promise: Promise) in
+      LiveRecorder.shared.start(path: path) { error in
+        if let error { promise.reject("E_RECORD", error.localizedDescription) } else { promise.resolve(nil) }
+      }
+    }.runOnQueue(.main)
+
+    Function("recPoll") { (since: Int) -> [String: Any] in
+      return LiveRecorder.shared.poll(since: since)
+    }
+
+    Function("recPause") { (on: Bool) in
+      LiveRecorder.shared.setPaused(on)
+    }
+
+    AsyncFunction("recStop") { (promise: Promise) in
+      LiveRecorder.shared.stop { promise.resolve($0) }
+    }.runOnQueue(.main)
+
     // Apple's colour picker; resolves with a hex colour, or nothing if closed.
     AsyncFunction("pickColor") { (start: String, promise: Promise) in
       guard let vc = self.appContext?.utilities?.currentViewController() else { promise.resolve(""); return }
@@ -183,6 +202,10 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("setComment") { (view: QuillCanvasView, id: String, text: String) in
         view.setComment(id: id, text: text)
+      }.runOnQueue(.main)
+
+      AsyncFunction("addPageText") { (view: QuillCanvasView, page: Int, text: String) in
+        view.addPageText(page: page, text: text)
       }.runOnQueue(.main)
 
       AsyncFunction("replaceSelection") { (view: QuillCanvasView, text: String) in

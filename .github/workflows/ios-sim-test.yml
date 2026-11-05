@@ -67,6 +67,7 @@ jobs:
           DOCS="$(xcrun simctl get_app_container "$SIM" com.solyapps.notes data)/Documents"
           node scripts/make-test-pdfs.cjs "$DOCS/quill-test-import"
           cp scripts/scan-samples/doc-dim.jpg scripts/scan-samples/notes.jpg "$DOCS/quill-test-import/"
+          say -f scripts/test-lecture.txt -o /tmp/lecture.aiff && afconvert -f caff -d LEI16@44100 -c 1 /tmp/lecture.aiff "$DOCS/quill-test-lecture.caf" || echo "no spoken lecture"
           sleep 2
           maestro test "${{ inputs.flow }}" --test-output-dir shots --debug-output out/maestro 2>&1 | tee out/maestro.txt
           find . -name "*.png" -path "*maestro*" -newer out/rec.pid -not -path "./node_modules/*" -exec cp {} shots/ \; 2>/dev/null || true

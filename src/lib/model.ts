@@ -56,7 +56,8 @@ export type Page = {
   mark?: 1;              // bookmarked
 };
 
-export type Recording = { id: string; file: string; dur: number; created: number; transcript?: { t: number; text: string }[] };
+export type LiveNote = { t: number; text: string };
+export type Recording = { id: string; file: string; dur: number; created: number; transcript?: { t: number; text: string }[]; notes?: LiveNote[]; summary?: string };
 
 export type NoteDoc = {
   v: 1;

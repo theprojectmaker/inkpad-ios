@@ -28,6 +28,7 @@ export type CanvasHandle = {
   styleSelection(color: string, width: number, style: string): Promise<void>;
   setComment(id: string, text: string): Promise<void>;
   replaceSelection(text: string): Promise<void>;
+  addPageText(page: number, text: string): Promise<void>;
   movePage(from: number, to: number): Promise<void>;
   duplicatePage(index: number): Promise<void>;
   addPicture(file: string, width: number, height: number): Promise<void>;
