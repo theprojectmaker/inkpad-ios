@@ -298,6 +298,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             {sideRow('Gallery', false, () => setSheet('paper'), { icon: 'photo.artframe' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
+            {s.scheduleUnlocked ? sideRow('My schedule', false, () => router.push('/clock'), { icon: 'clock' }) : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 4, paddingLeft: 12 }}>
               <Text style={{ flex: 1, color: t.sub, fontSize: 14, fontWeight: '500' }}>Folders</Text>
               <IconButton name="plus" label="New folder" onPress={() => setSheet('newFolder')} />

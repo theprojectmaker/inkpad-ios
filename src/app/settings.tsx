@@ -56,7 +56,7 @@ export default function SettingsScreen() {
         <Section title="Tools">
           <Row icon="graduationcap" label="Classroom" note="Assignments and hand in." onPress={() => router.push('/classroom')} />
           <Row icon="function" label="Calculator" onPress={() => router.push('/calculator')} />
-          <Row icon="clock" label="Clock" onPress={() => router.push('/clock')} last={!s.gamesUnlocked} />
+          <Row icon="clock" label={s.scheduleUnlocked ? 'My schedule' : 'Clock'} onPress={() => router.push('/clock')} last={!s.gamesUnlocked} />
           {s.gamesUnlocked ? <Row icon="gamecontroller" label="Games" onPress={() => router.push('/games')} last /> : null}
         </Section>
 

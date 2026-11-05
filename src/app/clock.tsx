@@ -1,7 +1,7 @@
 // A small Studento inside Quill: a big flap-board clock. With a schedule it
 // counts down to the bell (time left in class, what's next); without one it's
-// simply the time. The schedule is optional and stays on the iPad.
-import { router } from 'expo-router';
+// simply the time. A code links the real Studento schedule; otherwise one can be typed in.
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,14 +9,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { uid } from '@/lib/model';
 import { fmtTime, fmtTimeAP, parseTime, type Period, type Schedule, useSchedule, whereNow } from '@/lib/schedule';
+import { refreshStudento, studentoDay } from '@/lib/studento';
 
-const THEMES = [
-  { name: 'Station', bg: '#0E0F12', tile: '#1C1E24', digit: '#F3E9D2', sub: '#9A9384', accent: '#F2B33D' },
-  { name: 'Midnight', bg: '#0B1430', tile: '#16224A', digit: '#FFFFFF', sub: '#8FA0CC', accent: '#6EA8FF' },
-  { name: 'Paper', bg: '#F4EFE6', tile: '#FFFFFF', digit: '#1D1B18', sub: '#8B8478', accent: '#D9534F' },
-  { name: 'Forest', bg: '#0F1F17', tile: '#1A3326', digit: '#E6F4EA', sub: '#86A895', accent: '#5DD39E' },
-  { name: 'Sunset', bg: '#2A1424', tile: '#41203A', digit: '#FFE3D3', sub: '#C79AB0', accent: '#FF8A5B' },
-];
+const th = { bg: '#0E0F12', tile: '#1C1E24', digit: '#F3E9D2', sub: '#9A9384', accent: '#F2B33D' };
 
 const two = (n: number) => String(n).padStart(2, '0');
 const mmss = (sec: number) => sec >= 3600 ? `${Math.floor(sec / 3600)}:${two(Math.floor(sec / 60) % 60)}:${two(sec % 60)}` : `${Math.floor(sec / 60)}:${two(sec % 60)}`;
@@ -25,12 +20,26 @@ export default function ClockScreen() {
   const ins = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const { s, save } = useSchedule();
-  const [now, setNow] = useState(() => new Date());
+  const { at } = useLocalSearchParams<{ at?: string }>();
+  const clock = () => (__DEV__ && at ? new Date(new Date(at).getTime() + (Date.now() % 60000)) : new Date());   // ?at= checks a moment in the browser preview
+  const [now, setNow] = useState(clock);
   const [editing, setEditing] = useState(false);
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setNow(clock()), 1000); return () => clearInterval(t); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const th = THEMES[s.theme % THEMES.length];
-  const w = whereNow(s, now);
+  // Linked to Studento: stay up to date whenever this opens with internet.
+  const linked = s.studento;
+  const hasLink = !!linked;
+  useEffect(() => {
+    if (!hasLink) return;
+    let gone = false;
+    refreshStudento(s.studento!).then((next) => { if (!gone) save({ ...s, studento: next }); }).catch(() => {});
+    return () => { gone = true; };
+  }, [hasLink]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const today = linked ? studentoDay(linked, now) : null;
+  const periods = today ? today.periods : s.periods;
+  const w = whereNow({ periods, theme: 0 }, now);
+  const sec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   const h12 = now.getHours() % 12 || 12;
   const ampm = now.getHours() < 12 ? 'AM' : 'PM';
   const timeNow = `${h12}:${two(now.getMinutes())}`;
@@ -43,7 +52,7 @@ export default function ClockScreen() {
   // Tiles as big as the screen allows.
   const n = big.length;
   const gap = Math.max(6, width * 0.008);
-  const tileW = Math.min(150, (Math.min(width, 1100) - 64 - gap * (n - 1)) / n, (height * 0.38) / 1.45);
+  const tileW = Math.min(150, (Math.min(width, 1100) - 64 - gap * (n - 1)) / n, (height * (today ? 0.24 : 0.38)) / 1.45);
   const tileH = tileW * 1.45;
 
   return (
@@ -53,18 +62,13 @@ export default function ClockScreen() {
           style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: th.tile }}>
           <Icon name="chevron.left" size={16} color={th.digit} />
         </Pressable>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable onPress={() => save({ ...s, theme: (s.theme + 1) % THEMES.length })} accessibilityLabel="Change look"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: th.tile }}>
-            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: th.accent }} />
-            <Text style={{ color: th.digit, fontSize: 14, fontWeight: '700' }}>{th.name}</Text>
-          </Pressable>
+        {today ? null : (
           <Pressable onPress={() => setEditing(true)} accessibilityLabel="Edit schedule"
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: th.tile }}>
             <Icon name="calendar" size={14} color={th.digit} />
             <Text style={{ color: th.digit, fontSize: 14, fontWeight: '700' }}>Schedule</Text>
           </Pressable>
-        </View>
+        )}
       </View>
 
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
@@ -98,12 +102,34 @@ export default function ClockScreen() {
         {w.kind === 'class' && w.next ? (
           <Text style={{ color: th.sub, fontSize: 15, marginTop: 6, textAlign: 'center' }}>Next: {w.next.name} at {fmtTime(w.next.start)}</Text>
         ) : null}
-        {!s.periods.length ? (
+        {!today && !s.periods.length ? (
           <Pressable onPress={() => setEditing(true)} style={{ marginTop: 26 }}>
             <Text style={{ color: th.sub, fontSize: 15, textDecorationLine: 'underline', textAlign: 'center' }}>Add your class schedule to count down to the bell (optional)</Text>
           </Pressable>
         ) : null}
       </View>
+
+      {today ? (
+        <View style={{ alignSelf: 'center', width: Math.min(620, width - 40), maxHeight: height * 0.46, paddingBottom: 14 }}>
+          <Text style={{ color: th.sub, fontSize: 14, fontWeight: '600', textAlign: 'center', marginBottom: 10 }}>
+            {now.toLocaleDateString([], { weekday: 'long' })} · {today.kind}
+          </Text>
+          {today.periods.length ? (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {today.periods.map((p) => {
+                const on = sec >= p.start * 60 && sec < p.end * 60;
+                const past = sec >= p.end * 60;
+                return (
+                  <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', height: 34, paddingHorizontal: 12, borderRadius: 8, backgroundColor: on ? th.tile : 'transparent', opacity: past ? 0.45 : 1 }}>
+                    <Text numberOfLines={1} style={{ flex: 1, color: on ? th.accent : th.digit, fontSize: 15, fontWeight: on ? '700' : '500' }}>{p.name}</Text>
+                    <Text style={{ color: on ? th.accent : th.sub, fontSize: 14, fontVariant: ['tabular-nums'] }}>{fmtTime(p.start)} – {fmtTime(p.end)}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          ) : <Text style={{ color: th.sub, fontSize: 15, textAlign: 'center' }}>No school today.</Text>}
+        </View>
+      ) : null}
 
       <ScheduleEditor visible={editing} s={s} onClose={(next) => { setEditing(false); if (next) save(next); }} />
     </View>

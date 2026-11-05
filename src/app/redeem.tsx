@@ -1,13 +1,14 @@
-// Redeem a code. A valid code unlocks an extra (for now: the Games tab).
+// Redeem a code. A valid code unlocks an extra (the Games tab, or the real Studento schedule).
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, IconButton } from '@/components/ui';
+import { linkStudento } from '@/lib/schedule';
 import { useSettings, useTheme } from '@/lib/settings';
 
-const CODES: Record<string, 'games'> = { soly2027: 'games' };
+const CODES: Record<string, 'games' | 'schedule'> = { soly2027: 'games', samu2027: 'schedule' };
 
 export default function RedeemScreen() {
   const t = useTheme();
@@ -16,9 +17,15 @@ export default function RedeemScreen() {
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');
 
-  const redeem = () => {
+  const redeem = async () => {
     const what = CODES[code.trim().toLowerCase()];
     if (!what) { setErr("That code isn't valid. Check it and try again."); return; }
+    if (what === 'schedule') {
+      await linkStudento();
+      set({ scheduleUnlocked: true });
+      router.replace('/clock');
+      return;
+    }
     set({ gamesUnlocked: true });
     router.replace('/games');
   };

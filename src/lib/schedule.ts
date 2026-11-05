@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { fsx } from './fsx';
+import { STUDENTO_START, type StudentoData } from './studento';
 
 export type Period = { id: string; name: string; start: number; end: number }; // minutes after midnight
-export type Schedule = { periods: Period[]; theme: number };
+export type Schedule = { periods: Period[]; theme: number; studento?: StudentoData };
 
 const PATH = 'inkpad/schedule.json';
 const EMPTY: Schedule = { periods: [], theme: 0 };
@@ -48,6 +49,13 @@ export function whereNow(s: Schedule, d: Date): Now {
     if (sec < p.start * 60) return i === 0 && p.start * 60 - sec > 3600 ? { kind: 'free' } : { kind: 'passing', next: p, left: p.start * 60 - sec };
   }
   return { kind: 'free' };
+}
+
+/** Links the real Studento schedule (from a code). */
+export async function linkStudento() {
+  let had: Schedule = EMPTY;
+  try { const t = await fsx.readText(PATH); if (t) had = { ...EMPTY, ...JSON.parse(t) }; } catch {}
+  await fsx.writeText(PATH, JSON.stringify({ ...had, studento: had.studento ?? STUDENTO_START }));
 }
 
 export function useSchedule() {
