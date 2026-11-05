@@ -293,7 +293,7 @@ function ToolMark({ on, color, children }: { on: boolean; color: string; childre
 /** Which edge the toolbar is on, so popovers open beside it. */
 let cardPlace: 'top' | 'bottom' | 'left' | 'right' = 'top';
 
-const Card = ({ children, width, top = 84, align }: { children: React.ReactNode; width?: number; top?: number; align?: number }) => (
+const Card = ({ children, width, top = 110, align }: { children: React.ReactNode; width?: number; top?: number; align?: number }) => (
   <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: cardPlace === 'left' ? 'flex-start' : cardPlace === 'right' ? 'flex-end' : 'center', paddingHorizontal: cardPlace === 'left' || cardPlace === 'right' ? 150 : 0 }]}>
     <Reanimated.View entering={FadeIn.duration(110)} style={{ position: 'absolute', ...(cardPlace === 'bottom' ? { bottom: 130 } : { top: cardPlace === 'top' ? top : 64 }), ...(cardPlace === 'left' ? { left: 150 } : cardPlace === 'right' ? { right: 150 } : { left: align }), width, padding: 16, borderRadius: 18, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } }}>
       {children}
@@ -338,26 +338,26 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const tint = on && tk.colors.length ? tk.colors[tk.color] : null;
     const shown = tint && tint.toUpperCase() !== '#FFFFFF' ? tint : on ? BLUE : INK;
     return (
-      <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} onLongPress={() => hide(x.id, x.label)} delayLongPress={500} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} onLongPress={() => hide(x.id, x.label)} delayLongPress={500} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
         <ToolMark on={on} color={shown}>
           {x.id === 'text'
-            ? <Text style={{ fontSize: 17, fontWeight: '500', color: shown, letterSpacing: -0.5 }}>Tt</Text>
-            : <ToolIcon name={x.icon} size={20} color={shown} />}
+            ? <Text style={{ fontSize: 18, fontWeight: '500', color: shown, letterSpacing: -0.5 }}>Tt</Text>
+            : <ToolIcon name={x.icon} size={21} color={shown} />}
         </ToolMark>
       </Pressable>
     );
   };
   const plain = (icon: string, label: string, onPress: () => void, tint?: string, active?: boolean, hideId?: string) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={() => { setPop(null); onPress(); }} onLongPress={hideId ? () => hide(hideId, label) : undefined} delayLongPress={500} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-      <ToolIcon name={icon} size={icon === 'next' || icon === 'prev' ? 15 : 20} color={tint ?? (active ? BLUE : INK)} />
+    <Pressable key={label} accessibilityLabel={label} onPress={() => { setPop(null); onPress(); }} onLongPress={hideId ? () => hide(hideId, label) : undefined} delayLongPress={500} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+      <ToolIcon name={icon} size={icon === 'next' || icon === 'prev' ? 15 : 21} color={tint ?? (active ? BLUE : INK)} />
     </Pressable>
   );
-  const Div = () => <View style={upright ? { height: 1, width: 20, backgroundColor: '#D5D9E2', marginVertical: 4 } : { width: 1, height: 20, backgroundColor: '#D5D9E2', marginHorizontal: 4 }} />;
-  const Bar = () => <View style={upright ? { height: 1, alignSelf: 'stretch', backgroundColor: '#E2E5EC', marginVertical: 6 } : { width: 1, alignSelf: 'stretch', backgroundColor: '#E2E5EC', marginHorizontal: 8 }} />;
+  const Div = () => <View style={upright ? { height: 1, width: 20, backgroundColor: '#D5D9E2', marginVertical: 4 } : { width: 1, height: 22, backgroundColor: '#E2E5EC', marginHorizontal: 6 }} />;
+  const Bar = () => <View style={upright ? { height: 1, alignSelf: 'stretch', backgroundColor: '#E2E5EC', marginVertical: 6 } : { width: 1, height: 22, backgroundColor: '#E2E5EC', marginHorizontal: 10 }} />;
   const R2 = { flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', flex: upright ? undefined : 1 } as const;
 
   const chip = (label: string, on: boolean, onPress: () => void) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 27, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 30, paddingHorizontal: 14, borderRadius: 15, justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
       <Text style={{ color: INK, fontSize: 13 }}>{label}</Text>
     </Pressable>
   );
@@ -369,15 +369,15 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         const white = c.toUpperCase() === '#FFFFFF';
         return (
           <Pressable key={i + c} accessibilityLabel={`Colour ${c}`} onPress={() => { if (on) setPop(pop === 'colors' ? null : 'colors'); else { patch({ color: i }); setPop(null); } }}
-            style={{ width: 30, height: 34, alignItems: 'center', justifyContent: 'center' }}>
-            <View style={{ width: on ? 25 : 21, height: on ? 25 : 21, borderRadius: 13, backgroundColor: c, borderWidth: white || on ? 1.5 : 0, borderColor: on ? BLUE : '#B8BFCC', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: on ? 26 : 22, height: on ? 26 : 22, borderRadius: 13, backgroundColor: c, borderWidth: white || on ? 1.5 : 0, borderColor: on ? BLUE : '#B8BFCC', alignItems: 'center', justifyContent: 'center' }}>
               {on ? <Icon name="pencil" size={11} color={white || c.toUpperCase() === '#FFFF00' ? '#333' : '#fff'} /> : null}
             </View>
           </Pressable>
         );
       })}
-      <Pressable accessibilityLabel="More colours" onPress={() => setPop(pop === 'addColor' ? null : 'addColor')} style={{ width: 28, height: 34, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#ECEDF1', alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={10} color={INK} /></View>
+      <Pressable accessibilityLabel="More colours" onPress={() => setPop(pop === 'addColor' ? null : 'addColor')} style={{ width: 32, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ width: 22, height: 22, borderRadius: 10, backgroundColor: '#ECEDF1', alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={10} color={INK} /></View>
       </Pressable>
     </>
   );
@@ -385,7 +385,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const on = i === k.size;
     const d = [6, 10, 15][i] ?? 10;
     return (
-      <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => { if (on) setPop(pop === 'size' ? null : 'size'); else { patch({ size: i }); setPop(null); } }} style={{ width: 30, height: 34, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => { if (on) setPop(pop === 'size' ? null : 'size'); else { patch({ size: i }); setPop(null); } }} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: on ? '#fff' : '#ECEDF1', borderWidth: on ? 1.5 : 0, borderColor: BLUE, alignItems: 'center', justifyContent: 'center' }}>
           <View style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: INK }} />
         </View>
@@ -426,8 +426,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   } else if (kind === 'shape') {
     const cur = s.shapeType ?? 'line';
     const shapeBtn = (icon: string, label: string, on: boolean, press: () => void) => (
-      <Pressable key={label} accessibilityLabel={label} onPress={press} style={{ width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : 'transparent' }}>
-        <ToolIcon name={icon} size={18} color={on ? BLUE : INK} />
+      <Pressable key={label} accessibilityLabel={label} onPress={press} style={{ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : 'transparent' }}>
+        <ToolIcon name={icon} size={19} color={on ? BLUE : INK} />
       </Pressable>
     );
     row2 = (
@@ -480,10 +480,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     );
   }
 
-  const pillW = Math.min(screen - 110, 450);
   const order = fullOrder(s.toolOrder);
   const hidden = s.toolHidden ?? [];
   const shown = order.filter((id) => !hidden.includes(id));
+  // Room for a whole row of tools on either page, plus the options row below it.
+  const mostTools = Math.max(Math.min(shown.length, 8) + (shown.length > 8 ? 2 : 1), Math.max(0, shown.length - 8) + 2);
+  const pillW = Math.min(screen - 24, Math.max(470, mostTools * 40 + 44));
+  // On a narrow screen it can't share a line with the buttons on each side, so it sits below them.
+  const below = dock === 'top' && pillW + 2 * 240 > screen;
   const render = (id: string) => {
     if (id === 'media') return plain('media', 'Insert', onInsert, undefined, false, 'media');
     if (id === 'record') return plain(hasAudio && !recording ? 'play' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined, false, 'record');
@@ -552,7 +556,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
           </Card>
         )}
       </Modal> : null}
-      <DockedPill dock={dock} raised={raised} width={pillW} maxHeight={screenH - 150} onDock={(d) => set({ toolDock: d })}
+      <DockedPill dock={dock} below={below} raised={raised} width={pillW} maxHeight={screenH - 150} onDock={(d) => set({ toolDock: d })}
         tools={!set2 ? (
           <Reanimated.View key="first" entering={FadeIn.duration(120)} style={{ flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: upright ? 0 : 6 }}>
             {first.map(render)}
@@ -567,14 +571,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
             {plain('prev', 'Back to the main tools', () => setSet2(false))}
           </Reanimated.View>
         )}
-        options={<Reanimated.View key={kind} entering={FadeIn.duration(100)} style={upright ? { paddingVertical: 4, paddingHorizontal: 4, alignItems: 'center' } : { height: 36, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6 }}>{row2}</Reanimated.View>} />
+        options={<Reanimated.View key={kind} entering={FadeIn.duration(100)} style={upright ? { paddingVertical: 4, paddingHorizontal: 4, alignItems: 'center' } : { height: 42, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>{row2}</Reanimated.View>} />
     </>
   );
 }
 
 /** The toolbar on its edge of the screen. Drag the grip to move it to another edge. */
-function DockedPill({ dock, raised, width, maxHeight, onDock, tools, options }: {
-  dock: 'top' | 'bottom' | 'left' | 'right'; raised?: boolean; width: number; maxHeight: number; onDock: (d: 'top' | 'bottom' | 'left' | 'right') => void; tools: React.ReactNode; options: React.ReactNode;
+function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, options }: {
+  dock: 'top' | 'bottom' | 'left' | 'right'; below?: boolean; raised?: boolean; width: number; maxHeight: number; onDock: (d: 'top' | 'bottom' | 'left' | 'right') => void; tools: React.ReactNode; options: React.ReactNode;
 }) {
   const upright = dock === 'left' || dock === 'right';
   const size = useWindowDimensions();
@@ -599,25 +603,25 @@ function DockedPill({ dock, raised, width, maxHeight, onDock, tools, options }: 
     onPanResponderTerminate: () => { x.value = 0; y.value = 0; },
   })).current;
   const grip = (
-    <View {...pan.panHandlers} accessibilityLabel="Move the toolbar" style={upright ? { height: 18, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' } : { position: 'absolute', left: 0, top: 0, bottom: 0, width: 22, zIndex: 2, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={upright ? { width: 26, height: 3, borderRadius: 2, backgroundColor: '#CBD0DA' } : { width: 3, height: 26, borderRadius: 2, backgroundColor: '#CBD0DA' }} />
+    <View {...pan.panHandlers} accessibilityLabel="Move the toolbar" style={upright ? { height: 18, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' } : { position: 'absolute', left: 0, top: 0, bottom: 0, width: 16, zIndex: 2, alignItems: 'center', justifyContent: 'center' }}>
+      {upright ? <View style={{ width: 22, height: 3, borderRadius: 2, backgroundColor: '#E2E5EC' }} /> : null}
     </View>
   );
-  const place = dock === 'top' ? { top: 10, width } : dock === 'bottom' ? { bottom: raised ? 78 : 14, width } : dock === 'left' ? { left: 10, top: 58, maxHeight } : { right: 10, top: 58, maxHeight };
-  const hair = upright ? { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' as const, backgroundColor: '#D5D9E2' } : { height: StyleSheet.hairlineWidth, backgroundColor: '#D5D9E2' };
+  const place = dock === 'top' ? { top: below ? 58 : 10, width } : dock === 'bottom' ? { bottom: raised ? 78 : 14, width } : dock === 'left' ? { left: 10, top: 58, maxHeight } : { right: 10, top: 58, maxHeight };
+  const hair = upright ? { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' as const, backgroundColor: '#E2E5EC' } : { height: StyleSheet.hairlineWidth, marginHorizontal: 14, backgroundColor: '#E2E5EC' };
   return (
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: upright ? undefined : 'center' }]}>
       <Reanimated.View style={[{ position: 'absolute', borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } }, place, moved]}>
         {grip}
         {upright ? (
           <View style={{ flexDirection: dock === 'left' ? 'row' : 'row-reverse', maxHeight: maxHeight - 18 }}>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ width: 40, flexGrow: 0 }}>{tools}</ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: 46, flexGrow: 0 }}>{tools}</ScrollView>
             <View style={hair} />
-            <ScrollView showsVerticalScrollIndicator={false} style={{ width: 104, flexGrow: 0 }}>{options}</ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: 112, flexGrow: 0 }}>{options}</ScrollView>
           </View>
         ) : (
           <>
-            <View style={{ height: 40, overflow: 'hidden', justifyContent: 'center' }}>{tools}</View>
+            <View style={{ height: 46, overflow: 'hidden', justifyContent: 'center' }}>{tools}</View>
             <View style={hair} />
             {options}
           </>

@@ -52,8 +52,8 @@ const absPath = (path: string) => decodeURIComponent(fsx.uri(path).replace(/^fil
 function TopBtn({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} hitSlop={3}
-      style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1, backgroundColor: active ? '#E9EEFD' : pressed ? '#F0F1F4' : 'transparent' })}>
-      <ToolIcon name={icon} size={19} color={active ? '#3F6AF2' : '#3B4252'} />
+      style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1, backgroundColor: active ? '#E9EEFD' : pressed ? '#F0F1F4' : 'transparent' })}>
+      <ToolIcon name={icon} size={20} color={active ? '#3F6AF2' : '#3B4252'} />
     </Pressable>
   );
 }
@@ -701,11 +701,11 @@ export default function Editor() {
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
             onRuler={setRuler} raised={audioOpen} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
-          <View style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 2, borderRadius: 12, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          <View style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 3, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
             <TopBtn icon="back" label="Back to notes" onPress={back} />
             {tabs.length > 1 ? <TopBtn icon="tabs" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} /> : null}
           </View>
-          <View style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', borderRadius: 12, backgroundColor: '#fff', padding: 2, shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          <View style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', borderRadius: 14, backgroundColor: '#fff', padding: 3, shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
             <TopBtn icon="undo" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
             <TopBtn icon="redo" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
             <TopBtn icon="share" label="Share" onPress={share} />

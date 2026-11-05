@@ -577,7 +577,7 @@ extension QuillCanvasView {
     bringSubviewToFront(selBar)
     let size = selBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     // Right under the toolbar, wherever the selection is.
-    selBar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 96, width: size.width, height: size.height)
+    selBar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 106, width: size.width, height: size.height)
   }
 
   @objc func onSelStyle() {

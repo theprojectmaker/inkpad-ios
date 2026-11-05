@@ -433,7 +433,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if canvas.contentSize != size { canvas.contentSize = size }
     let padX = max(0, (bounds.width - size.width) / 2)
     // Room at the top for the floating toolbar; the page scrolls under it.
-    let inset = UIEdgeInsets(top: 84, left: padX, bottom: 160 + keyboardInset, right: padX)
+    let inset = UIEdgeInsets(top: 104, left: padX, bottom: 160 + keyboardInset, right: padX)
     if canvas.contentInset != inset { canvas.contentInset = inset }
     syncInk()
   }
