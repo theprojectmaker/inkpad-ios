@@ -80,9 +80,18 @@ enum ScanFilter {
     let lumSmall = shrink(lum, q)
     let around = grow(blur(maximum(lumSmall, 14 * px * q), 4 * px * q), q)
     let grey = around.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: lum]).cropped(to: ext)
-    // A sharp scan has clean edges and needs less reach; reaching further only leaves smudges around letters.
-    let edge: [(CGFloat, CGFloat)] = soft < 1.25 ? [(0, 1), (0.62, 1), (0.82, 0.97), (0.89, 0.45), (0.93, 0)] : [(0, 1), (0.66, 1), (0.87, 0.97), (0.94, 0.5), (0.98, 0)]
-    let faint = curve(blur(grey, 0.55 * soft), edge)
+    // Each stroke is cut halfway between its own darkest point and the paper. One fixed cut
+    // can't work: where it catches pencil, it makes print fat enough to fill in its letters.
+    let h: CGFloat = 1 / 2
+    let greyHalf = shrink(grey, h)
+    let core = greyHalf.clampedToExtent().applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": max(1, 5 * px * h)]).cropped(to: greyHalf.extent)
+    let deepest = grow(blur(core, 3 * px * h), h).applyingFilter("CIColorClamp", parameters: [
+      "inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 1), "inputMaxComponents": CIVector(x: 0.9, y: 0.9, z: 0.9, w: 1),
+    ])
+    let rise = deepest.applyingFilter("CISubtractBlendMode", parameters: [kCIInputBackgroundImageKey: blur(grey, 0.4 * soft)]).cropped(to: ext)
+    let span = deepest.applyingFilter("CIColorInvert")
+    let level = span.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: rise]).cropped(to: ext)
+    let faint = curve(level, [(0, 1), (0.36, 1), (0.5, 0.5), (0.64, 0), (1, 0)])
 
     // Sensitive enough for pencil means grain gets through too, so faint marks only count
     // beside something definite: a real stroke, or a long ruled line. Specks are neither.
@@ -119,7 +128,7 @@ enum ScanFilter {
       let half: CGFloat = 1 / 2
       let penSmall = shrink(flat, half).clampedToExtent().applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": max(1, 2.5 * px * half)]).cropped(to: shrink(flat, half).extent)
       let pen = grow(blur(penSmall, 2.5 * px * half), half)
-      let deep = curve(pen.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.35]), [(0, 0), (0.3, 0.07), (0.6, 0.22), (0.85, 0.4), (1, 0.8)])
+      let deep = curve(pen.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.5]), [(0, 0), (0.2, 0.05), (0.45, 0.3), (0.7, 0.62), (1, 1)])
       out = deep.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: sheet, kCIInputMaskImageKey: ink]).cropped(to: ext)
       // Pictures keep their own detail, with the lighting fixed.
       let photo = curve(flat, [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)])
