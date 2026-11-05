@@ -48,10 +48,10 @@ jobs:
         run: |
           if [ -z "$EXPO_TOKEN" ]; then echo "::error::Add the EXPO_TOKEN repository secret first"; exit 1; fi
           if [ -z "$EXPO_PUBLIC_QUILL_TOKEN" ]; then echo "::error::Add the QUILL_APP_TOKEN repository secret first"; exit 1; fi
-          npx --yes eas-cli@latest whoami
+          npx --yes eas-cli@27.4.1 whoami
 
       - name: Build the app on this Mac (eas build --local)
-        run: npx --yes eas-cli@latest build --platform ios --profile production --local --non-interactive --output "$RUNNER_TEMP/app.ipa"
+        run: npx --yes eas-cli@27.4.1 build --platform ios --profile production --local --non-interactive --output "$RUNNER_TEMP/app.ipa"
 
       - name: Check the backend key made it into the app
         run: |
@@ -67,4 +67,4 @@ jobs:
 
       - name: Send to TestFlight
         if: ${{ inputs.submit }}
-        run: npx --yes eas-cli@latest submit --platform ios --profile production --path "$RUNNER_TEMP/app.ipa" --non-interactive --wait
+        run: npx --yes eas-cli@27.4.1 submit --platform ios --profile production --path "$RUNNER_TEMP/app.ipa" --non-interactive --wait
