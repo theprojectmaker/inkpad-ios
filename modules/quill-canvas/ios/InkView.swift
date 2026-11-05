@@ -415,12 +415,15 @@ final class InkView: UIView {
 
   /// Draws off screen, and only when that's completely finished does the picture appear or change.
   private func renderPlate(around visible: CGRect, zoom z: CGFloat) {
-    guard !plateBusy, let gpu, let cmd = gpu.queue.makeCommandBuffer() else { return }
+    guard !plateBusy else { return }
+    // Without a picture to move, the ink just keeps following the scroll as it's redrawn.
+    let giveUp = { [self] in if !plateReady { moving = false } }
+    guard let gpu, let cmd = gpu.queue.makeCommandBuffer() else { giveUp(); return }
     let scale = contentScaleFactor
     let wide = ((superview as? UIScrollView)?.contentSize.width ?? 0) > visible.width + 1
     let limit = CGFloat(8192) / scale
     let rect = visible.insetBy(dx: wide ? -min(visible.width * 0.25, (limit - visible.width) / 2) : 0, dy: -min(visible.height * 0.6, (limit - visible.height) / 2))
-    guard makePlateTargets(w: Int(rect.width * scale), h: Int(rect.height * scale)), let msaa = plateMSAA, let depth = plateDepth else { return }
+    guard makePlateTargets(w: Int(rect.width * scale), h: Int(rect.height * scale)), let msaa = plateMSAA, let depth = plateDepth else { giveUp(); return }
     plateBusy = true
     plateNext = (plateNext + 1) % 2
     let target = plateSurfaces[plateNext]
