@@ -11,6 +11,7 @@ import { useSchedule, whereNow } from '@/lib/schedule';
 import { studentoDay } from '@/lib/studento';
 
 import { PaperSheet } from '@/components/paper-sheet';
+import { TodayStrip } from '@/components/today-strip';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
@@ -361,6 +362,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
               <Icon name="pencil.and.scribble" size={54} color="#3F6AF2" />
               <Text style={{ color: t.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6, marginTop: 14 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
             </View>
+            <TodayStrip />
             <View style={{ flexDirection: 'row', gap: 16, marginTop: 32 }}>
               {[
                 { label: 'Import Flashcards', icon: 'rectangle.on.rectangle', bg: t.card, line: '#C3D3F7', go: () => router.push('/flashcards') },

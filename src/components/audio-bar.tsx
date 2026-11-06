@@ -4,17 +4,20 @@
 import { requestRecordingPermissionsAsync, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { requireNativeModule } from 'expo-modules-core';
 import * as Sharing from 'expo-sharing';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, Text, View, type GestureResponderEvent } from 'react-native';
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { heardTodos } from '@/lib/class-todo';
 import { fsx } from '@/lib/fsx';
 import type { LiveNotes, NotesSource } from '@/lib/livenotes';
 import { liveNow, pauseLive, startLive, stopLive, useLive } from '@/lib/liverec';
 import { type Recording, uid } from '@/lib/model';
 import { notePath } from '@/lib/noteio';
+import { offlineCards } from '@/lib/offline-study';
 import { useTheme } from '@/lib/settings';
-import { Icon, IconButton } from './ui';
+import { addDeck, updateStudy } from '@/lib/study-store';
+import { Icon, IconButton, useToast } from './ui';
 
 export const fmtTime = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -269,6 +272,48 @@ function SaidList({ lines, partial, pos, onSeek, empty }: { lines: { t: number; 
 }
 
 /** Notes and words for a class, while it's being recorded and after. */
+/** After class: turns the notes into cards, and offers what the teacher said to do. */
+function AfterClass({ rec }: { rec: Recording }) {
+  const t = useTheme();
+  const { toast } = useToast();
+  const [added, setAdded] = useState<string[]>([]);
+  const [made, setMade] = useState(false);
+  const said = (rec.transcript ?? []).map((l) => l.text);
+  const notes = (rec.notes ?? []).map((n) => n.text);
+  const todos = useMemo(() => heardTodos([...said, ...notes], new Date()), [rec.id, said.length, notes.length]);
+  const makeCards = () => {
+    const text = [...notes, ...said].map((x) => (/[.!?]$/.test(x.trim()) ? x.trim() : x.trim() + '.')).join(' ');
+    const { cards } = offlineCards(text);
+    if (!cards.length) { toast('Not enough in these notes to make cards.'); return; }
+    addDeck('Class notes, ' + new Date(rec.created).toLocaleDateString([], { month: 'short', day: 'numeric' }), cards);
+    setMade(true);
+    toast(cards.length + (cards.length === 1 ? ' card' : ' cards') + ' added to Flashcards');
+  };
+  return (
+    <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: t.line, gap: 10 }}>
+      {todos.length ? <Text style={{ color: t.sub, fontSize: 12, fontWeight: '600' }}>Sounded like homework</Text> : null}
+      {todos.map((x) => {
+        const done = added.includes(x.text);
+        return (
+          <Pressable key={x.text} disabled={done} accessibilityLabel={(done ? 'Added: ' : 'Add to homework: ') + x.text}
+            onPress={() => {
+              updateStudy((d) => ({ ...d, homework: [{ id: uid('h'), text: x.text, due: x.due }, ...d.homework] }));
+              setAdded((a) => [...a, x.text]);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon name={done ? 'checkmark.circle.fill' : 'plus.circle'} size={18} color={BLUE} />
+            <Text style={{ flex: 1, color: t.text, fontSize: 14, lineHeight: 19 }}>{x.text}</Text>
+          </Pressable>
+        );
+      })}
+      <Pressable disabled={made} onPress={makeCards} accessibilityLabel="Make flashcards from these notes"
+        style={({ pressed }) => ({ height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE + '14', opacity: pressed || made ? 0.55 : 1 })}>
+        <Text style={{ color: BLUE, fontSize: 14, fontWeight: '600' }}>{made ? 'Flashcards made' : 'Make flashcards'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSeek, onClose }: {
   live: LiveNotes | null; toNotes: boolean; rec: Recording | null; busy: boolean; pos: number; marks?: number[]; onMake: () => void; onSeek: (ms: number) => void; onClose: () => void;
 }) {
@@ -324,6 +369,7 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSee
           ) : null}
           {live?.busy ? <ActivityIndicator color={t.faint} style={{ alignSelf: 'flex-start' }} /> : null}
           {live?.source ? <Text style={{ color: t.faint, fontSize: 12, marginTop: 4 }}>{SOURCE[live.source]}</Text> : null}
+          {!recording && rec && notes.length ? <AfterClass rec={rec} /> : null}
         </ScrollView>
       ) : lines || recording ? (
         <SaidList lines={lines ?? []} partial={recording ? words.partial : undefined} pos={recording ? -1 : pos} onSeek={(ms) => { if (!recording) onSeek(ms); }}
