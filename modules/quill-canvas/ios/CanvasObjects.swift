@@ -423,7 +423,7 @@ extension QuillCanvasView {
     let z = canvas.zoomScale
     let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
     let target = min(maxY, max(-canvas.contentInset.top, r.midY * z - canvas.bounds.height * 0.4))
-    canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: target), animated: true)
+    scrollInk(to: CGPoint(x: canvas.contentOffset.x, y: target))
     let v = UIView(frame: r)
     v.backgroundColor = UIColor(red: 1, green: 0.85, blue: 0.1, alpha: 0.5)
     v.layer.cornerRadius = 3

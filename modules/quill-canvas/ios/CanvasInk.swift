@@ -535,9 +535,12 @@ extension QuillCanvasView {
       ink.stats.lastMove = now
       ink.stats.samples += samples.count
     }
-    for (i, s) in samples.enumerated() {
+    var opened = !first
+    for s in samples {
       var p = location(s)
       if let e = c.rulerEdge { p = onRuler(p, e) }
+      // Samples from before it reached the page aren't part of this stroke.
+      if !opened && !c.page.contains(p) { continue }
       let force = s.type == .pencil && s.maximumPossibleForce > 0 ? Float(s.force / s.maximumPossibleForce) : 0
       let altitude = s.type == .pencil ? Float(s.altitudeAngle) : Float.pi / 2
       // Off the page: the stroke ends at its edge.
@@ -546,7 +549,8 @@ extension QuillCanvasView {
         finishStroke(c)
         return
       }
-      if c.snap == nil { c.add(p, force: force, altitude: altitude, time: s.timestamp, first: first && i == 0) }
+      if c.snap == nil { c.add(p, force: force, altitude: altitude, time: s.timestamp, first: !opened) }
+      opened = true
       let onScreen = hypot(p.x - c.moveAnchor.x, p.y - c.moveAnchor.y) * canvas.zoomScale
       if onScreen > 4 {
         c.moveAnchor = p
@@ -619,7 +623,14 @@ extension QuillCanvasView {
 
   private func finishStroke(_ c: PenCapture) {
     capture = nil
-    let stroke = InkStroke(pts: c.finishedPoints(), rgb: c.pen.rgb, kind: c.pen.kind, seq: c.wet.seq, ts: c.startedAt)
+    let points = c.finishedPoints()
+    if points.isEmpty {
+      ink.wet = nil
+      ink.penUp()
+      ink.setNeedsInk()
+      return
+    }
+    let stroke = InkStroke(pts: points, rgb: c.pen.rgb, kind: c.pen.kind, seq: c.wet.seq, ts: c.startedAt)
     document.apply(removed: [], added: [stroke])
     record(InkEdit(removed: [], added: [stroke]))
     ink.wet = nil
@@ -776,6 +787,7 @@ extension QuillCanvasView {
     eraseLast = p
     eraseRemoved = []
     eraseAdded = []
+    ink.penDown()
     eraseStep(to: p)
     showEraser(at: p)
   }
@@ -812,6 +824,7 @@ extension QuillCanvasView {
   }
 
   private func endErase() {
+    ink.penUp()
     eraserRing.isHidden = true
     objectsChanged()
     if eraseRemoved.isEmpty && eraseAdded.isEmpty { return }

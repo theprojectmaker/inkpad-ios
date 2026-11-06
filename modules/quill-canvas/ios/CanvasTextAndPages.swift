@@ -287,6 +287,31 @@ extension QuillCanvasView {
 
   // MARK: - Page tools
 
+  /// The same picture, drawn off the main thread when the page has only ink on it.
+  func pageThumbAsync(_ i: Int, path: String, width: Double, quiet: Bool, done: @escaping (Bool) -> Void) {
+    guard i >= 0, i < specs.count, i < frames.count else { done(false); return }
+    if quiet && editingId != nil { done(false); return }
+    let p = specs[i], f = frames[i]
+    let simple = !texts.contains { f.contains(CGPoint(x: $0.x + 1, y: $0.y + 1)) } && !pics.contains { f.contains(CGPoint(x: $0.x + $0.w / 2, y: $0.y + $0.h / 2)) }
+    guard simple else { done(pageThumb(i, path: path, width: width, quiet: quiet)); return }
+    if !quiet { commitEdit() }
+    let strokes = document.strokes
+    QuillCanvasView.thumbQueue.async {
+      let k = CGFloat(width) / CGFloat(p.w)
+      let fmt = UIGraphicsImageRendererFormat()
+      fmt.scale = 2
+      let img = UIGraphicsImageRenderer(size: CGSize(width: CGFloat(p.w) * k, height: CGFloat(p.h) * k), format: fmt).image { ctx in
+        ctx.cgContext.scaleBy(x: k, y: k)
+        PageArt.draw(p, in: ctx.cgContext)
+        InkRaster.draw(strokes, rect: f, in: ctx.cgContext)
+      }
+      guard let data = img.jpegData(compressionQuality: 0.8) else { done(false); return }
+      let url = URL(fileURLWithPath: path)
+      try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      done((try? data.write(to: url, options: .atomic)) != nil)
+    }
+  }
+
   /// A picture of page `i` (background, ink and text) for the page sidebar or the library.
   func pageThumb(_ i: Int, path: String, width: Double, quiet: Bool = false) -> Bool {
     guard i >= 0, i < specs.count, i < frames.count else { return false }

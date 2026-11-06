@@ -226,46 +226,90 @@ extension QuillCanvasView {
     return UIGraphicsImageRenderer(size: f.size, format: fmt).image { InkRaster.draw(inside, rect: f, in: $0.cgContext) }.cgImage
   }
 
-  private func nearPages() -> ClosedRange<Int>? {
+  private func nearPages(_ reach: Int = 3) -> ClosedRange<Int>? {
     guard !frames.isEmpty else { return nil }
     let i = currentPage()
-    return max(0, i - 3)...min(frames.count - 1, i + 3)
+    return max(0, i - reach)...min(frames.count - 1, i + reach)
   }
 
-  private func trimInkPictures(_ near: ClosedRange<Int>) {
-    let keep = Set(near.compactMap { $0 < specs.count ? specs[$0].id : nil })
+  private func trimInkPictures() {
+    guard let wide = nearPages(4) else { return }
+    let keep = Set(wide.compactMap { $0 < specs.count ? specs[$0].id : nil })
     for id in inkPictures.keys where !keep.contains(id) { inkPictures[id] = nil }
   }
 
-  /// Keeps the pictures ready, so a pinch starts without a pause. Called after each save.
+  private func pictureIsCurrent(_ i: Int) -> Bool {
+    guard let pic = inkPictures[specs[i].id] else { return false }
+    return !document.changed(frames[i], since: pic.version)
+  }
+
+  /// Keeps the pictures ready, so a pinch starts without a pause: after each save, on opening a note
+  /// and on reaching a new page. Only pages whose own ink changed are redone.
   func refreshInkPictures() {
     guard let near = nearPages(), !zoomPreviewing else { return }
-    trimInkPictures(near)
+    trimInkPictures()
+    ink.prepare(document.strokes.filter { s in near.contains { frames[$0].intersects(s.bounds) } })
+    pictureRun += 1
+    let run = pictureRun
     let version = document.version
     let strokes = document.strokes.filter { !$0.lifted }
-    let jobs = near.filter { inkPictures[specs[$0].id]?.version != version }.map { (specs[$0].id, frames[$0]) }
+    let jobs = near.filter { $0 < specs.count && !pictureIsCurrent($0) }.map { (specs[$0].id, frames[$0]) }
     if jobs.isEmpty { return }
     DispatchQueue.global(qos: .utility).async { [weak self] in
-      guard let self else { return }
       for (id, f) in jobs {
+        // A newer round makes this one pointless.
+        var live = false
+        DispatchQueue.main.sync { live = self?.pictureRun == run }
+        guard live, let self else { return }
         let image = autoreleasepool { self.inkPicture(strokes, page: f) }
         DispatchQueue.main.async {
-          if self.document.version == version { self.inkPictures[id] = (version, image) }
+          if !self.document.changed(f, since: version) { self.inkPictures[id] = (version, image) }
         }
       }
     }
   }
 
+  /// Soon after arriving on a page, but not for every page passed on the way.
+  func refreshInkPicturesSoon() {
+    pictureSoon?.cancel()
+    let w = DispatchWorkItem { [weak self] in self?.refreshInkPictures() }
+    pictureSoon = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: w)
+  }
+
   func pinchBegan() {
     guard !zoomPreviewing, let near = nearPages() else { return }
-    trimInkPictures(near)
+    trimInkPictures()
+    pictureRun += 1
     zoomPreviewing = true
     let version = document.version
     let strokes = document.strokes.filter { !$0.lifted }
+    // Only what's on screen has to be right this instant; the rest follow without holding up the pinch.
+    let visibleArea = canvas.convert(canvas.bounds, to: pageHost)
+    var later: [Int] = []
     for i in near where i < pageViewList.count {
       let id = specs[i].id
-      if inkPictures[id]?.version != version { inkPictures[id] = (version, inkPicture(strokes, page: frames[i])) }
-      pageViewList[i].showInk(inkPictures[id]?.image)
+      if !pictureIsCurrent(i) {
+        if frames[i].intersects(visibleArea) {
+          inkPictures[id] = (version, inkPicture(strokes, page: frames[i]))
+        } else { later.append(i) }
+      }
+      pageViewList[i].showInk(inkPictures[id]?.image, in: inkShotHost)
+    }
+    let run = pictureRun
+    if !later.isEmpty {
+      let jobs = later.map { ($0, specs[$0].id, frames[$0]) }
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        for (i, id, f) in jobs {
+          guard let self else { return }
+          let image = autoreleasepool { self.inkPicture(strokes, page: f) }
+          DispatchQueue.main.async {
+            guard run == self.pictureRun, self.zoomPreviewing, i < self.pageViewList.count else { return }
+            self.inkPictures[id] = (version, image)
+            self.pageViewList[i].showInk(image, in: self.inkShotHost)
+          }
+        }
+      }
     }
     ink.dropPlate()
     ink.blank()
@@ -283,12 +327,13 @@ extension QuillCanvasView {
     // The pictures go once the sharp ink is on the screen (with a limit, in case that's never reported).
     let clear = { [weak self] in
       guard let self, !self.zoomPreviewing else { return }
-      self.pageViewList.forEach { $0.showInk(nil) }
+      self.pageViewList.forEach { $0.showInk(nil, in: self.inkShotHost) }
     }
     ink.resume(onShown: clear)
+    let g = ink.showGeneration
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-      guard let self, !self.zoomPreviewing, !self.ink.paused else { return }
-      self.ink.reveal()
+      guard let self, !self.zoomPreviewing else { return }
+      if g == self.ink.showGeneration && !self.ink.paused { self.ink.reveal() }
       clear()
     }
   }

@@ -121,7 +121,11 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var boxBar: UIStackView?
   lazy var formatBar: UIView = makeFormatBar()
   var zoomWriter: ZoomWriter?
+  static let thumbQueue = DispatchQueue(label: "quill.thumbs", qos: .userInitiated)
   var zoomPreviewing = false
+  var pictureRun = 0
+  var pictureSoon: DispatchWorkItem?
+  let inkShotHost = UIView()
   var shapeKind = "line"
   var shapeLock = false
   var shapeFill = false
@@ -299,6 +303,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     canvas.minimumZoomScale = 0.5
     canvas.maximumZoomScale = 6
     canvas.bouncesZoom = false
+    ink.onSettled = { [weak self] in self?.syncInk() }
+    NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
+      guard let self, !self.zoomPreviewing else { return }
+      self.inkPictures = [:]
+      self.ink.releasePictures()
+    }
     let palm = PalmWatch(target: nil, action: nil)
     palm.owner = self
     palm.cancelsTouchesInView = false
@@ -541,6 +551,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       if away <= 3 { v.setNear(true) } else if away > 7 { v.setNear(false) }
     }
     onPageChange(["page": i, "count": frames.count])
+    refreshInkPicturesSoon()
   }
 
   func scrollToPage(_ i: Int) {
@@ -548,8 +559,25 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     let z = canvas.zoomScale
     let maxY = max(-canvas.contentInset.top, canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom)
     let y = min(maxY, frames[i].minY * z - 16)
-    canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
+    scrollInk(to: CGPoint(x: canvas.contentOffset.x, y: y))
   }
+
+  /// Moves the page from code, keeping the ink with it.
+  func scrollInk(to p: CGPoint) {
+    let d = abs(p.y - canvas.contentOffset.y)
+    if d < 1 { return }
+    if d > canvas.bounds.height * 1.5 && !zoomPreviewing {
+      settleInk()
+      ink.blank()
+      canvas.setContentOffset(p, animated: false)
+      ink.resume()
+      return
+    }
+    if !zoomPreviewing { ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale) }
+    canvas.setContentOffset(p, animated: true)
+  }
+
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { settleInk() }
 
   // MARK: - Pages
 
@@ -619,6 +647,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     tapeHost.bounds = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     pictureHost.frame = CGRect(x: 0, y: 0, width: contentW, height: contentH)
     pageHost.bringSubviewToFront(pictureHost)
+    inkShotHost.isUserInteractionEnabled = false
+    inkShotHost.frame = pictureHost.frame
+    if inkShotHost.superview == nil { pageHost.addSubview(inkShotHost) }
+    pageHost.bringSubviewToFront(inkShotHost)
+    inkPictures = [:]
+    refreshInkPicturesSoon()
     lastPage = -1
     DispatchQueue.main.async { [weak self] in self?.reportPage() }
     if bounds.width > 1 {
@@ -721,6 +755,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   /// The app's own toolbar picks the tool.
   func setTool(_ t: ToolSpec) {
+    if capture != nil { inkCancelled() }   // the tool changed mid-stroke
     compassLayer.isHidden = true
     let w = CGFloat(t.width)
     setTextMode(t.kind == "text")

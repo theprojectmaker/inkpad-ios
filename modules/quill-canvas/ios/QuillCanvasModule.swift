@@ -193,12 +193,12 @@ public final class QuillCanvasModule: Module {
       }.runOnQueue(.main)
 
       // For a look at the page in passing (Record to Notes): nothing being typed gets closed.
-      AsyncFunction("pageShot") { (view: QuillCanvasView, index: Int, path: String, width: Double) -> Bool in
-        return view.pageThumb(index, path: path, width: width, quiet: true)
+      AsyncFunction("pageShot") { (view: QuillCanvasView, index: Int, path: String, width: Double, promise: Promise) in
+        view.pageThumbAsync(index, path: path, width: width, quiet: true) { promise.resolve($0) }
       }.runOnQueue(.main)
 
-      AsyncFunction("pageThumb") { (view: QuillCanvasView, index: Int, path: String, width: Double) -> Bool in
-        return view.pageThumb(index, path: path, width: width)
+      AsyncFunction("pageThumb") { (view: QuillCanvasView, index: Int, path: String, width: Double, promise: Promise) in
+        view.pageThumbAsync(index, path: path, width: width, quiet: false) { promise.resolve($0) }
       }.runOnQueue(.main)
 
       AsyncFunction("deletePage") { (view: QuillCanvasView, index: Int) in

@@ -155,17 +155,22 @@ final class PageTileView: UIView {
     tiles.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     addSubview(tiles)
     inkShot.contentsGravity = .resize
-    inkShot.frame = bounds
-    layer.addSublayer(inkShot)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-  func showInk(_ image: CGImage?) {
+  /// In a layer above the photos on the page, as the ink always is.
+  func showInk(_ image: CGImage?, in host: UIView) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    inkShot.frame = bounds
-    inkShot.contents = image
+    if image == nil {
+      inkShot.removeFromSuperlayer()
+      inkShot.contents = nil
+    } else {
+      if inkShot.superlayer !== host.layer { host.layer.addSublayer(inkShot) }
+      inkShot.frame = frame
+      inkShot.contents = image
+    }
     CATransaction.commit()
   }
 

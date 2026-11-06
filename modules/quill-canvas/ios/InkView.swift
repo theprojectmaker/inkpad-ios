@@ -213,7 +213,12 @@ final class InkView: UIView {
   var wet: WetInk?
   var zoom: CGFloat = 1
   var liftedTransform: CGAffineTransform = .identity
-  var lifted: [InkStroke] = []
+  var lifted: [InkStroke] = [] {
+    didSet {
+      if oldValue.count == lifted.count && oldValue.first === lifted.first { return }
+      document.touch((oldValue + lifted).reduce(CGRect.null) { $0.union($1.bounds) })
+    }
+  }
   let stats = InkStats()
   var lastInputTime: TimeInterval = 0
 
@@ -251,6 +256,10 @@ final class InkView: UIView {
   private var plateRect = CGRect.null
   private var plateReady = false       // on screen, in place of the Metal ink
   private var plateBusy = false
+  private var endAfterPlate = false
+  var onSettled: (() -> Void)?      // the ink needs placing again
+  private var lastVisibleY: CGFloat = 0
+  private var travel: CGFloat = 0   // which way the page is going
   private var plateRun = 0
   private var plateSurfaces: [(texture: MTLTexture, surface: IOSurfaceRef)] = []
   private var plateMSAA: MTLTexture?, plateDepth: MTLTexture?
@@ -332,7 +341,9 @@ final class InkView: UIView {
     if moving {
       // Waiting for the first picture: the ink is a subview of the scroll view, so it's riding along already.
       if !plateReady { return }
-      if !plateRect.insetBy(dx: 0, dy: visible.height * 0.15).contains(visible) { renderPlate(around: visible, zoom: z) }
+      if abs(visible.minY - lastVisibleY) > 1 { travel = visible.minY > lastVisibleY ? 1 : -1 }
+      lastVisibleY = visible.minY
+      if !plateRect.insetBy(dx: 0, dy: visible.height * 0.28).contains(visible) { renderPlate(around: visible, zoom: z) }
     }
     let now = CGRect(x: center.x - bounds.width / 2, y: center.y - bounds.height / 2, width: bounds.width, height: bounds.height)
     if now == visible && zoom == z { return }
@@ -341,10 +352,39 @@ final class InkView: UIView {
     if !paused { queuePageFrame() }
   }
 
+  /// Gets strokes ready to draw ahead of time, so reaching a new page doesn't stall.
+  func prepare(_ strokes: [InkStroke]) {
+    let todo = strokes.filter { $0.mesh == nil }
+    if todo.isEmpty || gpu == nil { return }
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      var i = 0
+      while i < todo.count {
+        let batch = Array(todo[i..<min(i + 40, todo.count)])
+        i += 40
+        let built = batch.map { ($0, InkMesh.triangles($0)) }
+        DispatchQueue.main.async {
+          guard let self else { return }
+          for (s, v) in built where s.mesh == nil { s.mesh = self.arena?.store(v) }
+        }
+      }
+    }
+  }
+
+  /// Memory is short: drop what can be made again.
+  func releasePictures() {
+    guard !moving else { return }
+    plateSurfaces = []
+    plateSize = (0, 0)
+    plateMSAA = nil
+    plateDepth = nil
+  }
+
   /// The page has started moving.
   func beginMoving(visible: CGRect, zoom z: CGFloat) {
     guard gpu != nil, !moving else { return }
     moving = true
+    travel = 0
+    lastVisibleY = visible.minY
     renderPlate(around: visible, zoom: z)
   }
 
@@ -352,6 +392,7 @@ final class InkView: UIView {
   /// the picture go. If they overlap for a frame they're in the same place, so it can't be seen to jump.
   func endMoving() {
     guard moving else { return }
+    if plateBusy && !plateReady { endAfterPlate = true; return }
     moving = false
     plateRun += 1
     plateBusy = false
@@ -359,9 +400,10 @@ final class InkView: UIView {
     plateReady = false
     let run = plateRun
     resume { [weak self] in self?.hidePlate(run) }
+    let g = showGen
     // If the iPad never says the frame arrived.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-      guard let self, !self.moving, !self.paused else { return }
+      guard let self, g == self.showGen, !self.moving, !self.paused else { return }
       self.reveal()
       self.hidePlate(run)
     }
@@ -369,6 +411,7 @@ final class InkView: UIView {
 
   /// A pinch has its own pictures on the pages.
   func dropPlate() {
+    endAfterPlate = false
     moving = false
     plateRun += 1
     plateBusy = false
@@ -427,8 +470,12 @@ final class InkView: UIView {
     let scale = contentScaleFactor
     let wide = ((superview as? UIScrollView)?.contentSize.width ?? 0) > visible.width + 1
     let limit = CGFloat(8192) / scale
-    let rect = visible.insetBy(dx: wide ? -min(visible.width * 0.25, (limit - visible.width) / 2) : 0, dy: -min(visible.height * 0.6, (limit - visible.height) / 2))
-    guard makePlateTargets(w: Int(rect.width * scale), h: Int(rect.height * scale)), let msaa = plateMSAA, let depth = plateDepth else { giveUp(); return }
+    // Whole points, so it lands on the same pixels as the Metal ink and nothing softens at the swap.
+    let padY = min(visible.height * 0.6, (limit - visible.height) / 2).rounded()
+    let padX = wide ? min(visible.width * 0.25, (limit - visible.width) / 2).rounded() : 0
+    let ahead = (visible.height * 0.3 * travel).rounded()
+    let rect = visible.insetBy(dx: -padX, dy: -padY).offsetBy(dx: 0, dy: ahead)
+    guard makePlateTargets(w: Int((rect.width * scale).rounded()), h: Int((rect.height * scale).rounded())), let msaa = plateMSAA, let depth = plateDepth else { giveUp(); return }
     plateBusy = true
     plateNext = (plateNext + 1) % 2
     let target = plateSurfaces[plateNext]
@@ -484,6 +531,11 @@ final class InkView: UIView {
       plateReady = true
       blank()
     }
+    if endAfterPlate {
+      endAfterPlate = false
+      endMoving()
+      onSettled?()
+    }
   }
 
   private func place(_ r: CGRect, _ z: CGFloat) {
@@ -496,8 +548,12 @@ final class InkView: UIView {
 
   /// Pinching starts: an empty frame replaces the last one. Hiding the view instead would keep
   /// that frame, and it would flash at the old zoom, small and in the wrong place, on the way back.
+  private var showGen = 0
+  var showGeneration: Int { showGen }
+
   func blank() {
     paused = true
+    showGen += 1
     onShown = nil
     if gpu == nil { isHidden = true; return }
     layer.opacity = Self.unseen
@@ -518,15 +574,19 @@ final class InkView: UIView {
   func resume(onShown shown: (() -> Void)? = nil) {
     paused = false
     isHidden = false
+    showGen += 1
+    let g = showGen
     onShown = { [weak self] in
+      guard let self, g == self.showGen, !self.paused else { return }
       CATransaction.begin()
       CATransaction.setDisableActions(true)
-      self?.reveal()
+      self.reveal()
       shown?()
       CATransaction.commit()
     }
     settledDirty = true
-    queuePageFrame()
+    // It's invisible until this frame has arrived, so it needn't keep step with anything.
+    DispatchQueue.main.async { [weak self] in self?.drawNow(finishing: true) }
   }
 
   /// A zoom step changes the scale, the inset and the offset one after another, each

@@ -66,7 +66,14 @@ final class InkStroke {
       }
     }
     guard hit else { return nil }
-    return parts.filter { $0.count >= 2 }.map { InkStroke(pts: $0, rgb: rgb, kind: kind, seq: seq, ts: ts) }
+    let thin = { (part: [InkPoint]) -> [InkPoint] in
+      var out: [InkPoint] = []
+      for (i, p) in part.enumerated() {
+        if i == 0 || i == part.count - 1 || out.last.map({ hypot($0.x - p.x, $0.y - p.y) >= 1.4 }) == true { out.append(p) }
+      }
+      return out
+    }
+    return parts.filter { $0.count >= 2 }.map(thin).map { InkStroke(pts: $0, rgb: rgb, kind: kind, seq: seq, ts: ts) }
   }
 
   static func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
@@ -96,17 +103,32 @@ final class InkDocument {
   private(set) var strokes: [InkStroke] = []
   private var lastSeq: UInt32 = 0
   private(set) var version = 0     // goes up whenever the ink changes
+  private var changes: [(version: Int, area: CGRect)] = []
+
+  private func log(_ area: CGRect) {
+    version += 1
+    changes.append((version, area))
+    if changes.count > 400 { changes = [(version, .infinite)] }
+  }
+
+  /// Has anything in this area changed since that version?
+  func changed(_ area: CGRect, since v: Int) -> Bool {
+    changes.contains { $0.version > v && $0.area.intersects(area) }
+  }
+
+  /// Something about how this area looks changed without the ink itself changing.
+  func touch(_ area: CGRect) { if !area.isNull { log(area) } }
 
   func nextSeq() -> UInt32 { lastSeq += 1; return lastSeq }
 
   func load(_ s: [InkStroke]) {
     strokes = s
-    version += 1
+    log(.infinite)
     lastSeq = s.map(\.seq).max() ?? 0
   }
 
   func apply(removed: [InkStroke], added: [InkStroke]) {
-    version += 1
+    log((removed + added).reduce(CGRect.null) { $0.union($1.bounds) })
     if removed.count == 1, strokes.last === removed[0] {
       strokes.removeLast()
     } else if !removed.isEmpty {
@@ -120,7 +142,7 @@ final class InkDocument {
   }
 
   /// Replaces everything (pages moved or removed), keeping the paint order.
-  func replaceAll(_ s: [InkStroke]) { strokes = s; version += 1 }
+  func replaceAll(_ s: [InkStroke]) { strokes = s; log(.infinite) }
 }
 
 // MARK: - The pens
