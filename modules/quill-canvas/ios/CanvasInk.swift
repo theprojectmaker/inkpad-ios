@@ -134,6 +134,7 @@ final class PalmWatch: UIGestureRecognizer {
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { look(touches) }
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
+  override func reset() { (view as? InkScrollView)?.palmOn = false }
 }
 
 /// A stroke while it's being written: steadies the raw points and applies the pen.
