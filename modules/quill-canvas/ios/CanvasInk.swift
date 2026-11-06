@@ -110,18 +110,32 @@ final class InkGesture: UIGestureRecognizer {
     active = nil
     told = false
     lastEvent = nil
+    owner?.gesturesBack()
   }
 }
 
-/// Watches for a resting hand without taking part in anything: its touches are far bigger than a fingertip.
+/// Watches for a resting hand without taking part in anything. A hand can stop a gesture starting,
+/// but size alone proves nothing: a thumb or a flat finger in a pinch is as big as the edge of a palm.
 final class PalmWatch: UIGestureRecognizer {
   weak var owner: QuillCanvasView?
-  private static let palm: CGFloat = 32
+  private static let afterWriting: CGFloat = 41
+  private static let alone: CGFloat = 52
 
-  private func look(_ touches: Set<UITouch>) {
-    guard touches.contains(where: { $0.majorRadius >= Self.palm }) else { return }
-    (view as? InkScrollView)?.palmOn = true
-    owner?.palmDown()
+  private func look(_ event: UIEvent) {
+    let down = event.allTouches?.filter { $0.type == .direct && $0.phase != .ended && $0.phase != .cancelled } ?? []
+    let biggest = down.map(\.majorRadius).max() ?? 0
+    let writing = owner?.pencilRecently ?? false
+    let hand = writing ? biggest >= Self.afterWriting : (down.count == 1 && biggest >= Self.alone)
+    guard let scroll = view as? InkScrollView else { return }
+    if hand {
+      if !scroll.palmOn {
+        scroll.palmOn = true
+        GestureLog.add("hand: \(down.count) touches, radius \(Int(biggest)), writing \(writing)")
+        owner?.palmDown()
+      }
+    } else if scroll.palmOn && !writing && down.count >= 2 {
+      scroll.palmOn = false    // a second finger: that's a pinch or a scroll after all
+    }
   }
   private func done(_ event: UIEvent) {
     let left = event.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled && $0.type == .direct } ?? []
@@ -130,8 +144,8 @@ final class PalmWatch: UIGestureRecognizer {
       state = .failed
     }
   }
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { look(touches) }
-  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { look(touches) }
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { look(event) }
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { look(event) }
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
   override func reset() { (view as? InkScrollView)?.palmOn = false }
@@ -414,14 +428,23 @@ extension QuillCanvasView {
   /// Not right after a zoom (fingers rarely lift together), and writing has to start on a page.
   /// A big touch has appeared: it's a hand, and hands don't scroll or zoom.
   func palmDown() {
-    guard canvas.isDragging || canvas.isZooming else { return }
+    // Only a scroll that a hand set off while writing. A zoom is never interrupted.
+    guard pencilRecently, canvas.isDragging, !canvas.isZooming, !zoomPreviewing else { return }
     let start = dragStartOffset
-    let wasDragging = canvas.isDragging
     canvas.panGestureRecognizer.isEnabled = false
-    canvas.pinchGestureRecognizer?.isEnabled = false
     canvas.panGestureRecognizer.isEnabled = true
-    canvas.pinchGestureRecognizer?.isEnabled = true
-    if wasDragging { canvas.setContentOffset(start, animated: false) }
+    canvas.setContentOffset(start, animated: false)
+  }
+
+  var pencilRecently: Bool { CACurrentMediaTime() - canvas.pencilUpAt < 1 }
+
+  /// However a touch ended, the page can be moved again.
+  func gesturesBack() {
+    if !canvas.panGestureRecognizer.isEnabled || canvas.pinchGestureRecognizer?.isEnabled == false {
+      GestureLog.add("gestures were still off, turned back on")
+      canvas.panGestureRecognizer.isEnabled = true
+      canvas.pinchGestureRecognizer?.isEnabled = true
+    }
   }
 
   func fingerMayDraw(_ t: UITouch) -> Bool {
@@ -477,6 +500,8 @@ extension QuillCanvasView {
     case .shape: shapeEnded()
     case .comment: if t.type != .direct { tappedForComment(at: location(t)) }   // a finger tap arrives by its own route
     }
+    if t.type != .direct { canvas.pencilUpAt = CACurrentMediaTime() }
+    GestureLog.add("stroke end")
     letPageMove()
   }
 

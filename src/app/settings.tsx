@@ -1,6 +1,8 @@
 // Settings: how Quill looks and writes, Google (Classroom + Drive), and redeem codes.
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
+import { requireNativeModule } from 'expo-modules-core';
+import * as Sharing from 'expo-sharing';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -84,7 +86,14 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Extras">
-          <Row icon="ticket" label="Redeem a code" onPress={() => router.push('/redeem')} last />
+          <Row icon="ticket" label="Redeem a code" onPress={() => router.push('/redeem')} />
+          <Row icon="square.and.arrow.up" label="Share zoom report" note="If zooming or scrolling goes wrong, send this right after. It holds only timings, nothing you wrote."
+            onPress={() => {
+              try {
+                const path = requireNativeModule<{ gestureLogPath(): string }>('QuillCanvas').gestureLogPath();
+                Sharing.shareAsync('file://' + path, { mimeType: 'text/plain' }).catch(() => {});
+              } catch {}
+            }} last />
         </Section>
 
         <Text style={{ color: t.faint, fontSize: 13, textAlign: 'center' }}>Quill {Constants.expoConfig?.version ?? ''}</Text>

@@ -279,6 +279,8 @@ extension QuillCanvasView {
 
   func pinchBegan() {
     guard !zoomPreviewing, let near = nearPages() else { return }
+    let began = CACurrentMediaTime()
+    defer { GestureLog.add("pinch setup \(Int((CACurrentMediaTime() - began) * 1000)) ms") }
     trimInkPictures()
     pictureRun += 1
     zoomPreviewing = true
@@ -324,6 +326,7 @@ extension QuillCanvasView {
       return
     }
     zoomPreviewing = false
+    GestureLog.add("at rest, ink back")
     // The pictures go once the sharp ink is on the screen (with a limit, in case that's never reported).
     let clear = { [weak self] in
       guard let self, !self.zoomPreviewing else { return }
@@ -335,6 +338,60 @@ extension QuillCanvasView {
       guard let self, !self.zoomPreviewing else { return }
       if g == self.ink.showGeneration && !self.ink.paused { self.ink.reveal() }
       clear()
+    }
+  }
+}
+
+// MARK: - The zoom log
+
+/// What happened to gestures, kept on the iPad, so a bad zoom can be looked at instead of guessed at.
+/// Only times and event names; nothing that's written. Settings > Share zoom report sends it.
+enum GestureLog {
+  private static var lines: [String] = []
+  private static var saving = false
+  private static var link: CADisplayLink?
+  private static let ticker = Ticker()
+  private static var lastTick: CFTimeInterval = 0
+  private static let started = CACurrentMediaTime()
+
+  static var path: String {
+    let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    return d.appendingPathComponent("quill-gesture.log").path
+  }
+
+  static func add(_ s: String) {
+    lines.append(String(format: "%8.2f  ", CACurrentMediaTime() - started) + s)
+    if lines.count > 1500 { lines.removeFirst(300) }
+    if saving { return }
+    saving = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+      saving = false
+      let text = lines.joined(separator: "\n") + "\n"
+      let to = path
+      DispatchQueue.global(qos: .utility).async { try? text.write(toFile: to, atomically: true, encoding: .utf8) }
+    }
+  }
+
+  /// While a pinch runs, notes any screen update that came late.
+  static var watching = false {
+    didSet {
+      link?.invalidate()
+      link = nil
+      guard watching else { return }
+      lastTick = 0
+      let l = CADisplayLink(target: ticker, selector: #selector(Ticker.tick(_:)))
+      l.add(to: .main, forMode: .common)
+      link = l
+    }
+  }
+
+  private final class Ticker: NSObject {
+    @objc func tick(_ l: CADisplayLink) {
+      if GestureLog.lastTick > 0 {
+        let gap = (l.timestamp - GestureLog.lastTick) * 1000
+        if gap > 34 { GestureLog.add("slow frame \(Int(gap)) ms") }
+      }
+      GestureLog.lastTick = l.timestamp
     }
   }
 }

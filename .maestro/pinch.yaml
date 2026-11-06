@@ -1,0 +1,27 @@
+# Writes in a note, then waits while .maestro/pinch.sh does real two-finger pinches and scrolls.
+# Afterwards writing has to still work and the page still move.
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- extendedWaitUntil: { visible: "T5.*", timeout: 240000 }
+- tapOn: { text: "Settings", optional: true }
+- extendedWaitUntil: { visible: "Draw with finger", timeout: 15000, optional: true }
+- tapOn: { text: "Draw with finger", optional: true }
+- tapOn: { text: "Back to notes", optional: true }
+- tapOn: { text: "T5.*" }
+- extendedWaitUntil: { visible: "More", timeout: 15000 }
+- waitForAnimationToEnd
+- swipe: { start: "30%, 30%", end: "70%, 32%", duration: 500 }
+- swipe: { start: "30%, 40%", end: "70%, 42%", duration: 500 }
+- swipe: { start: "30%, 50%", end: "70%, 54%", duration: 500 }
+- swipe: { start: "35%, 60%", end: "60%, 70%", duration: 500 }
+- takeScreenshot: a01-written
+# pinch.sh runs now (it never makes this text appear).
+- extendedWaitUntil: { visible: "Pinch test is never shown", timeout: 170000, optional: true }
+- takeScreenshot: a02-after-pinches
+- swipe: { start: "30%, 75%", end: "70%, 77%", duration: 500 }
+- takeScreenshot: a03-write-after
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: a04-home

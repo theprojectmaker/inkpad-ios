@@ -35,6 +35,10 @@ public final class QuillCanvasModule: Module {
     }
 
     // Apple's on-device model (no internet): its state, and one answer.
+    Function("gestureLogPath") { () -> String in
+      return GestureLog.path
+    }
+
     Function("localAIStatus") { () -> String in
       return OnDevice.aiStatus()
     }

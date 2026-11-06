@@ -49,9 +49,16 @@ struct TextBox: Codable, Equatable {
 final class InkScrollView: UIScrollView {
   var blocksPan: ((CGPoint) -> Bool)?
   var palmOn = false       // a hand is resting on the screen
+  var pencilUpAt: TimeInterval = 0
 
   override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-    if palmOn, g === panGestureRecognizer || g === pinchGestureRecognizer { return false }
+    if g === panGestureRecognizer || g === pinchGestureRecognizer {
+      // The hand comes down just as the Pencil lifts; nobody pinches that fast on purpose.
+      if palmOn || CACurrentMediaTime() - pencilUpAt < 0.25 {
+        GestureLog.add("\(g === panGestureRecognizer ? "scroll" : "pinch") not started: hand \(palmOn)")
+        return false
+      }
+    }
     if g === panGestureRecognizer, let blocksPan, blocksPan(g.location(in: self)) { return false }
     return super.gestureRecognizerShouldBegin(g)
   }
@@ -484,9 +491,13 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
     if !decelerate { settleInk() }
+    if zoomPreviewing { pinchEnded() }   // never left showing the pictures
   }
 
-  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { settleInk() }
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    settleInk()
+    if zoomPreviewing { pinchEnded() }
+  }
 
   /// The page has stopped: the ink goes back to covering just the screen.
   func settleInk() {
@@ -496,11 +507,15 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
 
   func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+    GestureLog.add("pinch start at \(Int(canvas.zoomScale / max(0.01, lastFit) * 100))%")
+    GestureLog.watching = true
     inkGesture.fingerGesturing()
     pinchBegan()
   }
 
   func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+    GestureLog.add("pinch end at \(Int(scale / max(0.01, lastFit) * 100))%")
+    GestureLog.watching = false
     updateTextScale()
     lastZoomEnd = CACurrentMediaTime()
     pinchEnded()
@@ -582,6 +597,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   // MARK: - Pages
 
   func setPages(_ ps: [PageSpec]) {
+    let oldFrames = frames
     // The marks count isn't enough: two papers can have as many lines at different places.
     let sig = { (p: PageSpec) -> String in "\(p.marks.count)/\(p.marks.reduce(0.0) { $0 + $1.x * 3 + $1.y * 7 + $1.r })/\(p.marks.first?.color ?? "")" }
     let key = ps.map { "\($0.id)|\($0.kind)|\($0.file)|\($0.index)|\($0.w)x\($0.h)|\($0.bg)|\(sig($0))" }.joined(separator: ";")
@@ -651,7 +667,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     inkShotHost.frame = pictureHost.frame
     if inkShotHost.superview == nil { pageHost.addSubview(inkShotHost) }
     pageHost.bringSubviewToFront(inkShotHost)
-    inkPictures = [:]
+    if zip(oldFrames, frames).contains(where: { $0 != $1 }) { inkPictures = [:] }
     refreshInkPicturesSoon()
     lastPage = -1
     DispatchQueue.main.async { [weak self] in self?.reportPage() }
