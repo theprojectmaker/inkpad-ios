@@ -4,12 +4,12 @@ import UIKit
 
 enum ShapeSnap {
   /// How long the Pencil has to rest to snap the stroke.
-  static let holdTime: TimeInterval = 0.45
+  static let holdTime: TimeInterval = 0.8
 
   /// The clean outline for what was drawn, or nil (keep it as drawn). A line has two points;
   /// `closed` shapes end where they started.
   static func outline(_ pts: [CGPoint]) -> (points: [CGPoint], closed: Bool)? {
-    guard pts.count >= 4, let end = pts.last else { return nil }
+    guard pts.count >= 8, let end = pts.last else { return nil }
     // Leave out the resting points at the end.
     var holdStart = pts.count - 1
     while holdStart > 0 && dist(pts[holdStart - 1], end) < 5 { holdStart -= 1 }
@@ -19,7 +19,8 @@ enum ShapeSnap {
     let start = shape[0], last = shape[shape.count - 1]
     let box = bounds(shape)
     let diag = hypot(box.width, box.height)
-    guard diag > 12 else { return nil }
+    // Pausing while writing is normal, so small strokes (letters, tiny marks) never snap.
+    guard diag > 45 else { return nil }
 
     let length = zip(shape, shape.dropFirst()).reduce(0) { $0 + dist($1.0, $1.1) }
     if dist(start, last) >= max(14, diag * 0.22) {

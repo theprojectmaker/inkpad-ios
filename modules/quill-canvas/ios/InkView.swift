@@ -359,7 +359,12 @@ final class InkView: UIView {
     plateReady = false
     let run = plateRun
     resume { [weak self] in self?.hidePlate(run) }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.hidePlate(run) }
+    // If the iPad never says the frame arrived.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+      guard let self, !self.moving, !self.paused else { return }
+      self.reveal()
+      self.hidePlate(run)
+    }
   }
 
   /// A pinch has its own pictures on the pages.
@@ -494,14 +499,32 @@ final class InkView: UIView {
   func blank() {
     paused = true
     onShown = nil
-    if gpu == nil { isHidden = true } else { queuePageFrame() }
+    if gpu == nil { isHidden = true; return }
+    layer.opacity = Self.unseen
+  }
+
+  /// Still on screen as far as the system goes, so frames keep arriving, but too faint to see.
+  private static let unseen: Float = 0.001
+
+  /// The sharp ink is really on screen: it shows, in the same screen update as the picture leaving.
+  func reveal() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.opacity = 1
+    CATransaction.commit()
   }
 
   /// Back to drawing the ink, sharp, in the same screen update as the pages.
   func resume(onShown shown: (() -> Void)? = nil) {
     paused = false
     isHidden = false
-    onShown = shown
+    onShown = { [weak self] in
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      self?.reveal()
+      shown?()
+      CATransaction.commit()
+    }
     settledDirty = true
     queuePageFrame()
   }
@@ -590,6 +613,7 @@ final class InkView: UIView {
       m.drawNow(finishing: finishing)
     }
     guard let gpu else { drawFallback(); return }
+    if paused { return }
     if withPages {
       lastCommand?.waitUntilCompleted()     // ink and pages have to move together
     } else if link != nil && drewThisRefresh && !finishing {

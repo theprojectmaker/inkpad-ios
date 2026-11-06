@@ -286,7 +286,11 @@ extension QuillCanvasView {
       self.pageViewList.forEach { $0.showInk(nil) }
     }
     ink.resume(onShown: clear)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: clear)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+      guard let self, !self.zoomPreviewing, !self.ink.paused else { return }
+      self.ink.reveal()
+      clear()
+    }
   }
 }
 

@@ -48,8 +48,10 @@ struct TextBox: Codable, Equatable {
 /// Fingers scroll and zoom; a finger on a lasso selection moves that instead.
 final class InkScrollView: UIScrollView {
   var blocksPan: ((CGPoint) -> Bool)?
+  var palmOn = false       // a hand is resting on the screen
 
   override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+    if palmOn, g === panGestureRecognizer || g === pinchGestureRecognizer { return false }
     if g === panGestureRecognizer, let blocksPan, blocksPan(g.location(in: self)) { return false }
     return super.gestureRecognizerShouldBegin(g)
   }
@@ -297,6 +299,14 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     canvas.minimumZoomScale = 0.5
     canvas.maximumZoomScale = 6
     canvas.bouncesZoom = false
+    let palm = PalmWatch(target: nil, action: nil)
+    palm.owner = self
+    palm.cancelsTouchesInView = false
+    palm.delaysTouchesBegan = false
+    palm.delaysTouchesEnded = false
+    palm.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    palm.delegate = self
+    canvas.addGestureRecognizer(palm)
     let fingers = [UITouch.TouchType.direct, .indirect, .indirectPointer].map { NSNumber(value: $0.rawValue) }
     canvas.panGestureRecognizer.allowedTouchTypes = fingers
     canvas.pinchGestureRecognizer?.allowedTouchTypes = fingers

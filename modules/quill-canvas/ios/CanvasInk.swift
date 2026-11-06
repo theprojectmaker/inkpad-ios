@@ -113,6 +113,29 @@ final class InkGesture: UIGestureRecognizer {
   }
 }
 
+/// Watches for a resting hand without taking part in anything: its touches are far bigger than a fingertip.
+final class PalmWatch: UIGestureRecognizer {
+  weak var owner: QuillCanvasView?
+  private static let palm: CGFloat = 32
+
+  private func look(_ touches: Set<UITouch>) {
+    guard touches.contains(where: { $0.majorRadius >= Self.palm }) else { return }
+    (view as? InkScrollView)?.palmOn = true
+    owner?.palmDown()
+  }
+  private func done(_ event: UIEvent) {
+    let left = event.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled && $0.type == .direct } ?? []
+    if left.isEmpty {
+      (view as? InkScrollView)?.palmOn = false
+      state = .failed
+    }
+  }
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { look(touches) }
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { look(touches) }
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
+}
+
 /// A stroke while it's being written: steadies the raw points and applies the pen.
 final class PenCapture {
   let pen: InkPen
@@ -388,6 +411,18 @@ extension QuillCanvasView {
   private func pageRect(at p: CGPoint) -> CGRect? { frames.first { $0.contains(p) } }
 
   /// Not right after a zoom (fingers rarely lift together), and writing has to start on a page.
+  /// A big touch has appeared: it's a hand, and hands don't scroll or zoom.
+  func palmDown() {
+    guard canvas.isDragging || canvas.isZooming else { return }
+    let start = dragStartOffset
+    let wasDragging = canvas.isDragging
+    canvas.panGestureRecognizer.isEnabled = false
+    canvas.pinchGestureRecognizer?.isEnabled = false
+    canvas.panGestureRecognizer.isEnabled = true
+    canvas.pinchGestureRecognizer?.isEnabled = true
+    if wasDragging { canvas.setContentOffset(start, animated: false) }
+  }
+
   func fingerMayDraw(_ t: UITouch) -> Bool {
     if CACurrentMediaTime() - lastZoomEnd < 0.3 { return false }
     if inkMode == .write && pageRect(at: location(t)) == nil { return false }
@@ -550,6 +585,10 @@ extension QuillCanvasView {
   private func reshapeSnap(_ c: PenCapture, to p: CGPoint) {
     guard let s = c.snap else { return }
     if !s.closed {
+      // It adjusts the end of the line, not a whole new line across the page.
+      let d = hypot(p.x - s.anchor.x, p.y - s.anchor.y)
+      let line = hypot(s.anchor.x - s.points[0].x, s.anchor.y - s.points[0].y)
+      if d > max(60, line * 0.5) { return }
       setSnapped(c, [s.points[0], p])
     } else {
       let k = ShapeSnap.dist(p, s.centre) / max(1, ShapeSnap.dist(s.anchor, s.centre))
