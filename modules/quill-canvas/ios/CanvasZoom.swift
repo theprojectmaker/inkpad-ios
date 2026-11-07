@@ -277,6 +277,117 @@ extension QuillCanvasView {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: w)
   }
 
+  /// What's on screen now, in page coordinates.
+  private func visibleContent() -> CGRect { canvas.convert(canvas.bounds, to: pageHost) }
+
+  /// A sharp picture of the ink on screen, at this zoom, made while nothing's happening. A pinch then
+  /// starts looking exactly as it did, instead of a page-sized picture stretched (which looked jagged).
+  func refreshInkPatch() {
+    guard !zoomPreviewing, glide == nil, !frames.isEmpty, canvas.bounds.width > 1 else { return }
+    let z = canvas.zoomScale
+    let seen = visibleContent()
+    if let p = inkPatch, abs(p.zoom - z) < z * 0.001, p.rect.contains(seen), !document.changed(p.rect, since: p.version) { return }
+    let rect = seen.insetBy(dx: -seen.width * 0.12, dy: -seen.height * 0.12).integral
+    let screen = window?.screen.scale ?? UIScreen.main.scale
+    let density = min(z * screen, 4096 / max(1, max(rect.width, rect.height)))
+    patchRun += 1
+    let run = patchRun, version = document.version
+    let strokes = document.strokes.filter { !$0.lifted && $0.bounds.intersects(rect) }
+    if strokes.isEmpty { inkPatch = (rect, z, version, nil); return }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let fmt = UIGraphicsImageRendererFormat()
+      fmt.scale = density
+      fmt.opaque = false
+      let image = autoreleasepool {
+        UIGraphicsImageRenderer(size: rect.size, format: fmt).image { InkRaster.draw(strokes, rect: rect, in: $0.cgContext) }.cgImage
+      }
+      DispatchQueue.main.async {
+        guard let self, run == self.patchRun, !self.document.changed(rect, since: version) else { return }
+        self.inkPatch = (rect, z, version, image)
+      }
+    }
+  }
+
+  func refreshInkPatchSoon() {
+    patchSoon?.cancel()
+    let w = DispatchWorkItem { [weak self] in self?.refreshInkPatch() }
+    patchSoon = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: w)
+  }
+
+  private func showPatch() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    guard let p = inkPatch, let image = p.image, abs(p.zoom - canvas.zoomScale) < p.zoom * 0.01,
+          !document.changed(p.rect, since: p.version) else {
+      patchLayer.isHidden = true
+      inkLowView.layer.mask = nil
+      return
+    }
+    patchLayer.frame = p.rect
+    patchLayer.contents = image
+    patchLayer.isHidden = false
+    let hole = CAShapeLayer()
+    let path = UIBezierPath(rect: inkLowView.bounds)
+    path.append(UIBezierPath(rect: p.rect))
+    hole.path = path.cgPath
+    hole.fillRule = .evenOdd
+    inkLowView.layer.mask = hole
+    GestureLog.add("sharp picture used")
+  }
+
+  private func hidePatch() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    patchLayer.isHidden = true
+    patchLayer.contents = nil
+    inkLowView.layer.mask = nil
+    CATransaction.commit()
+  }
+
+  /// After a pinch: glides back to the page width if it ended near it or smaller, and back from
+  /// too far in. Driven frame by frame, so the pages, the pictures and everything on them stay together.
+  func settleZoom() -> Bool {
+    guard glide == nil, !canvas.isDragging, !canvas.isZooming else { return false }
+    let f = currentFit(), z = canvas.zoomScale
+    let target: CGFloat
+    if z < f * 1.08 && abs(z - f) > f * 0.003 { target = f }
+    else if z > f * 5 { target = f * 5 }
+    else { return false }
+    let mid = CGPoint(x: canvas.bounds.width / 2, y: canvas.bounds.height / 2)
+    let off0 = canvas.contentOffset
+    let cp0 = CGPoint(x: (off0.x + mid.x) / z, y: (off0.y + mid.y) / z)
+    let content = CGSize(width: canvas.contentSize.width / z, height: canvas.contentSize.height / z)
+    let size1 = CGSize(width: content.width * target, height: content.height * target)
+    let padX = max(0, (canvas.bounds.width - size1.width) / 2)
+    let top = canvas.contentInset.top, bottom = canvas.contentInset.bottom
+    var off1 = CGPoint(x: cp0.x * target - mid.x, y: cp0.y * target - mid.y)
+    off1.x = min(max(off1.x, -padX), max(-padX, size1.width - canvas.bounds.width + padX))
+    off1.y = min(max(off1.y, -top), max(-top, size1.height - canvas.bounds.height + bottom))
+    let cp1 = CGPoint(x: (off1.x + mid.x) / target, y: (off1.y + mid.y) / target)
+    GestureLog.add("glide to \(Int(target / f * 100))%")
+    glide = ZoomGlide(duration: 0.32, step: { [weak self] e in
+      guard let self else { return }
+      let zz = z + (target - z) * e
+      let cp = CGPoint(x: cp0.x + (cp1.x - cp0.x) * e, y: cp0.y + (cp1.y - cp0.y) * e)
+      self.canvas.setZoomScale(zz, animated: false)
+      self.canvas.contentOffset = CGPoint(x: cp.x * zz - mid.x, y: cp.y * zz - mid.y)
+    }, done: { [weak self] in
+      guard let self else { return }
+      self.glide = nil
+      self.updateTextScale()
+      self.pinchEnded()
+    })
+    return true
+  }
+
+  func stopGlide() {
+    guard let g = glide else { return }
+    g.stop()
+    glide = nil
+  }
+
   func pinchBegan() {
     guard !zoomPreviewing, let near = nearPages() else { return }
     let began = CACurrentMediaTime()
@@ -296,7 +407,7 @@ extension QuillCanvasView {
           inkPictures[id] = (version, inkPicture(strokes, page: frames[i]))
         } else { later.append(i) }
       }
-      pageViewList[i].showInk(inkPictures[id]?.image, in: inkShotHost)
+      pageViewList[i].showInk(inkPictures[id]?.image, in: inkLowView)
     }
     let run = pictureRun
     if !later.isEmpty {
@@ -308,11 +419,12 @@ extension QuillCanvasView {
           DispatchQueue.main.async {
             guard run == self.pictureRun, self.zoomPreviewing, i < self.pageViewList.count else { return }
             self.inkPictures[id] = (version, image)
-            self.pageViewList[i].showInk(image, in: self.inkShotHost)
+            self.pageViewList[i].showInk(image, in: self.inkLowView)
           }
         }
       }
     }
+    showPatch()
     ink.dropPlate()
     ink.blank()
   }
@@ -321,16 +433,19 @@ extension QuillCanvasView {
     guard zoomPreviewing else { return }
     // A pinch usually ends still sliding or with a finger down. The pictures stay on the pages until
     // everything has come to rest, because they can't come apart from them.
-    if canvas.isZooming || canvas.isZoomBouncing || canvas.isDragging || canvas.isDecelerating {
+    if glide != nil || canvas.isZooming || canvas.isZoomBouncing || canvas.isDragging || canvas.isDecelerating {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in self?.pinchEnded() }
       return
     }
     zoomPreviewing = false
     GestureLog.add("at rest, ink back")
+    refreshZoomInset()     // places the ink for where the pinch ended
     // The pictures go once the sharp ink is on the screen (with a limit, in case that's never reported).
     let clear = { [weak self] in
       guard let self, !self.zoomPreviewing else { return }
-      self.pageViewList.forEach { $0.showInk(nil, in: self.inkShotHost) }
+      self.pageViewList.forEach { $0.showInk(nil, in: self.inkLowView) }
+      self.hidePatch()
+      self.refreshInkPatchSoon()
     }
     ink.resume(onShown: clear)
     let g = ink.showGeneration
@@ -339,6 +454,39 @@ extension QuillCanvasView {
       if g == self.ink.showGeneration && !self.ink.paused { self.ink.reveal() }
       clear()
     }
+  }
+}
+
+/// Runs a short eased change once per screen update.
+final class ZoomGlide {
+  private var link: CADisplayLink?
+  private let start = CACurrentMediaTime()
+  private let duration: CFTimeInterval
+  private let step: (CGFloat) -> Void
+  private let done: () -> Void
+
+  init(duration: CFTimeInterval, step: @escaping (CGFloat) -> Void, done: @escaping () -> Void) {
+    self.duration = duration
+    self.step = step
+    self.done = done
+    let l = CADisplayLink(target: self, selector: #selector(tick))
+    l.add(to: .main, forMode: .common)
+    link = l
+  }
+
+  @objc private func tick() {
+    let t = min(1, (CACurrentMediaTime() - start) / duration)
+    let e = 1 - pow(1 - t, 3)
+    step(CGFloat(e))
+    if t >= 1 {
+      stop()
+      done()
+    }
+  }
+
+  func stop() {
+    link?.invalidate()
+    link = nil
   }
 }
 

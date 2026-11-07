@@ -131,6 +131,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   static let thumbQueue = DispatchQueue(label: "quill.thumbs", qos: .userInitiated)
   var zoomPreviewing = false
   var pictureRun = 0
+  var inkPatch: (rect: CGRect, zoom: CGFloat, version: Int, image: CGImage?)?
+  var patchRun = 0
+  var patchSoon: DispatchWorkItem?
+  let inkLowView = UIView()      // each page's ink picture, with a hole where the sharp one goes
+  let patchLayer = CALayer()     // the sharp picture of what's on screen
+  var glide: ZoomGlide?
   var pictureSoon: DispatchWorkItem?
   let inkShotHost = UIView()
   var shapeKind = "line"
@@ -467,7 +473,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   /// The ink covers exactly what's on screen, and moves with the pages in the same frame.
   private func syncInk() {
-    ink.scrolled(to: canvas.bounds, zoom: canvas.zoomScale)
+    if !zoomPreviewing { ink.scrolled(to: canvas.bounds, zoom: canvas.zoomScale) }
     placeSelectionUI()
     placeBoxBar()
     zoomWriter?.syncBox()
@@ -483,6 +489,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    stopGlide()
     dragStartOffset = canvas.contentOffset
     if fingerDraws || inkMode == .compass || inkMode == .shape { inkGesture.fingerGesturing() }
     // A pinch is also a two-finger drag. Its pictures on the pages scale with them; the moving picture wouldn't.
@@ -490,12 +497,13 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-    if !decelerate { settleInk() }
+    if !decelerate { settleInk(); refreshInkPatchSoon() }
     if zoomPreviewing { pinchEnded() }   // never left showing the pictures
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
     settleInk()
+    refreshInkPatchSoon()
     if zoomPreviewing { pinchEnded() }
   }
 
@@ -507,6 +515,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
 
   func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+    if let p = canvas.pinchGestureRecognizer, p.state == .began || p.state == .changed { stopGlide() }
     GestureLog.add("pinch start at \(Int(canvas.zoomScale / max(0.01, lastFit) * 100))%")
     GestureLog.watching = true
     inkGesture.fingerGesturing()
@@ -514,11 +523,16 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
 
   func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+    if glide != nil { return }
     GestureLog.add("pinch end at \(Int(scale / max(0.01, lastFit) * 100))%")
     GestureLog.watching = false
     updateTextScale()
     lastZoomEnd = CACurrentMediaTime()
-    pinchEnded()
+    // Back to the page width if it ended near it or smaller, or down from too far in: smoothly.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if !self.settleZoom() { self.pinchEnded() }
+    }
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -667,8 +681,17 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     inkShotHost.frame = pictureHost.frame
     if inkShotHost.superview == nil { pageHost.addSubview(inkShotHost) }
     pageHost.bringSubviewToFront(inkShotHost)
-    if zip(oldFrames, frames).contains(where: { $0 != $1 }) { inkPictures = [:] }
+    inkLowView.isUserInteractionEnabled = false
+    inkLowView.frame = inkShotHost.bounds
+    if inkLowView.superview == nil { inkShotHost.addSubview(inkLowView) }
+    if patchLayer.superlayer == nil {
+      patchLayer.contentsGravity = .resize
+      patchLayer.isHidden = true
+      inkShotHost.layer.addSublayer(patchLayer)
+    }
+    if zip(oldFrames, frames).contains(where: { $0 != $1 }) { inkPictures = [:]; inkPatch = nil }
     refreshInkPicturesSoon()
+    refreshInkPatchSoon()
     lastPage = -1
     DispatchQueue.main.async { [weak self] in self?.reportPage() }
     if bounds.width > 1 {
@@ -747,6 +770,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
         DispatchQueue.main.async { [weak self] in
           self?.emitState(strokes: count)
           self?.refreshInkPictures()
+          self?.refreshInkPatchSoon()
         }
       }
     }
