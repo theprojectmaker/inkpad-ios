@@ -294,7 +294,7 @@ extension QuillCanvasView {
     let run = patchRun, version = document.version
     let strokes = document.strokes.filter { !$0.lifted && $0.bounds.intersects(rect) }
     if strokes.isEmpty { inkPatch = (rect, z, version, nil); return }
-    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+    DispatchQueue.global(qos: .utility).async { [weak self] in
       let fmt = UIGraphicsImageRendererFormat()
       fmt.scale = density
       fmt.opaque = false
@@ -306,6 +306,20 @@ extension QuillCanvasView {
         self.inkPatch = (rect, z, version, image)
       }
     }
+  }
+
+  /// The pictures for zooming are redrawn once writing has paused, not after every stroke, so they
+  /// never take time from the stroke being written.
+  func refreshAfterWriting() {
+    writingIdle?.cancel()
+    let w = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      if self.capture != nil || self.canvas.pencilDown { self.refreshAfterWriting(); return }
+      self.refreshInkPictures()
+      self.refreshInkPatch()
+    }
+    writingIdle = w
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: w)
   }
 
   func refreshInkPatchSoon() {

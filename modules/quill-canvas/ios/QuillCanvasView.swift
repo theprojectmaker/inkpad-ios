@@ -50,6 +50,7 @@ final class InkScrollView: UIScrollView {
   var blocksPan: ((CGPoint) -> Bool)?
   var palmOn = false       // a hand is resting on the screen
   var pencilUpAt: TimeInterval = 0
+  var pencilDown = false
 
   override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
     if g === panGestureRecognizer || g === pinchGestureRecognizer {
@@ -137,6 +138,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   let inkLowView = UIView()      // each page's ink picture, with a hole where the sharp one goes
   let patchLayer = CALayer()     // the sharp picture of what's on screen
   var glide: ZoomGlide?
+  var writingIdle: DispatchWorkItem?
   var pictureSoon: DispatchWorkItem?
   let inkShotHost = UIView()
   var shapeKind = "line"
@@ -772,8 +774,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
         write()
         DispatchQueue.main.async { [weak self] in
           self?.emitState(strokes: count)
-          self?.refreshInkPictures()
-          self?.refreshInkPatchSoon()
+          self?.refreshAfterWriting()
         }
       }
     }

@@ -73,6 +73,11 @@ final class InkGesture: UIGestureRecognizer {
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
     guard let a = active, touches.contains(a) else { return }
     lastEvent = event
+    if a.type == .direct && a.majorRadius > 40 {
+      GestureLog.add("finger stroke dropped: it was a hand")
+      if told { owner?.inkCancelled(); state = .cancelled } else { state = .failed }
+      return
+    }
     if !told {
       let p = a.location(in: view)
       if hypot(p.x - downAt.x, p.y - downAt.y) >= Self.fingerMove { begin(a, event) }
@@ -114,19 +119,25 @@ final class InkGesture: UIGestureRecognizer {
   }
 }
 
-/// Watches for a resting hand without taking part in anything. A hand can stop a gesture starting,
-/// but size alone proves nothing: a thumb or a flat finger in a pinch is as big as the edge of a palm.
+/// Watches for a resting hand without taking part in anything. Any touch that lands while the Pencil
+/// is writing, or just after, is a hand for as long as it stays down, however small it looks: the side of
+/// a hand often starts as a fingertip-sized touch. While one is down the page can't start to scroll or zoom.
 final class PalmWatch: UIGestureRecognizer {
   weak var owner: QuillCanvasView?
+  private var hands = Set<ObjectIdentifier>()
   private static let afterWriting: CGFloat = 41
   private static let alone: CGFloat = 52
 
-  private func look(_ event: UIEvent) {
+  private func look(_ began: Set<UITouch>?, _ event: UIEvent) {
+    guard let scroll = view as? InkScrollView else { return }
+    let writing = scroll.pencilDown || (owner?.pencilRecently ?? false)
+    if let began, writing {
+      for t in began where t.type == .direct { hands.insert(ObjectIdentifier(t)) }
+    }
     let down = event.allTouches?.filter { $0.type == .direct && $0.phase != .ended && $0.phase != .cancelled } ?? []
     let biggest = down.map(\.majorRadius).max() ?? 0
-    let writing = owner?.pencilRecently ?? false
-    let hand = writing ? biggest >= Self.afterWriting : (down.count == 1 && biggest >= Self.alone)
-    guard let scroll = view as? InkScrollView else { return }
+    let resting = down.contains { hands.contains(ObjectIdentifier($0)) }
+    let hand = resting || (writing ? biggest >= Self.afterWriting : (down.count == 1 && biggest >= Self.alone))
     if hand {
       if !scroll.palmOn {
         scroll.palmOn = true
@@ -134,21 +145,26 @@ final class PalmWatch: UIGestureRecognizer {
         owner?.palmDown()
       }
     } else if scroll.palmOn && !writing && down.count >= 2 {
-      scroll.palmOn = false    // a second finger: that's a pinch or a scroll after all
+      scroll.palmOn = false    // a second finger, away from any hand: a pinch or a scroll after all
     }
   }
-  private func done(_ event: UIEvent) {
+  private func done(_ touches: Set<UITouch>, _ event: UIEvent) {
+    for t in touches { hands.remove(ObjectIdentifier(t)) }
     let left = event.allTouches?.filter { $0.phase != .ended && $0.phase != .cancelled && $0.type == .direct } ?? []
     if left.isEmpty {
+      hands.removeAll()
       (view as? InkScrollView)?.palmOn = false
       state = .failed
     }
   }
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { look(event) }
-  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { look(event) }
-  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
-  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { done(event) }
-  override func reset() { (view as? InkScrollView)?.palmOn = false }
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { look(touches, event) }
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { look(nil, event) }
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { done(touches, event) }
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { done(touches, event) }
+  override func reset() {
+    hands.removeAll()
+    (view as? InkScrollView)?.palmOn = false
+  }
 }
 
 /// A stroke while it's being written: steadies the raw points and applies the pen.
@@ -436,7 +452,7 @@ extension QuillCanvasView {
     canvas.setContentOffset(start, animated: false)
   }
 
-  var pencilRecently: Bool { CACurrentMediaTime() - canvas.pencilUpAt < 1 }
+  var pencilRecently: Bool { canvas.pencilDown || CACurrentMediaTime() - canvas.pencilUpAt < 1.5 }
 
   /// However a touch ended, the page can be moved again.
   func gesturesBack() {
@@ -449,13 +465,22 @@ extension QuillCanvasView {
 
   func fingerMayDraw(_ t: UITouch) -> Bool {
     if CACurrentMediaTime() - lastZoomEnd < 0.3 { return false }
+    if #available(iOS 17.5, *), UIPencilInteraction.prefersPencilOnlyDrawing { return false }
+    // Someone writing with the Pencil rests their hand on the glass: for a few minutes after it's
+    // been used, a touch is a hand or a scroll, never ink.
+    if canvas.pencilDown || CACurrentMediaTime() - canvas.pencilUpAt < 300 { return false }
+    if t.majorRadius > 30 { return false }
     if inkMode == .write && pageRect(at: location(t)) == nil { return false }
     return true
   }
 
   func inkBegan(_ t: UITouch, _ event: UIEvent) {
     guard isLoaded else { return }
-    if t.type != .direct { holdPageStill() }   // a writing finger still lets two fingers scroll
+    if t.type != .direct {
+      canvas.pencilDown = true
+      GestureLog.watching = true    // notes any late frame while writing
+      holdPageStill()               // a writing finger still lets two fingers scroll
+    }
     if let z = zoomWriter { z.capturing = z.pad.bounds.contains(t.location(in: z.pad)) }
     let p = location(t)
     switch inkMode {
@@ -500,12 +525,21 @@ extension QuillCanvasView {
     case .shape: shapeEnded()
     case .comment: if t.type != .direct { tappedForComment(at: location(t)) }   // a finger tap arrives by its own route
     }
-    if t.type != .direct { canvas.pencilUpAt = CACurrentMediaTime() }
+    if t.type != .direct {
+      canvas.pencilUpAt = CACurrentMediaTime()
+      canvas.pencilDown = false
+      GestureLog.watching = false
+    }
     GestureLog.add("stroke end")
     letPageMove()
   }
 
   func inkCancelled() {
+    if canvas.pencilDown {
+      canvas.pencilDown = false
+      canvas.pencilUpAt = CACurrentMediaTime()
+      GestureLog.watching = false
+    }
     capture = nil
     ink.wet = nil
     ink.penUp()
