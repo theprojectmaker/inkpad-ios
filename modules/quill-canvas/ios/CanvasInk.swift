@@ -73,7 +73,7 @@ final class InkGesture: UIGestureRecognizer {
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
     guard let a = active, touches.contains(a) else { return }
     lastEvent = event
-    if a.type == .direct && a.majorRadius > 40 {
+    if a.type == .direct && a.majorRadius > 60 {
       GestureLog.add("finger stroke dropped: it was a hand")
       if told { owner?.inkCancelled(); state = .cancelled } else { state = .failed }
       return
@@ -471,8 +471,8 @@ extension QuillCanvasView {
     if #available(iOS 17.5, *), UIPencilInteraction.prefersPencilOnlyDrawing { return false }
     // Someone writing with the Pencil rests their hand on the glass: for a few minutes after it's
     // been used, a touch is a hand or a scroll, never ink.
-    if canvas.pencilDown || CACurrentMediaTime() - canvas.pencilUpAt < 300 { return false }
-    if t.majorRadius > 30 { return false }
+    if canvas.pencilDown || CACurrentMediaTime() - canvas.pencilUpAt < 20 { return false }
+    if t.majorRadius > 52 { return false }   // a fingertip often reads 31 or 42; only a palm is bigger
     if inkMode == .write && pageRect(at: location(t)) == nil { return false }
     return true
   }
