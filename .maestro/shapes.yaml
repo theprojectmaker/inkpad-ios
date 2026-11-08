@@ -15,19 +15,32 @@ appId: com.solyapps.notes
 - tapOn: { text: "More tools", optional: true }
 - tapOn: { text: "Shapes", optional: true }
 - takeScreenshot: s01-shape-bar
+- tapOn: { text: "More shapes" }
+- takeScreenshot: s01b-more-shapes
+- tapOn: { text: "More shapes" }
+- tapOn: { text: "More shapes" }
 - tapOn: { text: "Double arrow" }
 - swipe: { start: "12%, 25%", end: "40%, 33%", duration: 500 }
+- tapOn: { text: "More shapes" }
 - tapOn: { text: "Diamond" }
 - swipe: { start: "55%, 22%", end: "80%, 36%", duration: 500 }
+- tapOn: { text: "More shapes" }
 - tapOn: { text: "Star" }
 - swipe: { start: "12%, 42%", end: "38%, 58%", duration: 500 }
+- tapOn: { text: "More shapes" }
 - tapOn: { text: "Check mark" }
 - swipe: { start: "55%, 44%", end: "75%, 56%", duration: 500 }
+- tapOn: { text: "More shapes" }
 - tapOn: { text: "Cross" }
 - swipe: { start: "12%, 66%", end: "30%, 78%", duration: 500 }
+- tapOn: { text: "More shapes" }
 - tapOn: { text: "Graph axes" }
 - swipe: { start: "50%, 62%", end: "85%, 88%", duration: 500 }
 - takeScreenshot: s02-all-shapes
+- tapOn: { text: "More shapes" }
+- tapOn: { text: "Number line" }
+- swipe: { start: "10%, 90%", end: "45%, 94%", duration: 500 }
+- takeScreenshot: s02b-number-line
 - tapOn: { text: "Undo", optional: true }
 - takeScreenshot: s03-undo-axes
 - tapOn: { text: "Back to notes", optional: true }

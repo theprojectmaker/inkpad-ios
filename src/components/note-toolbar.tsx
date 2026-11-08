@@ -332,7 +332,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const upright = dock === 'left' || dock === 'right';
   cardPlace = dock;
   const [set2, setSet2] = useState(false);
-  const [pop, setPop] = useState<null | 'colors' | 'addColor' | 'size' | 'line' | 'nib' | 'brush'>(null);
+  const [pop, setPop] = useState<null | 'colors' | 'addColor' | 'size' | 'line' | 'nib' | 'brush' | 'shapes'>(null);
   const [toolbox, setToolbox] = useState(false);
   const kind = (s.inkKind ?? 'pen') as string;
   const k = kitOf(s, kind);
@@ -451,7 +451,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     row2 = (
       <View style={R2}>
         {dots}<Bar />
-        {SHAPES.map((x) => shapeBtn(x.icon, x.label, cur === x.id, () => set({ shapeType: x.id })))}
+        {SHAPES.slice(0, 5).map((x) => shapeBtn(x.icon, x.label, cur === x.id, () => set({ shapeType: x.id })))}
+        {(() => { const more = SHAPES.slice(5).find((x) => x.id === cur); return shapeBtn(more ? more.icon : 'grid', 'More shapes', !!more || pop === 'shapes', () => setPop(pop === 'shapes' ? null : 'shapes')); })()}
         <Bar />
         {shapeBtn('lock', 'Lock angles and sides', !!s.shapeLock, () => set({ shapeLock: !s.shapeLock }))}
         {shapeBtn('fill', 'Fill shapes', !!s.shapeFill, () => set({ shapeFill: !s.shapeFill }))}
@@ -535,6 +536,21 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         ) : pop === 'size' ? (
           <Card width={Math.min(screen - 40, 400)}>
             <ThicknessSlider value={k.sizes[k.size]} onChange={(n) => { const v = k.sizes.slice(); v[k.size] = n; patch({ sizes: v }); }} />
+          </Card>
+        ) : pop === 'shapes' ? (
+          <Card width={Math.min(screen - 40, 330)}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {SHAPES.slice(5).map((x) => {
+                const on = (s.shapeType ?? 'line') === x.id;
+                return (
+                  <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => { set({ shapeType: x.id }); setPop(null); }}
+                    style={{ width: 96, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E9EEFD' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+                    <ToolIcon name={x.icon} size={22} color={on ? BLUE : INK} />
+                    <Text style={{ fontSize: 12, color: '#15171C' }}>{x.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </Card>
         ) : pop === 'brush' ? (
           <Card width={Math.min(screen - 40, 300)}>
