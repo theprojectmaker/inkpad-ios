@@ -29,6 +29,8 @@ export const KITS: Record<string, ToolKit> = {
 
 export const kitOf = (s: Pick<Settings, 'tk'>, id: string): ToolKit => ({ ...(KITS[id] ?? KITS.pen), ...(s.tk?.[id] ?? {}) });
 
+const SHOWS = ['colors', 'addColor', 'size', 'line', 'nib', 'brush', 'shapes'];
+
 const SHAPES = [
   { id: 'line', icon: 'line', label: 'Line' },
   { id: 'arrow', icon: 'arrow', label: 'Arrow' },
@@ -335,6 +337,9 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const [pop, setPop] = useState<null | 'colors' | 'addColor' | 'size' | 'line' | 'nib' | 'brush' | 'shapes'>(null);
   const [toolbox, setToolbox] = useState(false);
   const kind = (s.inkKind ?? 'pen') as string;
+  // A pop-up left open (it covers the whole screen to catch a tap outside it) would swallow the next
+  // stroke: it closes whenever the tool changes.
+  useEffect(() => { setPop(null); }, [kind]);
   const k = kitOf(s, kind);
   const color = k.colors[k.color] ?? '#000000';
   const patch = (p: Partial<ToolKit>) => set({ tk: { ...(s.tk ?? {}), [kind]: { ...k, ...p } } });
@@ -519,7 +524,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   return (
     <>
       <Toolbox visible={toolbox} onClose={() => setToolbox(false)} onSettings={onSettings} />
-      {pop ? <Modal visible transparent animationType="none" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={() => setPop(null)}>
+      {pop && SHOWS.includes(pop) ? <Modal visible transparent animationType="none" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={() => setPop(null)}>
         <Pressable accessibilityLabel="Close" style={StyleSheet.absoluteFill} onPress={() => setPop(null)} />
         {pop === 'colors' || pop === 'addColor' ? (
           <Card>
@@ -547,6 +552,21 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                     style={{ width: 84, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E9EEFD' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
                     <ToolIcon name={x.icon} size={22} color={on ? BLUE : INK} />
                     <Text style={{ fontSize: 12, color: '#15171C' }}>{x.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Card>
+        ) : pop === 'nib' ? (
+          <Card width={Math.min(screen - 40, 300)}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#15171C', marginBottom: 6 }}>Nib angle</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {[0, 15, 30, 45, 60, 75, 90].map((a) => {
+                const on = (s.nibAngle ?? 45) === a;
+                return (
+                  <Pressable key={a} accessibilityLabel={`Nib angle ${a} degrees`} onPress={() => { set({ nibAngle: a }); setPop(null); }}
+                    style={{ width: 56, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+                    <Text style={{ fontSize: 13, color: '#15171C' }}>{a}°</Text>
                   </Pressable>
                 );
               })}

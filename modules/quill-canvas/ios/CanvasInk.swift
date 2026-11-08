@@ -484,6 +484,7 @@ extension QuillCanvasView {
       GestureLog.watching = true    // notes any late frame while writing
       holdPageStill()               // a writing finger still lets two fingers scroll
     }
+    if !zoomPreviewing { ink.ensureShown() }
     if let z = zoomWriter { z.capturing = z.pad.bounds.contains(t.location(in: z.pad)) }
     let p = location(t)
     switch inkMode {

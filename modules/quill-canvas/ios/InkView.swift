@@ -571,6 +571,24 @@ final class InkView: UIView {
   }
 
   /// Back to drawing the ink, sharp, in the same screen update as the pages.
+  /// Writing has started: whatever happened before, the ink has to be on screen now. Hidden with no pinch
+  /// or scroll going on means something was missed, so it's shown straight away.
+  func ensureShown() {
+    guard gpu != nil, !moving else { return }
+    if paused {
+      paused = false
+      showGen += 1
+      onShown = nil
+      settledDirty = true
+      reveal()
+      drawNow(finishing: true)
+      GestureLog.add("ink was hidden when writing started: shown")
+    } else if layer.opacity < 1 && onShown == nil {
+      reveal()
+      GestureLog.add("ink was faded when writing started: shown")
+    }
+  }
+
   func resume(onShown shown: (() -> Void)? = nil) {
     paused = false
     isHidden = false
