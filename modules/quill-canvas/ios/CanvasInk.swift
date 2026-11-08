@@ -54,7 +54,7 @@ final class InkGesture: UIGestureRecognizer {
       return
     }
     if t.type == .direct {
-      if touches.count > 1 || t.majorRadius > 40 { state = .failed; return }   // two fingers, or a palm
+      if touches.count > 1 || t.majorRadius > 52 { state = .failed; return }   // two fingers, or a palm (a firm fingertip reads 42)
       if owner?.fingerMayDraw(t) != true { state = .failed; return }
     }
     active = t
