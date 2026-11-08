@@ -17,7 +17,7 @@ appId: com.solyapps.notes
 - takeScreenshot: s01-shape-bar
 - tapOn: { text: "More shapes" }
 - takeScreenshot: s01b-more-shapes
-- tapOn: { text: "Double arrow" }
+- tapOn: { text: "Right triangle" }
 - swipe: { start: "12%, 25%", end: "40%, 33%", duration: 500 }
 - tapOn: { text: "More shapes" }
 - tapOn: { text: "Diamond" }
