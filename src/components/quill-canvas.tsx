@@ -52,6 +52,7 @@ type Props = ViewProps & {
   tool: CanvasTool;
   fingerDraws?: boolean;
   scribble?: boolean;        // Apple Pencil handwriting turns into typing in text boxes
+  scratchOut?: boolean;      // scribbling over writing deletes it
   ruler?: boolean;
   inkStats?: boolean;        // the on-screen readout of how fast the ink is
   shapeSnap?: boolean;       // hold the Pencil at the end of a stroke: it snaps to a line or shape

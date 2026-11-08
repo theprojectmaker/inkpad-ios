@@ -29,6 +29,20 @@ export const KITS: Record<string, ToolKit> = {
 
 export const kitOf = (s: Pick<Settings, 'tk'>, id: string): ToolKit => ({ ...(KITS[id] ?? KITS.pen), ...(s.tk?.[id] ?? {}) });
 
+const SHAPES = [
+  { id: 'line', icon: 'line', label: 'Line' },
+  { id: 'arrow', icon: 'arrow', label: 'Arrow' },
+  { id: 'double', icon: 'dbl', label: 'Double arrow' },
+  { id: 'rect', icon: 'rect', label: 'Rectangle' },
+  { id: 'ellipse', icon: 'ellipse', label: 'Circle' },
+  { id: 'triangle', icon: 'triangle', label: 'Triangle' },
+  { id: 'diamond', icon: 'diamond', label: 'Diamond' },
+  { id: 'star', icon: 'star', label: 'Star' },
+  { id: 'check', icon: 'check2', label: 'Check mark' },
+  { id: 'cross', icon: 'cross2', label: 'Cross' },
+  { id: 'axes', icon: 'axes', label: 'Graph axes' },
+] as const;
+
 /** The width a 1-12 size means for a tool, in page points. */
 export function widthOf(id: string, n: number): number {
   switch (id) {
@@ -433,7 +447,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     row2 = (
       <View style={R2}>
         {dots}<Bar />
-        {(['line', 'arrow', 'rect', 'ellipse', 'triangle'] as const).map((x) => shapeBtn(x, x === 'rect' ? 'Rectangle' : x === 'ellipse' ? 'Circle' : x[0].toUpperCase() + x.slice(1), cur === x, () => set({ shapeType: x })))}
+        {SHAPES.map((x) => shapeBtn(x.icon, x.label, cur === x.id, () => set({ shapeType: x.id })))}
         <Bar />
         {shapeBtn('lock', 'Lock angles and sides', !!s.shapeLock, () => set({ shapeLock: !s.shapeLock }))}
         {shapeBtn('fill', 'Fill shapes', !!s.shapeFill, () => set({ shapeFill: !s.shapeFill }))}

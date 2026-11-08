@@ -145,6 +145,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var shapeStart = CGPoint.zero
   var shapePage = CGRect.infinite
   var shapePoints: [CGPoint] = []
+  var shapePieceList: [[CGPoint]] = []
   let compassDots = CAShapeLayer()
   var angleVertex = CGPoint.zero
   var angleArmA: CGPoint?
@@ -152,6 +153,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var angleSecond = false
   let angleLabel = CATextLayer()
   var scribble = true
+  var scratchOut = false       // scribbling over writing deletes it
   var drawBoxStart = CGPoint.zero
   let textBoxLayer = CAShapeLayer()
   lazy var textDrawGR: UIPanGestureRecognizer = {

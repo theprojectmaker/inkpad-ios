@@ -1,0 +1,33 @@
+# Draws every shape on a page (the new ones too) and takes a picture of the result.
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- extendedWaitUntil: { visible: "T5.*", timeout: 240000 }
+- tapOn: { text: "Settings", optional: true }
+- extendedWaitUntil: { visible: "Draw with finger", timeout: 15000, optional: true }
+- tapOn: { text: "Draw with finger", optional: true }
+- takeScreenshot: s00-settings
+- tapOn: { text: "Back to notes", optional: true }
+- tapOn: { text: "T5.*" }
+- extendedWaitUntil: { visible: "More", timeout: 15000 }
+- waitForAnimationToEnd
+- tapOn: { text: "More tools", optional: true }
+- tapOn: { text: "Shapes", optional: true }
+- takeScreenshot: s01-shape-bar
+- tapOn: { text: "Double arrow" }
+- swipe: { start: "12%, 25%", end: "40%, 33%", duration: 500 }
+- tapOn: { text: "Diamond" }
+- swipe: { start: "55%, 22%", end: "80%, 36%", duration: 500 }
+- tapOn: { text: "Star" }
+- swipe: { start: "12%, 42%", end: "38%, 58%", duration: 500 }
+- tapOn: { text: "Check mark" }
+- swipe: { start: "55%, 44%", end: "75%, 56%", duration: 500 }
+- tapOn: { text: "Cross" }
+- swipe: { start: "12%, 66%", end: "30%, 78%", duration: 500 }
+- tapOn: { text: "Graph axes" }
+- swipe: { start: "50%, 62%", end: "85%, 88%", duration: 500 }
+- takeScreenshot: s02-all-shapes
+- tapOn: { text: "Undo", optional: true }
+- takeScreenshot: s03-undo-axes
+- tapOn: { text: "Back to notes", optional: true }

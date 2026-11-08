@@ -653,6 +653,51 @@ extension QuillCanvasView {
     placeSelectionUI()
   }
 
+  /// Flips, turns or reweights the selected writing around the middle of the selection.
+  private func reshapeSelection(_ change: (CGRect) -> (InkStroke) -> InkStroke) {
+    commitSelection()
+    let old = selection
+    guard !old.isEmpty else { return }
+    let box = old.reduce(CGRect.null) { $0.union($1.bounds) }
+    let make = change(box)
+    let new = old.map(make)
+    document.apply(removed: old, added: new)
+    selection = new
+    new.forEach { $0.lifted = true }
+    ink.lifted = new
+    var b = new.reduce(CGRect.null) { $0.union($1.bounds) }
+    for id in selTexts { if let f = labels[id]?.frame { b = b.union(f) } }
+    for o in pics where selPics.contains(o.id) { b = b.union(pictureBounds(o)) }
+    selBox = b
+    finishObjects(removed: old, added: new)
+    ink.setNeedsInk(rebuild: true)
+    placeSelectionUI()
+  }
+
+  private func arrangeMenu() -> UIMenu {
+    let move = { [weak self] (t: CGAffineTransform) in
+      self?.reshapeSelection { box in
+        let m = CGAffineTransform(translationX: -box.midX, y: -box.midY).concatenating(t).concatenating(CGAffineTransform(translationX: box.midX, y: box.midY))
+        return { $0.moved(m) }
+      }
+    }
+    let weight = { [weak self] (k: Float) in
+      self?.reshapeSelection { _ in
+        { s in InkStroke(pts: s.pts.map { InkPoint(x: $0.x, y: $0.y, r: min(60, max(0.3, $0.r * k)), a: $0.a) }, rgb: s.rgb, kind: s.kind, seq: s.seq, ts: s.ts) }
+      }
+    }
+    return UIMenu(children: [
+      UIAction(title: "Flip left to right", image: UIImage(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")) { _ in move(CGAffineTransform(scaleX: -1, y: 1)) },
+      UIAction(title: "Flip upside down", image: UIImage(systemName: "arrow.up.and.down.righttriangle.up.righttriangle.down")) { _ in move(CGAffineTransform(scaleX: 1, y: -1)) },
+      UIAction(title: "Turn right", image: UIImage(systemName: "rotate.right")) { _ in move(CGAffineTransform(rotationAngle: .pi / 2)) },
+      UIAction(title: "Turn left", image: UIImage(systemName: "rotate.left")) { _ in move(CGAffineTransform(rotationAngle: -.pi / 2)) },
+      UIMenu(options: .displayInline, children: [
+        UIAction(title: "Thicker", image: UIImage(systemName: "lineweight")) { _ in weight(1.3) },
+        UIAction(title: "Thinner", image: UIImage(systemName: "line.diagonal")) { _ in weight(1 / 1.3) },
+      ]),
+    ])
+  }
+
   private func colourMenu() -> UIMenu {
     let names: [(String, String)] = [("Black", "#111111"), ("Blue", "#1E5EFF"), ("Red", "#E5322D"), ("Green", "#0AA35B"), ("Orange", "#F28C18"), ("Purple", "#8E44EC"), ("Grey", "#6E6E6E"), ("White", "#FFFFFF")]
     return UIMenu(children: names.map { n in
@@ -720,6 +765,12 @@ extension QuillCanvasView {
       selBar.addArrangedSubview(b)
       selBar.addArrangedSubview(divider())
     }
+    let arrange = make("Arrange ›")
+    arrange.accessibilityLabel = "Arrange"
+    arrange.menu = arrangeMenu()
+    arrange.showsMenuAsPrimaryAction = true
+    selBar.addArrangedSubview(arrange)
+    selBar.addArrangedSubview(divider())
     let convert = make("Convert ›")
     convert.accessibilityLabel = "Convert"
     convert.menu = UIMenu(children: [

@@ -152,6 +152,10 @@ public final class QuillCanvasModule: Module {
         view.scribble = on
       }
 
+      Prop("scratchOut") { (view: QuillCanvasView, on: Bool) in
+        view.scratchOut = on
+      }
+
       Prop("shapeSnap") { (view: QuillCanvasView, on: Bool) in
         view.shapeSnap = on
       }

@@ -656,6 +656,18 @@ extension QuillCanvasView {
       return
     }
     let stroke = InkStroke(pts: points, rgb: c.pen.rgb, kind: c.pen.kind, seq: c.wet.seq, ts: c.startedAt)
+    if scratchOut && c.pen.kind != .marker && ScratchOut.isScribble(points) {
+      let gone = ScratchOut.covered(by: stroke.bounds, in: document.strokes)
+      if !gone.isEmpty {
+        document.apply(removed: gone, added: [])
+        record(InkEdit(removed: gone, added: []))
+        ink.wet = nil
+        ink.penUp()
+        ink.setNeedsInk(rebuild: true)
+        objectsChanged()
+        return
+      }
+    }
     document.apply(removed: [], added: [stroke])
     record(InkEdit(removed: [], added: [stroke]))
     ink.wet = nil
@@ -1187,6 +1199,24 @@ func shapeOutline(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) ->
     let left = CGPoint(x: end.x - cos(angle - 0.5) * head, y: end.y - sin(angle - 0.5) * head)
     let right = CGPoint(x: end.x - cos(angle + 0.5) * head, y: end.y - sin(angle + 0.5) * head)
     return (ShapeSnap.dense([a, end, left, end, right]), false)
+  case "double":
+    let angle = atan2(end.y - a.y, end.x - a.x)
+    let head = min(26, hypot(end.x - a.x, end.y - a.y) * 0.25)
+    let tip = { (p: CGPoint, back: CGFloat, turn: CGFloat) in CGPoint(x: p.x - cos(angle + turn) * back, y: p.y - sin(angle + turn) * back) }
+    return (ShapeSnap.dense([tip(a, -head, -0.5), a, tip(a, -head, 0.5), a, end, tip(end, head, -0.5), end, tip(end, head, 0.5)]), false)
+  case "diamond":
+    let pts = [CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.maxX, y: box.midY), CGPoint(x: box.midX, y: box.maxY), CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.midX, y: box.minY)]
+    return (ShapeSnap.dense(pts), true)
+  case "star":
+    let pts = (0...10).map { i -> CGPoint in
+      let t = -CGFloat.pi / 2 + CGFloat(i) * .pi / 5
+      let k: CGFloat = i % 2 == 0 ? 1 : 0.42
+      return CGPoint(x: box.midX + cos(t) * box.width / 2 * k, y: box.midY + sin(t) * box.height / 2 * k + box.height * 0.05)
+    }
+    return (ShapeSnap.dense(pts), true)
+  case "check":
+    let pts = [CGPoint(x: box.minX, y: box.minY + box.height * 0.55), CGPoint(x: box.minX + box.width * 0.36, y: box.maxY), CGPoint(x: box.maxX, y: box.minY)]
+    return (ShapeSnap.dense(pts), false)
   case "rect":
     let pts = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.minX, y: box.minY)]
     return (ShapeSnap.dense(pts), true)
@@ -1204,7 +1234,87 @@ func shapeOutline(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) ->
   }
 }
 
+/// Shapes drawn as more than one line: a cross, and axes for a graph. Everything else is one line.
+func shapePieces(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) -> [[CGPoint]] {
+  var end = b
+  if lock {
+    let side = max(abs(b.x - a.x), abs(b.y - a.y))
+    end = CGPoint(x: a.x + (b.x >= a.x ? side : -side), y: a.y + (b.y >= a.y ? side : -side))
+  }
+  let box = CGRect(x: min(a.x, end.x), y: min(a.y, end.y), width: abs(end.x - a.x), height: abs(end.y - a.y))
+  switch kind {
+  case "cross":
+    return [ShapeSnap.dense([CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY)]),
+            ShapeSnap.dense([CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.minX, y: box.maxY)])]
+  case "axes":
+    let head = min(14, min(box.width, box.height) * 0.12)
+    let x = [CGPoint(x: box.minX + head, y: box.midY - head * 0.7), CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.minX + head, y: box.midY + head * 0.7),
+             CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.maxX, y: box.midY),
+             CGPoint(x: box.maxX - head, y: box.midY - head * 0.7), CGPoint(x: box.maxX, y: box.midY), CGPoint(x: box.maxX - head, y: box.midY + head * 0.7)]
+    let y = [CGPoint(x: box.midX - head * 0.7, y: box.minY + head), CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.midX + head * 0.7, y: box.minY + head),
+             CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.midX, y: box.maxY),
+             CGPoint(x: box.midX - head * 0.7, y: box.maxY - head), CGPoint(x: box.midX, y: box.maxY), CGPoint(x: box.midX + head * 0.7, y: box.maxY - head)]
+    return [ShapeSnap.dense(x), ShapeSnap.dense(y)]
+  default:
+    return [shapeOutline(kind, from: a, to: b, lock: lock).points]
+  }
+}
+
+/// Scribbling back and forth over writing deletes it (when it's turned on in Settings).
+enum ScratchOut {
+  /// Lots of ink in a small box that keeps turning back on itself.
+  static func isScribble(_ pts: [InkPoint]) -> Bool {
+    guard pts.count >= 12 else { return false }
+    var minX = CGFloat.infinity, minY = CGFloat.infinity, maxX = -CGFloat.infinity, maxY = -CGFloat.infinity
+    var length: CGFloat = 0
+    for (i, p) in pts.enumerated() {
+      minX = min(minX, CGFloat(p.x)); maxX = max(maxX, CGFloat(p.x))
+      minY = min(minY, CGFloat(p.y)); maxY = max(maxY, CGFloat(p.y))
+      if i > 0 { length += hypot(CGFloat(p.x - pts[i - 1].x), CGFloat(p.y - pts[i - 1].y)) }
+    }
+    let w = maxX - minX, h = maxY - minY
+    let span = max(w, h)
+    guard span > 10, span < 420 else { return false }
+    // Turns along whichever way it moves most: a scribble's back and forth.
+    let across = w >= h
+    let leg = span * 0.35
+    var turns = 0, dir: CGFloat = 0, run: CGFloat = 0
+    for i in 1..<pts.count {
+      let d = across ? CGFloat(pts[i].x - pts[i - 1].x) : CGFloat(pts[i].y - pts[i - 1].y)
+      if abs(d) < 0.01 { continue }
+      let sign: CGFloat = d > 0 ? 1 : -1
+      if dir == 0 || sign == dir { dir = sign; run += abs(d); continue }
+      if run >= leg { turns += 1; dir = sign; run = abs(d) } else { run += abs(d) * 0.5 }
+    }
+    return turns >= 4 && length > span * 4
+  }
+
+  /// The strokes it was scribbled over: most of each one inside the scribble.
+  static func covered(by scribble: CGRect, in strokes: [InkStroke]) -> [InkStroke] {
+    let box = scribble.insetBy(dx: -3, dy: -3)
+    return strokes.filter { s in
+      guard !s.lifted, s.kind != .fill, s.bounds.intersects(box) else { return false }
+      let i = s.bounds.intersection(box)
+      return i.width * i.height >= 0.6 * max(1, s.bounds.width * s.bounds.height)
+    }
+  }
+}
+
 extension QuillCanvasView {
+  /// Ink for a shape preview: the separate lines of a cross or axes, with invisible joins between them.
+  private func shapeInk(_ pieces: [[CGPoint]]) -> [InkPoint] {
+    var out: [InkPoint] = []
+    for (i, piece) in pieces.enumerated() {
+      let ink = shapeInk(piece)
+      if i > 0, let last = out.last, let first = ink.first {
+        out.append(InkPoint(x: last.x, y: last.y, r: 0, a: 0))
+        out.append(InkPoint(x: first.x, y: first.y, r: 0, a: 0))
+      }
+      out.append(contentsOf: ink)
+    }
+    return out
+  }
+
   private func shapeInk(_ pts: [CGPoint]) -> [InkPoint] {
     let look = pen.shape(p: 0.5, dirX: 1, dirY: 0, altitude: .pi / 2)
     return pts.map { InkPoint(x: Float($0.x), y: Float($0.y), r: look.r, a: look.a) }
@@ -1223,8 +1333,9 @@ extension QuillCanvasView {
   func shapeMoved(_ p: CGPoint) {
     guard let c = capture else { return }
     let end = CGPoint(x: min(shapePage.maxX, max(shapePage.minX, p.x)), y: min(shapePage.maxY, max(shapePage.minY, p.y)))
-    shapePoints = shapeOutline(shapeKind, from: shapeStart, to: end, lock: shapeLock).points
-    c.wet.reset(shapeInk(shapePoints))
+    shapePieceList = shapePieces(shapeKind, from: shapeStart, to: end, lock: shapeLock)
+    shapePoints = shapePieceList.flatMap { $0 }
+    c.wet.reset(shapePieceList.count == 1 ? shapeInk(shapePoints) : shapeInk(shapePieceList))
     ink.drawNow()
   }
 
@@ -1235,7 +1346,7 @@ extension QuillCanvasView {
     ink.penUp()
     let box = shapePoints.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
     guard shapePoints.count > 1, max(box.width, box.height) * canvas.zoomScale > 6 else { ink.setNeedsInk(); return }
-    let closed = shapeKind == "rect" || shapeKind == "ellipse" || shapeKind == "triangle"
+    let closed = ["rect", "ellipse", "triangle", "diamond", "star"].contains(shapeKind)
     let now = Date().timeIntervalSince1970
     var added: [InkStroke] = []
     if closed && shapeFill {
@@ -1243,7 +1354,9 @@ extension QuillCanvasView {
       added.append(InkStroke(pts: shapePoints.map { InkPoint(x: Float($0.x), y: Float($0.y), r: 0, a: 0.35) }, rgb: pen.rgb, kind: .fill, seq: c.wet.seq, ts: now))
       added.append(InkStroke(pts: shapeInk(shapePoints), rgb: pen.rgb, kind: pen.kind, seq: document.nextSeq(), ts: now))
     } else {
-      added.append(InkStroke(pts: shapeInk(shapePoints), rgb: pen.rgb, kind: pen.kind, seq: c.wet.seq, ts: now))
+      for (i, piece) in shapePieceList.enumerated() where piece.count > 1 {
+        added.append(InkStroke(pts: shapeInk(piece), rgb: pen.rgb, kind: pen.kind, seq: i == 0 ? c.wet.seq : document.nextSeq(), ts: now))
+      }
     }
     document.apply(removed: [], added: added)
     record(InkEdit(removed: [], added: added))
