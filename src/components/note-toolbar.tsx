@@ -544,7 +544,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 const on = (s.shapeType ?? 'line') === x.id;
                 return (
                   <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => { set({ shapeType: x.id }); setPop(null); }}
-                    style={{ width: 96, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E9EEFD' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+                    style={{ width: 84, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E9EEFD' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
                     <ToolIcon name={x.icon} size={22} color={on ? BLUE : INK} />
                     <Text style={{ fontSize: 12, color: '#15171C' }}>{x.label}</Text>
                   </Pressable>
