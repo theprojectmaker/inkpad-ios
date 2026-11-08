@@ -54,7 +54,10 @@ final class InkGesture: UIGestureRecognizer {
       return
     }
     if t.type == .direct {
-      if touches.count > 1 || t.majorRadius > 52 { state = .failed; return }   // two fingers, or a palm (a firm fingertip reads 42)
+      if touches.count > 1 || t.majorRadius > 52 {
+        GestureLog.add("finger not drawing: \(touches.count) touches, radius \(Int(t.majorRadius))")
+        state = .failed; return
+      }   // two fingers, or a palm (a firm fingertip reads 42)
       if owner?.fingerMayDraw(t) != true { state = .failed; return }
     }
     active = t
@@ -467,14 +470,21 @@ extension QuillCanvasView {
   }
 
   func fingerMayDraw(_ t: UITouch) -> Bool {
-    if CACurrentMediaTime() - lastZoomEnd < 0.3 { return false }
-    if #available(iOS 17.5, *), UIPencilInteraction.prefersPencilOnlyDrawing { return false }
-    // Someone writing with the Pencil rests their hand on the glass: for a few minutes after it's
+    let ok = fingerAllowed(t)
+    if let why = ok { GestureLog.add("finger not drawing: \(why)") }
+    return ok == nil
+  }
+
+  /// Why a finger can't draw here, or nil if it can.
+  private func fingerAllowed(_ t: UITouch) -> String? {
+    if CACurrentMediaTime() - lastZoomEnd < 0.3 { return "just after a zoom" }
+    if #available(iOS 17.5, *), UIPencilInteraction.prefersPencilOnlyDrawing { return "iPad set to draw only with Apple Pencil" }
+    // Someone writing with the Pencil rests their hand on the glass: for 20 seconds after it's
     // been used, a touch is a hand or a scroll, never ink.
-    if canvas.pencilDown || CACurrentMediaTime() - canvas.pencilUpAt < 20 { return false }
-    if t.majorRadius > 52 { return false }   // a fingertip often reads 31 or 42; only a palm is bigger
-    if inkMode == .write && pageRect(at: location(t)) == nil { return false }
-    return true
+    if canvas.pencilDown || CACurrentMediaTime() - canvas.pencilUpAt < 20 { return "the Pencil was just used" }
+    if t.majorRadius > 52 { return "radius \(Int(t.majorRadius)), a palm" }   // a fingertip often reads 31 or 42
+    if inkMode == .write && pageRect(at: location(t)) == nil { return "not on a page" }
+    return nil
   }
 
   func inkBegan(_ t: UITouch, _ event: UIEvent) {
