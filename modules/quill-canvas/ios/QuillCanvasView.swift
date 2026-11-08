@@ -154,6 +154,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   let angleLabel = CATextLayer()
   var scribble = true
   var scratchOut = false       // scribbling over writing deletes it
+  var straightMarker = true    // a nearly straight highlighter swipe comes out straight
   var drawBoxStart = CGPoint.zero
   let textBoxLayer = CAShapeLayer()
   lazy var textDrawGR: UIPanGestureRecognizer = {

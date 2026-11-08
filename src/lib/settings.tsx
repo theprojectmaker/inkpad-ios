@@ -54,12 +54,13 @@ export type Settings = {
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   toolDock?: 'top' | 'bottom' | 'left' | 'right';   // which edge of the screen the toolbar sits on
   brushType?: 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray';
-  shapeType?: 'line' | 'arrow' | 'double' | 'rect' | 'ellipse' | 'triangle' | 'diamond' | 'star' | 'check' | 'cross' | 'axes';
+  shapeType?: 'line' | 'arrow' | 'double' | 'rect' | 'ellipse' | 'triangle' | 'righttri' | 'diamond' | 'hexagon' | 'parallelogram' | 'star' | 'check' | 'cross' | 'axes' | 'numline';
   shapeLock?: boolean;       // lines to 15 degree steps, square boxes, round circles
   shapeFill?: boolean;
   streamline?: number;       // 0 to 1: how much pens smooth the hand's wobble
   scribble?: boolean;        // Pencil handwriting in a text box turns into typing (on unless turned off)
   scratchOut?: boolean;      // scribbling back and forth over writing deletes it (off unless turned on)
+  straightMarker?: boolean;  // straight highlighter (on unless turned off)
   scheduleUnlocked?: boolean;   // the real Studento schedule, linked with a code
   gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
 };

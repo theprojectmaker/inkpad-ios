@@ -656,7 +656,7 @@ export default function Editor() {
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
-            <QuillCanvas key={canvasKey} scribble={s.scribble !== false} scratchOut={!!s.scratchOut} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
+            <QuillCanvas key={canvasKey} scribble={s.scribble !== false} scratchOut={!!s.scratchOut} straightMarker={s.straightMarker !== false} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
               onPencilTap={onPencilTap} onSelectionAction={onSelectionAction} autoPage={s.autoPage !== false} onLastPageUsed={() => addPage(undefined, true)}
               inkTaps={audioOpen && !audio.rec && recordings.length > 0}
               onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && soundAt(x, ms) <= x.dur); if (r) hear(r, soundAt(r, ms) / 1000); }}
@@ -816,6 +816,8 @@ export default function Editor() {
         ...(i > 0 ? [{ label: 'Move up', icon: 'arrow.up', onPress: () => movePage(i, i - 1) }] : []),
         ...(i < doc.pages.length - 1 ? [{ label: 'Move down', icon: 'arrow.down', onPress: () => movePage(i, i + 1) }] : []),
         { label: 'Duplicate', icon: 'plus.square.on.square', onPress: () => duplicatePage(i) },
+        { label: 'Select everything on it', icon: 'lasso', onPress: () => { canvas.current?.selectPage(i); } },
+        { label: 'Erase all writing', icon: 'eraser', onPress: () => { canvas.current?.clearPageInk(i); toast('Writing erased. Undo brings it back.'); } },
         { label: 'Add a page after', icon: 'doc.badge.plus', onPress: () => addPage(i) },
         ...(p?.bg.kind === 'paper' ? [{ label: 'Change paper', icon: 'doc.plaintext', onPress: () => setPaperFor(i) }] : []),
         { label: 'Share as a picture', icon: 'square.and.arrow.up', onPress: () => shareCurrentPage(i) },

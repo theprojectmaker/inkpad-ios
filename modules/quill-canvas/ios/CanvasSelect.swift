@@ -691,6 +691,9 @@ extension QuillCanvasView {
       UIAction(title: "Flip upside down", image: UIImage(systemName: "arrow.up.and.down.righttriangle.up.righttriangle.down")) { _ in move(CGAffineTransform(scaleX: 1, y: -1)) },
       UIAction(title: "Turn right", image: UIImage(systemName: "rotate.right")) { _ in move(CGAffineTransform(rotationAngle: .pi / 2)) },
       UIAction(title: "Turn left", image: UIImage(systemName: "rotate.left")) { _ in move(CGAffineTransform(rotationAngle: -.pi / 2)) },
+      UIAction(title: "Straighten lines", image: UIImage(systemName: "line.diagonal")) { [weak self] _ in
+        self?.reshapeSelection { _ in { s in InkStraight.line(s.pts).map { InkStroke(pts: $0, rgb: s.rgb, kind: s.kind, seq: s.seq, ts: s.ts) } ?? s } }
+      },
       UIMenu(options: .displayInline, children: [
         UIAction(title: "Thicker", image: UIImage(systemName: "lineweight")) { _ in weight(1.3) },
         UIAction(title: "Thinner", image: UIImage(systemName: "line.diagonal")) { _ in weight(1 / 1.3) },

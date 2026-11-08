@@ -36,11 +36,15 @@ const SHAPES = [
   { id: 'rect', icon: 'rect', label: 'Rectangle' },
   { id: 'ellipse', icon: 'ellipse', label: 'Circle' },
   { id: 'triangle', icon: 'triangle', label: 'Triangle' },
+  { id: 'righttri', icon: 'righttri', label: 'Right triangle' },
   { id: 'diamond', icon: 'diamond', label: 'Diamond' },
+  { id: 'hexagon', icon: 'hexagon', label: 'Hexagon' },
+  { id: 'parallelogram', icon: 'parallelogram', label: 'Parallelogram' },
   { id: 'star', icon: 'star', label: 'Star' },
   { id: 'check', icon: 'check2', label: 'Check mark' },
   { id: 'cross', icon: 'cross2', label: 'Cross' },
   { id: 'axes', icon: 'axes', label: 'Graph axes' },
+  { id: 'numline', icon: 'numline', label: 'Number line' },
 ] as const;
 
 /** The width a 1-12 size means for a tool, in page points. */

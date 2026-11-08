@@ -402,6 +402,31 @@ extension QuillCanvasView {
     }
   }
 
+  /// Lassoes everything on page `i`: the writing, text boxes and pictures.
+  func selectPage(_ i: Int) {
+    guard i >= 0, i < frames.count else { return }
+    commitEdit()
+    clearSelection()
+    let f = frames[i]
+    let strokes = document.strokes.filter { f.contains(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY)) }
+    let tids = texts.filter { f.contains(CGPoint(x: $0.x + 1, y: $0.y + 1)) }.map(\.id)
+    let pids = pics.filter { f.contains(CGPoint(x: $0.x + $0.w / 2, y: $0.y + $0.h / 2)) }.map(\.id)
+    select(strokes, texts: tids, pics: pids)
+  }
+
+  /// Rubs out all the writing on page `i` in one go (Undo puts it back). Text and pictures stay.
+  func clearPageInk(_ i: Int) {
+    guard i >= 0, i < frames.count else { return }
+    clearSelection()
+    let f = frames[i]
+    let gone = document.strokes.filter { f.contains(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY)) }
+    guard !gone.isEmpty else { return }
+    document.apply(removed: gone, added: [])
+    record(InkEdit(removed: gone, added: []))
+    ink.setNeedsInk(rebuild: true)
+    objectsChanged()
+  }
+
   /// Nothing written or placed on page `i` (its background doesn't count).
   func pageIsEmpty(_ i: Int) -> Bool {
     guard i >= 0, i < frames.count else { return false }

@@ -156,6 +156,10 @@ public final class QuillCanvasModule: Module {
         view.scratchOut = on
       }
 
+      Prop("straightMarker") { (view: QuillCanvasView, on: Bool) in
+        view.straightMarker = on
+      }
+
       Prop("shapeSnap") { (view: QuillCanvasView, on: Bool) in
         view.shapeSnap = on
       }
@@ -255,6 +259,14 @@ public final class QuillCanvasModule: Module {
 
       AsyncFunction("movePage") { (view: QuillCanvasView, from: Int, to: Int) in
         view.movePage(from: from, to: to)
+      }.runOnQueue(.main)
+
+      AsyncFunction("selectPage") { (view: QuillCanvasView, index: Int) in
+        view.selectPage(index)
+      }.runOnQueue(.main)
+
+      AsyncFunction("clearPageInk") { (view: QuillCanvasView, index: Int) in
+        view.clearPageInk(index)
       }.runOnQueue(.main)
 
       AsyncFunction("duplicatePage") { (view: QuillCanvasView, index: Int) in

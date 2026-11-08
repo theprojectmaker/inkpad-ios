@@ -648,7 +648,9 @@ extension QuillCanvasView {
 
   private func finishStroke(_ c: PenCapture) {
     capture = nil
-    let points = c.finishedPoints()
+    var points = c.finishedPoints()
+    // Highlighting a line of text: a nearly straight swipe comes out ruler-straight.
+    if straightMarker && c.pen.kind == .marker, let line = InkStraight.line(points) { points = line }
     if points.isEmpty {
       ink.wet = nil
       ink.penUp()
@@ -1214,6 +1216,19 @@ func shapeOutline(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) ->
       return CGPoint(x: box.midX + cos(t) * box.width / 2 * k, y: box.midY + sin(t) * box.height / 2 * k + box.height * 0.05)
     }
     return (ShapeSnap.dense(pts), true)
+  case "righttri":
+    let pts = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.minY)]
+    return (ShapeSnap.dense(pts), true)
+  case "hexagon":
+    let pts = (0...6).map { i -> CGPoint in
+      let t = CGFloat(i) * .pi / 3
+      return CGPoint(x: box.midX + cos(t) * box.width / 2, y: box.midY + sin(t) * box.height / 2)
+    }
+    return (ShapeSnap.dense(pts), true)
+  case "parallelogram":
+    let k = box.width * 0.25
+    let pts = [CGPoint(x: box.minX + k, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX - k, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.minX + k, y: box.minY)]
+    return (ShapeSnap.dense(pts), true)
   case "check":
     let pts = [CGPoint(x: box.minX, y: box.minY + box.height * 0.55), CGPoint(x: box.minX + box.width * 0.36, y: box.maxY), CGPoint(x: box.maxX, y: box.minY)]
     return (ShapeSnap.dense(pts), false)
@@ -1246,6 +1261,22 @@ func shapePieces(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) -> 
   case "cross":
     return [ShapeSnap.dense([CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY)]),
             ShapeSnap.dense([CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.minX, y: box.maxY)])]
+  case "numline":
+    // A line with arrows at both ends and eleven evenly spaced ticks.
+    let y = box.midY
+    let head = min(12, box.width * 0.05)
+    let tick = min(9, max(5, box.height * 0.35))
+    var out = [ShapeSnap.dense([CGPoint(x: box.minX + head, y: y - head * 0.7), CGPoint(x: box.minX, y: y), CGPoint(x: box.minX + head, y: y + head * 0.7),
+                               CGPoint(x: box.minX, y: y), CGPoint(x: box.maxX, y: y),
+                               CGPoint(x: box.maxX - head, y: y - head * 0.7), CGPoint(x: box.maxX, y: y), CGPoint(x: box.maxX - head, y: y + head * 0.7)])]
+    let inner = box.insetBy(dx: box.width * 0.08, dy: 0)
+    if inner.width > 20 {
+      for i in 0...10 {
+        let x = inner.minX + inner.width * CGFloat(i) / 10
+        out.append(ShapeSnap.dense([CGPoint(x: x, y: y - tick), CGPoint(x: x, y: y + tick)]))
+      }
+    }
+    return out
   case "axes":
     let head = min(14, min(box.width, box.height) * 0.12)
     let x = [CGPoint(x: box.minX + head, y: box.midY - head * 0.7), CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.minX + head, y: box.midY + head * 0.7),
@@ -1257,6 +1288,29 @@ func shapePieces(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) -> 
     return [ShapeSnap.dense(x), ShapeSnap.dense(y)]
   default:
     return [shapeOutline(kind, from: a, to: b, lock: lock).points]
+  }
+}
+
+enum InkStraight {
+  /// The same stroke as a ruler-straight line, if it was nearly straight already; nil if not.
+  static func line(_ pts: [InkPoint]) -> [InkPoint]? {
+    guard pts.count >= 3, let a = pts.first, let b = pts.last else { return nil }
+    let dx = CGFloat(b.x - a.x), dy = CGFloat(b.y - a.y)
+    let length = hypot(dx, dy)
+    guard length > 24 else { return nil }
+    var path: CGFloat = 0, worst: CGFloat = 0
+    for (i, p) in pts.enumerated() {
+      if i > 0 { path += hypot(CGFloat(p.x - pts[i - 1].x), CGFloat(p.y - pts[i - 1].y)) }
+      worst = max(worst, abs(CGFloat(p.x - a.x) * dy - CGFloat(p.y - a.y) * dx) / length)
+    }
+    guard worst <= max(3, length * 0.05), path <= length * 1.2 else { return nil }
+    let r = pts.reduce(Float(0)) { $0 + $1.r } / Float(pts.count)
+    let alpha = pts.reduce(Float(0)) { $0 + $1.a } / Float(pts.count)
+    let n = max(2, Int(length / 1.4))
+    return (0...n).map { i in
+      let t = Float(i) / Float(n)
+      return InkPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, r: r, a: alpha)
+    }
   }
 }
 
@@ -1346,7 +1400,7 @@ extension QuillCanvasView {
     ink.penUp()
     let box = shapePoints.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
     guard shapePoints.count > 1, max(box.width, box.height) * canvas.zoomScale > 6 else { ink.setNeedsInk(); return }
-    let closed = ["rect", "ellipse", "triangle", "diamond", "star"].contains(shapeKind)
+    let closed = ["rect", "ellipse", "triangle", "diamond", "star", "righttri", "hexagon", "parallelogram"].contains(shapeKind)
     let now = Date().timeIntervalSince1970
     var added: [InkStroke] = []
     if closed && shapeFill {
