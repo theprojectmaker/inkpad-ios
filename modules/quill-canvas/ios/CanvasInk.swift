@@ -181,6 +181,9 @@ final class PenCapture {
   private var storedX: Float, storedY: Float
   var moveAnchor: CGPoint
   var page: CGRect = .infinite     // the stroke stays on this page
+  var lastRaw: CGPoint?            // the last sample taken, to spot a jump no hand could make
+  var lastRawTime: TimeInterval = 0
+  var dropped: CGPoint?
   var lastMoveTime: TimeInterval
   var triedSnap = false
   var snap: (points: [CGPoint], closed: Bool, centre: CGPoint, anchor: CGPoint)?
@@ -600,6 +603,22 @@ extension QuillCanvasView {
       if let e = c.rulerEdge { p = onRuler(p, e) }
       // Samples from before it reached the page aren't part of this stroke.
       if !opened && !c.page.contains(p) { continue }
+      // A jump across the page between two samples isn't the hand: drop it rather than draw a line to it.
+      if let q = c.lastRaw {
+        let jump = hypot(p.x - q.x, p.y - q.y) * canvas.zoomScale
+        let dt = max(0.001, s.timestamp - c.lastRawTime)
+        if jump > 90 && jump / CGFloat(dt) > 9000 {
+          if let d = c.dropped, hypot(p.x - d.x, p.y - d.y) * canvas.zoomScale < 20 {
+            c.dropped = nil      // two samples agree: the Pencil really is there now
+          } else {
+            c.dropped = p
+            GestureLog.add("dropped a jump of \(Int(jump)) pt in \(Int(dt * 1000)) ms")
+            continue
+          }
+        }
+      }
+      c.lastRaw = p
+      c.lastRawTime = s.timestamp
       let force = s.type == .pencil && s.maximumPossibleForce > 0 ? Float(s.force / s.maximumPossibleForce) : 0
       let altitude = s.type == .pencil ? Float(s.altitudeAngle) : Float.pi / 2
       // Off the page: the stroke ends at its edge.
