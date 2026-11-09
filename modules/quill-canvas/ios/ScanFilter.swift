@@ -12,6 +12,10 @@
 import CoreImage
 
 enum ScanFilter {
+  /// Settings for comparing versions side by side (scripts/scan-check.swift). The app uses the defaults.
+  nonisolated(unsafe) static var tune: [String: CGFloat] = [:]
+  private static func t(_ key: String, _ value: CGFloat) -> CGFloat { tune[key] ?? value }
+
   /// The cleaned page, or nil if it couldn't be made even at the smaller size.
   static func render(_ input: CIImage, mode: String, context: CIContext) -> CGImage? {
     for target: CGFloat in [3200, 2400] {
@@ -59,7 +63,7 @@ enum ScanFilter {
     func colourless(_ i: CIImage) -> CIImage { i.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0]) }
 
     // Grain off first, or it would be read as ink.
-    let calm = blur(image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.03, "inputSharpness": 0.6]).cropped(to: ext), 0.6 * soft)
+    let calm = blur(image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.03, "inputSharpness": t("sharp", 0.6)]).cropped(to: ext), t("blur", 0.6) * soft)
 
     // 2. The paper's lighting: at 1/16 size writing nearly vanishes; keep the brightest
     //    nearby value, soften it, and divide the page by it. Colourless, so a highlighter
@@ -91,7 +95,8 @@ enum ScanFilter {
     let rise = deepest.applyingFilter("CISubtractBlendMode", parameters: [kCIInputBackgroundImageKey: blur(grey, 0.4 * soft)]).cropped(to: ext)
     let span = deepest.applyingFilter("CIColorInvert")
     let level = span.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: rise]).cropped(to: ext)
-    let faint = curve(level, [(0, 1), (0.56, 1), (0.68, 0.55), (0.8, 0), (1, 0)])
+    let c = t("cut", 0)
+    let faint = curve(level, [(0, 1), (0.56 + c, 1), (0.68 + c, 0.55), (0.8 + c, 0), (1, 0)])
 
     // Sensitive enough for pencil means grain gets through too, so faint marks only count
     // beside something definite: a real stroke, or a long ruled line. Specks are neither.
@@ -104,7 +109,30 @@ enum ScanFilter {
     let near = sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
       .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(.pi / 2)]).cropped(to: greySmall.extent)
     let allowed = grow(blur(near, 3 * px * q), q)
-    let ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
+    var ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
+
+    // Printed ruling (a notebook's pale lines and margin) isn't part of what was written: a long,
+    // straight, pale line goes. Dark lines (tables, underlines, boxes) and anything written stay.
+    if t("rules", 1) > 0.5 {
+      let r: CGFloat = 1 / 2
+      let g2 = shrink(grey, r)
+      let span = max(15, (64 * px * r).rounded())
+      func odd(_ v: CGFloat) -> CGFloat { let n = max(3, v.rounded()); return n.truncatingRemainder(dividingBy: 2) == 0 ? n + 1 : n }
+      func lines(_ w: CGFloat, _ hgt: CGFloat) -> CIImage {
+        // Lightest value along a long run: only stays dark where the whole run is a line.
+        let run = g2.clampedToExtent().applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(w), "inputHeight": odd(hgt)]).cropped(to: g2.extent)
+        let found = curve(run, [(0, 1), (t("lineDark", 0.9), 1), (t("lineDark", 0.9) + 0.04, 0.4), (0.985, 0), (1, 0)])
+        // Back out to the whole line, a little thicker than it is.
+        return found.clampedToExtent().applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(w), "inputHeight": odd(3 * px * r + 2)]).cropped(to: g2.extent)
+      }
+      let across = lines(span, 1)
+      let down = lines(1, span).applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(3 * px * r + 2), "inputHeight": 3]).cropped(to: g2.extent)
+      let rule = grow(across.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: down]).cropped(to: g2.extent), r)
+      // Only where it's pale: pen and print crossing a line keep every pixel.
+      let pale = curve(grey, [(0, 0), (t("pale", 0.72), 0), (t("pale", 0.72) + 0.08, 1), (0.99, 1), (1, 1)])
+      let gone = rule.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: pale]).cropped(to: ext)
+      ink = ink.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: gone.applyingFilter("CIColorInvert")]).cropped(to: ext)
+    }
 
     // 5. Where nearly everything nearby is dark, it's a picture or a filled shape. A page
     //    of text never gets close to this.
@@ -129,7 +157,15 @@ enum ScanFilter {
       let penSmall = shrink(flat, half).clampedToExtent().applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": max(1, 2.5 * px * half)]).cropped(to: shrink(flat, half).extent)
       let pen = grow(blur(penSmall, 2.5 * px * half), half)
       let deep = curve(pen.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 1.5]), [(0, 0), (0.2, 0.03), (0.45, 0.16), (0.7, 0.42), (1, 0.95)])
-      out = deep.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: sheet, kCIInputMaskImageKey: ink]).cropped(to: ext)
+      var colour = deep
+      if t("neutral", 1) > 0.5 {
+        let grey0 = colourless(pen)
+        let chroma = colourless(pen.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: grey0]).cropped(to: ext))
+        let tinted = curve(chroma.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.0, kCIInputBrightnessKey: 0.0]), [(0, 0), (0.035, 0), (0.07, 0.5), (0.11, 1), (1, 1)])
+        let plain = curve(grey0, [(0, 0.05), (0.25, 0.08), (0.5, 0.25), (0.75, 0.55), (1, 0.9)])
+        colour = deep.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: plain, kCIInputMaskImageKey: tinted]).cropped(to: ext)
+      }
+      out = colour.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: sheet, kCIInputMaskImageKey: ink]).cropped(to: ext)
       // Pictures keep their own detail, with the lighting fixed.
       let photo = curve(flat, [(0, 0), (0.25, 0.2), (0.5, 0.5), (0.8, 0.86), (1, 1)])
       out = photo.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: out, kCIInputMaskImageKey: picture]).cropped(to: ext)
