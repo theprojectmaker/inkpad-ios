@@ -8,10 +8,8 @@ import UniformTypeIdentifiers
 @main
 struct Check {
   static let versions: [(String, [String: CGFloat])] = [
-    ("a-before", ["rules": 0, "neutral": 0, "wb": 0]),
-    ("b-neutral", ["rules": 0, "wb": 0]),
-    ("c-neutral-wb", ["rules": 0]),
-    ("d-neutral-rules", ["wb": 0]),
+    ("a-plain", ["neutral": 0]),
+    ("b-app", [:]),
   ]
   static func main() throws {
     let args = CommandLine.arguments

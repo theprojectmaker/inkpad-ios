@@ -64,7 +64,7 @@ enum ScanFilter {
 
     // The light's colour: the paper's average colour (writing mostly gone at this size) is divided
     // out, so white paper is white and black ink is black, not brown under a warm lamp.
-    if t("wb", 1) > 0.5 {
+    if t("wb", 0) > 0.5 {   // off: it faded faint writing on unevenly lit pages
       let paper = maximum(shrink(image, 1 / 16), 4).applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: shrink(image, 1 / 16).extent)])
         .clampedToExtent().cropped(to: ext)
       image = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: ext)
@@ -121,7 +121,7 @@ enum ScanFilter {
 
     // Printed ruling (a notebook's pale lines and margin) isn't part of what was written: a long,
     // straight, pale line goes. Dark lines (tables, underlines, boxes) and anything written stay.
-    if t("rules", 1) > 0.5 {
+    if t("rules", 0) > 0.5 {   // off: it cut gaps where ruling crossed letters
       let r: CGFloat = 1 / 2
       let g2 = shrink(grey, r)
       let span = max(15, (64 * px * r).rounded())
@@ -172,7 +172,7 @@ enum ScanFilter {
       if t("neutral", 1) > 0.5 {
         let grey0 = colourless(pen)
         let chroma = colourless(pen.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: grey0]).cropped(to: ext))
-        let tinted = curve(chroma.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.0, kCIInputBrightnessKey: 0.0]), [(0, 0), (0.05, 0), (0.09, 0.5), (0.14, 1), (1, 1)])
+        let tinted = curve(chroma.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.0, kCIInputBrightnessKey: 0.0]), [(0, 0), (0.07, 0), (0.12, 0.5), (0.18, 1), (1, 1)])
         let plain = curve(grey0, [(0, 0.04), (0.3, 0.09), (0.55, 0.36), (0.8, 0.66), (1, 0.92)])
         colour = deep.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: plain, kCIInputMaskImageKey: tinted]).cropped(to: ext)
       }
