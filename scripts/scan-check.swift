@@ -9,9 +9,9 @@ import UniformTypeIdentifiers
 struct Check {
   static let versions: [(String, [String: CGFloat])] = [
     ("a-before", ["rules": 0, "neutral": 0, "wb": 0]),
-    ("b-neutral-rules", [:]),
-    ("c-thinner", ["cut": 0.05, "blur": 0.35]),
-    ("d-thinnest", ["cut": 0.09, "blur": 0.3, "sharp": 0.9]),
+    ("b-new", [:]),
+    ("c-paler-lines", ["lineDark": 0.985]),
+    ("d-new-thinner", ["cut": 0.05, "blur": 0.4]),
   ]
   static func main() throws {
     let args = CommandLine.arguments

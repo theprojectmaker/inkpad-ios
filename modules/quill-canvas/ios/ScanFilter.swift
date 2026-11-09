@@ -114,7 +114,7 @@ enum ScanFilter {
       curve(greySmall.clampedToExtent().applyingFilter("CIMotionBlur", parameters: [kCIInputRadiusKey: 50 * px * q, kCIInputAngleKey: angle]).cropped(to: greySmall.extent),
             [(0, 1), (0.955, 1), (0.975, 0.4), (0.99, 0), (1, 0)])
     }
-    let near = t("rules", 1) > 0.5 ? sure : sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
+    let near = t("keepNearRules", 1) < 0.5 ? sure : sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
       .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(.pi / 2)]).cropped(to: greySmall.extent)
     let allowed = grow(blur(near, 3 * px * q), q)
     var ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
@@ -129,7 +129,7 @@ enum ScanFilter {
       func lines(_ w: CGFloat, _ hgt: CGFloat) -> CIImage {
         // Lightest value along a long run: only stays dark where the whole run is a line.
         let run = g2.clampedToExtent().applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(w), "inputHeight": odd(hgt)]).cropped(to: g2.extent)
-        let found = curve(run, [(0, 1), (t("lineDark", 0.955), 1), (t("lineDark", 0.955) + 0.025, 0.4), (0.985, 0), (1, 0)])
+        let found = curve(run, [(0, 1), (t("lineDark", 0.97), 1), (t("lineDark", 0.97) + 0.012, 0.4), (0.985, 0), (1, 0)])
         // Back out to the whole line, a little thicker than it is.
         return found.clampedToExtent().applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(w), "inputHeight": odd(3 * px * r + 2)]).cropped(to: g2.extent)
       }
