@@ -1,0 +1,17 @@
+# A zip of documents comes in as notes, sorted into subjects (the workflow puts "School Pack.zip" in
+# the app's folder: Biology/Cells.pdf, Geometry/Homework.jpg and a Word file Quill skips).
+appId: com.solyapps.notes
+---
+- launchApp
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- extendedWaitUntil: { visible: "Biology", timeout: 120000 }
+- takeScreenshot: z01-home
+- tapOn: { text: "Biology" }
+- extendedWaitUntil: { visible: "Cells", timeout: 15000 }
+- takeScreenshot: z02-biology
+- tapOn: { text: "Geometry", optional: true }
+- extendedWaitUntil: { visible: "Homework", timeout: 15000 }
+- takeScreenshot: z03-geometry
+- tapOn: { text: "Homework" }
+- extendedWaitUntil: { visible: "More", timeout: 15000 }
+- takeScreenshot: z04-open

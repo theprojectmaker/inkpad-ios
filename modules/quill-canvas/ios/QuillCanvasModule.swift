@@ -35,6 +35,9 @@ public final class QuillCanvasModule: Module {
     }
 
     // Apple's on-device model (no internet): its state, and one answer.
+    // A zip of documents, unpacked into the app's folder (see Unzip.swift).
+    AsyncFunction("unzip") { (zipPath: String, rel: String) throws -> [String] in try Unzip.run(zipPath, into: rel) }
+
     // iCloud sync (see ICloudSync.swift). These wait on iCloud, so they run off the main thread.
     AsyncFunction("icloudStatus") { () -> String in ICloudSync.status() }
     AsyncFunction("icloudPushDir") { (rel: String, cloudRel: String) -> Int in ICloudSync.pushDir(rel, to: cloudRel) }

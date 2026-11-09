@@ -18,6 +18,7 @@ import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages, scanPages } from '@/lib/noteio';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
+import { importZip } from '@/lib/zipimport';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
 type Filter = { kind: 'home' } | { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'folder'; id: string };
@@ -29,6 +30,11 @@ const fmtDate = (t: number) => {
 };
 
 const defaultTitle = () => `Note ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+
+const zipDone = (r: { made: number; folders: number; skipped: string[]; failed: string[] }) =>
+  `Added ${r.made} ${r.made === 1 ? 'note' : 'notes'} in ${r.folders} ${r.folders === 1 ? 'subject' : 'subjects'}.` +
+  (r.skipped.length ? ` Skipped ${r.skipped.length} Quill can't open (${r.skipped.slice(0, 3).join(', ')}${r.skipped.length > 3 ? '…' : ''}).` : '') +
+  (r.failed.length ? ` ${r.failed.length} couldn't be read.` : '');
 
 export default function LibraryScreen() {
   const t = useTheme();
@@ -123,6 +129,13 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         const path = `${dir}/${f}`;
         const start = Date.now();
         try {
+        if (f.endsWith('.zip')) {
+          await note(`${f}: unzipping`);
+          const r = await importZip(fsx.uri(path), f, lib, () => {});
+          await fsx.remove(path);
+          await note(`${f}: ${zipDone(r)} in ${Date.now() - start} ms`);
+          continue;
+        }
         if (f.endsWith('.jpg')) {
           const id = uid('n');
           await note(`${f}: reading`);
@@ -145,10 +158,16 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
 
   const importPdf = async () => {
     let r;
-    try { r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf'], copyToCacheDirectory: true }); }
+    try { r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'application/zip', 'public.zip-archive'], copyToCacheDirectory: true }); }
     catch (e) { toast("Couldn't open Files: " + String((e as Error)?.message ?? e)); return; }
     if (r.canceled || !r.assets?.[0]) return;
-    await importPdfUri(r.assets[0].uri, r.assets[0].name ?? 'PDF');
+    const a = r.assets[0];
+    if (/\.zip$/i.test(a.name ?? '') || /zip/i.test(a.mimeType ?? '')) {
+      try { toast(zipDone(await importZip(a.uri, a.name ?? 'Imported.zip', lib, busy))); }
+      catch (e) { toast(String((e as Error)?.message ?? e)); }
+      return;
+    }
+    await importPdfUri(a.uri, a.name ?? 'PDF');
   };
 
   // Paper notes or a worksheet -> a clean typed copy you can write on.
@@ -410,7 +429,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
       </View>
 
       <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
-        { group: 1, label: 'Import a file', icon: 'square.and.arrow.down', onPress: importPdf },
+        { group: 1, label: 'Import a PDF or zip', icon: 'square.and.arrow.down', onPress: importPdf },
         { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
         { group: 1, label: 'Import Flashcards', icon: 'rectangle.on.rectangle', onPress: () => router.push('/flashcards') },
         { group: 2, label: list ? 'Show as grid' : 'Show as list', icon: list ? 'square.grid.2x2' : 'list.bullet', onPress: () => { set({ view: list ? 'grid' : 'list' }); setFilter({ kind: 'all' }); } },
@@ -424,7 +443,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
           { label: 'Scan paper', icon: 'doc.viewfinder', onPress: scanPaper },
           { label: 'Retype a scan with AI (can make mistakes)', icon: 'text.viewfinder', onPress: scanClean },
         ] : []),
-        { label: 'Import a PDF', icon: 'doc.richtext', onPress: importPdf },
+        { label: 'Import a PDF or zip', icon: 'doc.richtext', onPress: importPdf },
         { label: 'Import photos', icon: 'photo', onPress: importPhotos },
       ]} />
       <MenuSheet visible={sheet === 'note'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [

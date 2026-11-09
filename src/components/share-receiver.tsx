@@ -8,6 +8,7 @@ import { useLibrary } from '@/lib/library';
 import { uid } from '@/lib/model';
 import { imagePages, pdfPages } from '@/lib/noteio';
 import { useIncomingShare } from '@/lib/share';
+import { importZip } from '@/lib/zipimport';
 import { useToast } from './ui';
 
 export function ShareReceiver() {
@@ -18,9 +19,24 @@ export function ShareReceiver() {
 
   useEffect(() => {
     if (!hasShareIntent || working.current || !lib.ready) return;
-    const files = (shareIntent.files ?? []).filter((f) => /^image\//i.test(f.mimeType) || /pdf/i.test(f.mimeType) || /\.pdf$/i.test(f.fileName ?? f.path));
+    const all = shareIntent.files ?? [];
+    const zips = all.filter((f) => /zip/i.test(f.mimeType) || /\.zip$/i.test(f.fileName ?? f.path));
+    const files = all.filter((f) => !zips.includes(f) && (/^image\//i.test(f.mimeType) || /pdf/i.test(f.mimeType) || /\.pdf$/i.test(f.fileName ?? f.path)));
     resetShareIntent();
-    if (!files.length) { toast('Share a PDF or photos to make a note.'); return; }
+    if (zips.length) {
+      working.current = true;
+      (async () => {
+        for (const z of zips) {
+          try {
+            const r = await importZip(z.path, z.fileName ?? 'Shared.zip', lib, busy);
+            toast(`Added ${r.made} notes from ${z.fileName ?? 'the zip'}${r.skipped.length ? `, skipped ${r.skipped.length} other files` : ''}.`);
+          } catch (e) { toast("Couldn't import that zip: " + String((e as Error)?.message ?? e)); }
+        }
+        working.current = false;
+      })();
+      return;
+    }
+    if (!files.length) { toast('Share a PDF, photos or a zip to make notes.'); return; }
     working.current = true;
     (async () => {
       let opened: string | null = null;
