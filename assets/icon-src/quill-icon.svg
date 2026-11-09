@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="40 40 1174 1174">
+  <!-- Quill's app icon: a white quill pen on blue, redrawn as clean vectors from the user's reference.
+       Full bleed (iOS rounds the corners itself). Rendered to assets/icon.png by scripts/render-icon.mjs. -->
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="40" y1="40" x2="1214" y2="1214">
+      <stop offset="0" stop-color="#3D7DFF"/>
+      <stop offset="1" stop-color="#1544DB"/>
+    </linearGradient>
+    <!-- The same gradient in the quill group's (scaled) space, so cut-outs match the background exactly -->
+    <linearGradient id="bg2" gradientUnits="userSpaceOnUse" x1="27.8" y1="-18.2" x2="1332.2" y2="1286.2">
+      <stop offset="0" stop-color="#3D7DFF"/>
+      <stop offset="1" stop-color="#1544DB"/>
+    </linearGradient>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#061E6E" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="1300" height="1300" fill="url(#bg)"/>
+  <g transform="translate(627 627) scale(0.9) translate(-680 -634)">
+    <g filter="url(#lift)" fill="#FFFFFF">
+      <!-- Feather -->
+      <path d="M422 773
+               C455 560 560 385 760 282
+               C880 222 1000 200 1087 200
+               C1088 300 1072 400 1032 458
+               C992 512 930 534 852 551
+               C905 558 960 552 995 536
+               C962 620 922 672 872 702
+               C822 728 752 742 686 743
+               C722 756 752 759 781 757
+               C702 815 612 836 525 833
+               Z"/>
+      <!-- Collar -->
+      <rect x="385" y="820" width="132" height="31" rx="9" transform="rotate(29.3 451 835)"/>
+      <!-- Nib -->
+      <path d="M393 846 L470 891 L446 980 L298 1069 L273 1054 L312 898 Z" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+    </g>
+    <!-- Spine of the feather, cut out in the background colour -->
+    <path d="M455 790 C580 585 760 405 945 325 C772 412 602 600 483 806 Z" fill="url(#bg2)"/>
+    <!-- Nib slit and breather hole -->
+    <path d="M373 942 L285 1062" stroke="url(#bg2)" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="373" cy="942" r="25" fill="url(#bg2)"/>
+  </g>
+</svg>
