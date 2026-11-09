@@ -25,6 +25,7 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       # The key for Quill's AI / Classroom backend, baked into the app at build time.
       EXPO_PUBLIC_QUILL_TOKEN: ${{ secrets.QUILL_APP_TOKEN }}
+      QUILL_ICLOUD: ${{ vars.QUILL_ICLOUD }}   # set to 1 once the iCloud capability is in the signing profile
       EAS_SKIP_AUTO_FINGERPRINT: '1'
     steps:
       - uses: actions/checkout@v4

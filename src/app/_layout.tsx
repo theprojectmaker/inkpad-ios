@@ -1,14 +1,16 @@
 // Root: settings, library, toasts, the hidden PDF engine, and the stack.
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { AppState, Pressable, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ShareReceiver } from '@/components/share-receiver';
 import { ToastProvider } from '@/components/ui';
-import { LibraryProvider } from '@/lib/library';
+import { checkCloud, syncNow } from '@/lib/icloud';
+import { LibraryProvider, useLibrary } from '@/lib/library';
 import { EngineHost } from '@/lib/pdf-engine';
-import { SettingsProvider, useTheme } from '@/lib/settings';
+import { SettingsProvider, useSettings, useTheme } from '@/lib/settings';
 
 function Shell() {
   const t = useTheme();
@@ -17,6 +19,7 @@ function Shell() {
       <StatusBar style={t.dark ? 'light' : 'dark'} />
       <ToastProvider>
         <ShareReceiver />
+        <CloudSync />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg }, animation: 'fade', gestureEnabled: false }} />
       </ToastProvider>
       <EngineHost />
@@ -35,6 +38,28 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
       </Pressable>
     </View>
   );
+}
+
+/** Keeps the notes in step with iCloud: at launch, on coming back to the app, and after changes. */
+function CloudSync() {
+  const lib = useLibrary();
+  const { s } = useSettings();
+  const on = s.icloud !== false;
+  const run = useRef(() => {});
+  run.current = () => { if (on && lib.ready) syncNow(lib.current, lib.adopt).catch(() => {}); };
+  useEffect(() => { checkCloud().catch(() => {}); }, []);
+  useEffect(() => { run.current(); }, [on, lib.ready]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') run.current(); });
+    return () => sub.remove();
+  }, []);
+  // A few seconds after the library changes (a note left, renamed, moved or deleted).
+  useEffect(() => {
+    if (!on || !lib.ready) return;
+    const t = setTimeout(() => run.current(), 4000);
+    return () => clearTimeout(t);
+  }, [lib.lib, on, lib.ready]);
+  return null;
 }
 
 export default function RootLayout() {

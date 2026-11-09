@@ -35,6 +35,14 @@ public final class QuillCanvasModule: Module {
     }
 
     // Apple's on-device model (no internet): its state, and one answer.
+    // iCloud sync (see ICloudSync.swift). These wait on iCloud, so they run off the main thread.
+    AsyncFunction("icloudStatus") { () -> String in ICloudSync.status() }
+    AsyncFunction("icloudPushDir") { (rel: String, cloudRel: String) -> Int in ICloudSync.pushDir(rel, to: cloudRel) }
+    AsyncFunction("icloudPullDir") { (cloudRel: String, rel: String) -> Int in ICloudSync.pullDir(cloudRel, to: rel) }
+    AsyncFunction("icloudReadText") { (cloudRel: String) -> String? in ICloudSync.readText(cloudRel) }
+    AsyncFunction("icloudWriteText") { (cloudRel: String, text: String) -> Bool in ICloudSync.writeText(cloudRel, text) }
+    AsyncFunction("icloudRemove") { (cloudRel: String) in ICloudSync.remove(cloudRel) }
+
     Function("gestureLogPath") { () -> String in
       return GestureLog.path
     }

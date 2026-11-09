@@ -51,6 +51,7 @@ export type Settings = {
   textSizeIdx: number;       // 0 | 1 | 2
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
   inkStats?: boolean;        // numbers on the page: how fast the ink is
+  icloud?: boolean;          // sync notes with iCloud (on unless turned off)
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
   toolDock?: 'top' | 'bottom' | 'left' | 'right';   // which edge of the screen the toolbar sits on
   brushType?: 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray';

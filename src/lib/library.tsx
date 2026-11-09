@@ -22,7 +22,30 @@ type Ctx = {
   meta: (id: string) => NoteMeta | undefined;
   /** Writes the library index now (instead of a moment later). */
   flush: () => Promise<void>;
+  /** The library as it is right now (for iCloud sync). */
+  current: () => Library;
+  /** Takes a library that came from iCloud, without marking anything in it as changed here. */
+  adopt: (l: Library) => void;
 };
+
+/** Marks what changed (and what was deleted) with the time, so iCloud knows which copy is newer. */
+function stamp(prev: Library, next: Library): Library {
+  if (prev === next) return next;
+  const now = Date.now();
+  const pn = new Map(prev.notes.map((n) => [n.id, n]));
+  const pf = new Map(prev.folders.map((f) => [f.id, f]));
+  const nn = new Set(next.notes.map((n) => n.id));
+  const nf = new Set(next.folders.map((f) => f.id));
+  let gone = next.gone;
+  for (const n of prev.notes) if (!nn.has(n.id)) gone = { ...gone, [n.id]: now };
+  for (const f of prev.folders) if (!nf.has(f.id)) gone = { ...gone, [f.id]: now };
+  return {
+    ...next,
+    gone,
+    notes: next.notes.map((n) => (pn.get(n.id) === n ? n : { ...n, ts: now })),
+    folders: next.folders.map((f) => (pf.get(f.id) === f ? f : { ...f, ts: now })),
+  };
+}
 
 const EMPTY: Library = { v: 1, folders: [], notes: [] };
 const LibCtx = createContext<Ctx | null>(null);
@@ -75,7 +98,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const commit = useCallback((fn: (l: Library) => Library) => {
     if (!loaded.current) early.current.push(fn);
-    const next = fn(libRef.current);
+    const next = stamp(libRef.current, fn(libRef.current));
     libRef.current = next;
     setLib(next);
     if (!loaded.current) return;
@@ -145,9 +168,17 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   }, [commit]);
 
   const meta = useCallback((id: string) => libRef.current.notes.find((n) => n.id === id), []);
+  const current = useCallback(() => libRef.current, []);
+  const adopt = useCallback((l: Library) => {
+    if (!loaded.current) return;
+    libRef.current = l;
+    setLib(l);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(write, 250);
+  }, [write]);
 
-  const v = useMemo(() => ({ lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, trashNote, restoreNote, duplicateNote, meta, flush: write }),
-    [lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, trashNote, restoreNote, duplicateNote, meta, write]);
+  const v = useMemo(() => ({ lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, trashNote, restoreNote, duplicateNote, meta, current, adopt, flush: write }),
+    [lib, ready, addFolder, updateFolder, removeFolder, createNote, updateNote, removeNote, trashNote, restoreNote, duplicateNote, meta, current, adopt, write]);
   return <LibCtx.Provider value={v}>{children}</LibCtx.Provider>;
 }
 

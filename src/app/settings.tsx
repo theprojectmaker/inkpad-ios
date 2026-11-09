@@ -9,6 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, IconButton } from '@/components/ui';
 import { openLink } from '@/lib/classroom';
+import { syncNow, useCloud } from '@/lib/icloud';
+import { useLibrary } from '@/lib/library';
 import { NOTES_SITE } from '@/lib/drive';
 import { useSettings, useTheme } from '@/lib/settings';
 
@@ -16,6 +18,14 @@ export default function SettingsScreen() {
   const t = useTheme();
   const ins = useSafeAreaInsets();
   const { s, set } = useSettings();
+  const cloud = useCloud();
+  const lib = useLibrary();
+  const ago = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+  const cloudNote = cloud.status === 'unavailable' ? 'Not switched on in this version of Quill yet.'
+    : cloud.status === 'signed-out' ? 'Sign in to iCloud and turn on iCloud Drive in the iPad’s Settings.'
+    : cloud.status === 'checking' ? 'Checking iCloud…'
+    : s.icloud === false ? 'Off: notes stay on this iPad only.'
+    : cloud.busy ? 'Syncing…' : cloud.error ? `Last try failed: ${cloud.error}` : cloud.at ? `Up to date, synced ${ago(cloud.at)}.` : 'Notes save to iCloud and sync between your devices.';
   const back = () => (router.canGoBack() ? router.back() : router.replace('/'));
 
   const Section = ({ title, children }: { title: string; children: ReactNode }) => (
@@ -81,6 +91,12 @@ export default function SettingsScreen() {
             right={<Switch value={s.autoPage !== false} onValueChange={(v) => set({ autoPage: v })} />} />
           <Row icon="speedometer" label="Show ink speed" onPress={() => set({ inkStats: !s.inkStats })} note="Numbers on the page showing how fast the ink is on this iPad."
             right={<Switch value={!!s.inkStats} onValueChange={(v) => set({ inkStats: v })} />} last />
+        </Section>
+
+        <Section title="iCloud">
+          <Row icon="icloud" label="Sync notes with iCloud" note={cloudNote}
+            right={<Switch accessibilityLabel="Sync notes with iCloud" disabled={cloud.status !== 'on'} value={cloud.status === 'on' && s.icloud !== false} onValueChange={(v) => set({ icloud: v })} />} />
+          <Row icon="arrow.triangle.2.circlepath" label="Sync now" onPress={() => { if (cloud.status === 'on' && s.icloud !== false) syncNow(lib.current, lib.adopt).catch(() => {}); }} last />
         </Section>
 
         <Section title="Google">

@@ -106,14 +106,16 @@ export type NoteMeta = {
   trashed?: number;      // when it went to Recently Deleted
   hw?: Homework;         // the Classroom assignment this note is for
   drive?: { id: string; at: number }; // its PDF in the Quill folder in Google Drive, and when it was saved
+  ts?: number;           // when anything about it last changed (for iCloud sync)
 };
 
 /** A Classroom assignment a note was made for (so it can be handed in). */
 export type Homework = { key: string; courseId: string; id: string; course: string; title: string; link: string; due?: number };
 
-export type Folder = { id: string; name: string; color: string; created: number };
+export type Folder = { id: string; name: string; color: string; created: number; ts?: number };
 
-export type Library = { v: 1; folders: Folder[]; notes: NoteMeta[] };
+/** gone: what was deleted and when, so an older copy in iCloud doesn't bring it back. */
+export type Library = { v: 1; folders: Folder[]; notes: NoteMeta[]; gone?: Record<string, number> };
 
 export const LETTER = { w: 612, h: 792 };
 

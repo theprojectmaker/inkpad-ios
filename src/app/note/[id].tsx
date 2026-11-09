@@ -40,6 +40,7 @@ import { useLibrary } from '@/lib/library';
 import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid, clockAt, soundAt } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
 import { imagePages, listVersions, loadDoc, notePath, renderDir, restoreVersion, saveDoc, saveImage, saveVersion, scanPages } from '@/lib/noteio';
+import { setOpenNote } from '@/lib/icloud';
 import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -247,6 +248,8 @@ export default function Editor() {
 
   const leaving = useRef(false);
   const back = () => leave();
+  useEffect(() => { setOpenNote(id); return () => setOpenNote(null); }, [id]);
+
   const leave = async (to?: string) => {
     if (leaving.current) return;
     leaving.current = true;
