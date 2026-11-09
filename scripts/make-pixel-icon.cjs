@@ -1,92 +1,67 @@
-// Draws Quill's app icon as pixel art: a white quill feather writing a blue ink line, on a
-// blue background, on a 32 x 32 grid scaled up with hard edges. No transparency (the App Store
-// refuses icons with an alpha channel). Usage: node scripts/make-pixel-icon.cjs [out.png] [size]
+// Quill's app icon: a hand-placed 16 x 16 pixel quill (big, deliberate pixels) on a smooth
+// background with a soft shadow. No transparency (the App Store refuses alpha).
+// Usage: node scripts/make-pixel-icon.cjs <out.png> [size] [style]   style: dusk | paper | sun
 const fs = require('fs');
 const zlib = require('zlib');
 
-const N = 32;
-const out = process.argv[2] || 'assets/images/icon.png';
+const out = process.argv[2] || 'assets/icon.png';
 const size = Number(process.argv[3] || 1024);
+const style = process.argv[4] || 'dusk';
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
-const C = {
-  outline: hex('#2A1650'), vane: hex('#FFFFFF'), vaneShade: hex('#D6F4FF'), vaneDeep: hex('#8FD3FF'),
-  vaneTeal: hex('#4FE0C8'), vaneTealDeep: hex('#22B8A8'), vaneGold: hex('#FFE07A'), vaneGoldDeep: hex('#FFB547'),
-  shaft: hex('#7A4A20'), nib: hex('#2B2F4A'), nibShine: hex('#FFD34D'), ink: hex('#FFFFFF'), inkDeep: hex('#FFE07A'),
-  spark: hex('#FFF6B0'), sparkWhite: hex('#FFFFFF'),
+// The quill, drawn by hand. K outline, W feather, L feather shade, D deeper shade, S shaft,
+// N nib, n nib shine, I ink.
+const SPRITE = [
+  '...........KKK..',
+  '.........KKWWLK.',
+  '........KWWWWLK.',
+  '.......KWWWWSLK.',
+  '......KWWWWSLDK.',
+  '.....KWWWWSLLDK.',
+  '....KWWWWSLLDK..',
+  '....KWWWSLLDDK..',
+  '...KWWWSLLDDK...',
+  '...KWWSLLDDK....',
+  '...KWSLLDKK.....',
+  '..KNSKKKK.......',
+  '..KnNK..........',
+  '.KNNK...........',
+  '.KNK...IIII.....',
+  '.KK..IIIIIIII...',
+];
+
+const STYLES = {
+  // Deep blue to violet, white feather, gold nib.
+  dusk: { top: '#4D6BFF', bottom: '#8A3FE0', K: '#191540', W: '#FFFFFF', L: '#D5E3FF', D: '#A9BFFF', S: '#C9A36A', N: '#FFC940', n: '#FFF3B0', I: '#FFC940', shadow: [12, 6, 40] },
+  // Warm paper, navy ink quill: calm and bookish.
+  paper: { top: '#FFF8EC', bottom: '#F3E2C4', K: '#1E2B5C', W: '#FFFFFF', L: '#DCE6FF', D: '#9FB4F2', S: '#B88A4E', N: '#1E2B5C', n: '#7F92D6', I: '#2F5BFF', shadow: [120, 90, 40] },
+  // Bright yellow like a notepad, dark quill.
+  sun: { top: '#FFD84A', bottom: '#FFB21F', K: '#2A1E10', W: '#FFFFFF', L: '#FFF1C2', D: '#F2C766', S: '#8A5A22', N: '#2A1E10', n: '#9C7A45', I: '#2A1E10', shadow: [120, 70, 0] },
 };
-// Sunset bands, top to bottom, with a checker of the two colours where they meet (a pixel-art gradient).
-const BANDS = ['#FFB25A', '#FF8A5C', '#FF5F7E', '#E048A8', '#A945D8', '#6E45E4'].map(hex);
+const P = STYLES[style];
+if (!P) throw new Error('style: dusk | paper | sun');
 
-const grid = Array.from({ length: N }, () => Array(N).fill(null));
-// Background: soft bands from the top, a darker rim.
-for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-  const f = (y + x * 0.35) / (N + N * 0.35) * BANDS.length;
-  let i = Math.min(BANDS.length - 1, Math.floor(f));
-  if (f - i > 0.78 && i < BANDS.length - 1 && (x + y) % 2 === 0) i++;   // dithered seam
-  grid[y][x] = BANDS[i];
-}
-
-// The quill: its shaft runs from the nib (bottom left) to the tip (top right).
-const nib = [7.5, 24.5], tip = [26.5, 5.5];
-const dx = tip[0] - nib[0], dy = tip[1] - nib[1], len = Math.hypot(dx, dy);
-const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;   // along the shaft, and across it
-const vane = new Set();
-for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-  const px = x + 0.5 - nib[0], py = y + 0.5 - nib[1];
-  const t = (px * ux + py * uy) / len;        // 0 at the nib, 1 at the tip
-  const s = px * nx + py * ny;                // which side of the shaft, and how far
-  if (t < 0.24 || t > 1.02) continue;
-  const k = (t - 0.24) / 0.78;
-  // Wider on one side, curving out then tapering to the tip.
-  const wide = Math.sin(Math.min(1, k * 1.15) * Math.PI) * (s < 0 ? 4.6 : 3.4) + (k < 0.15 ? 0 : 0.6);
-  const notch = (Math.floor(t * 26) % 6 === 0 && Math.abs(s) > wide - 1.2) ? 1 : 0;   // a few gaps in the barbs
-  if (Math.abs(s) <= wide - notch) vane.add(y * N + x);
-}
-// Shading: the lower side of the feather is a little darker, deeper near the shaft's base.
-for (const i of vane) {
-  const x = i % N, y = (i / N) | 0;
-  const px = x + 0.5 - nib[0], py = y + 0.5 - nib[1];
-  const s = px * nx + py * ny, t = (px * ux + py * uy) / len;
-  const deep = s < -2.2, mid = s < -0.6;
-  if (t < 0.42) grid[y][x] = deep ? C.vaneTealDeep : C.vaneTeal;
-  else if (t > 0.84) grid[y][x] = deep || mid ? C.vaneGoldDeep : C.vaneGold;
-  else grid[y][x] = deep ? C.vaneDeep : mid ? C.vaneShade : C.vane;
-}
-// Outline every feather pixel's empty neighbours.
-const isVane = (x, y) => vane.has(y * N + x);
-for (let y = 1; y < N - 1; y++) for (let x = 1; x < N - 1; x++) {
-  if (isVane(x, y)) continue;
-  if (isVane(x + 1, y) || isVane(x - 1, y) || isVane(x, y + 1) || isVane(x, y - 1)) grid[y][x] = C.outline;
-}
-// The shaft through the feather.
-for (let t = 0.24; t <= 0.96; t += 0.01) {
-  const x = Math.floor(nib[0] + dx * t), y = Math.floor(nib[1] + dy * t);
-  if (isVane(x, y)) grid[y][x] = C.shaft;
-}
-// The nib: dark metal with one bright pixel, pointing down-left.
-for (let t = 0; t <= 0.27; t += 0.005) {
-  const x = Math.floor(nib[0] + dx * t), y = Math.floor(nib[1] + dy * t);
-  grid[y][x] = C.nib;
-  if (t > 0.08 && y + 1 < N) grid[y + 1][x] = C.nib;     // a little thicker towards the feather
-}
-{ const t = 0.17; grid[Math.floor(nib[1] + dy * t)][Math.floor(nib[0] + dx * t)] = C.nibShine; }
-// The line it's writing: a golden ink stroke with a little wave.
-const line = [[3, 28], [4, 28], [5, 27], [6, 28], [7, 28], [8, 29], [9, 28], [10, 28], [11, 27], [12, 28], [13, 28], [14, 29], [15, 28], [16, 28]];
-line.forEach(([x, y], i) => { grid[y][x] = i % 4 === 3 ? C.inkDeep : C.ink; });
-grid[27][4] = C.ink;
-
-// Sparkles around the quill.
-const plus = (x, y, c, big) => { grid[y][x] = c; if (big) { grid[y - 1][x] = c; grid[y + 1][x] = c; grid[y][x - 1] = c; grid[y][x + 1] = c; } };
-plus(5, 6, C.sparkWhite, true); plus(27, 18, C.spark, true); plus(22, 26, C.sparkWhite, false); plus(9, 12, C.spark, false); plus(28, 27, C.spark, false);
-
-// Scale up with hard pixel edges and write a PNG (RGB, no alpha).
-const scale = size / N;
+const px = Math.floor(size * 0.75 / 16);          // one sprite pixel
+const off = Math.floor((size - px * 16) / 2);
+const top = hex(P.top), bottom = hex(P.bottom);
 const raw = Buffer.alloc((size * 3 + 1) * size);
+const cell = (x, y) => {
+  const sx = Math.floor((x - off) / px), sy = Math.floor((y - off) / px);
+  if (sx < 0 || sy < 0 || sx > 15 || sy > 15) return null;
+  const ch = SPRITE[sy][sx];
+  return ch === '.' ? null : hex(P[ch]);
+};
+const sh = Math.round(px * 0.35);   // shadow offset
 for (let y = 0; y < size; y++) {
   raw[y * (size * 3 + 1)] = 0;
+  const f = y / (size - 1);
   for (let x = 0; x < size; x++) {
-    const c = grid[Math.floor(y / scale)][Math.floor(x / scale)];
+    // Smooth diagonal gradient.
+    const g = Math.min(1, Math.max(0, f * 0.8 + (x / size) * 0.2));
+    let c = [0, 1, 2].map((i) => Math.round(top[i] + (bottom[i] - top[i]) * g));
+    const p = cell(x, y);
+    if (!p && cell(x - sh, y - sh)) c = c.map((v, i) => Math.round(v * 0.72 + P.shadow[i] * 0.28));   // soft drop shadow
+    if (p) c = p;
     const o = y * (size * 3 + 1) + 1 + x * 3;
     raw[o] = c[0]; raw[o + 1] = c[1]; raw[o + 2] = c[2];
   }
@@ -100,7 +75,6 @@ const chunk = (type, data) => {
   return Buffer.concat([len, td, c]);
 };
 const ihdr = Buffer.alloc(13);
-ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
-fs.writeFileSync(out, png);
-console.log(`wrote ${out} (${size}x${size}, ${Math.round(png.length / 1024)} KB)`);
+ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 2;
+fs.writeFileSync(out, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]));
+console.log(`wrote ${out} (${style}, ${size}px)`);
