@@ -62,6 +62,14 @@ enum ScanFilter {
     }
     func colourless(_ i: CIImage) -> CIImage { i.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0.0]) }
 
+    // The light's colour: the paper's average colour (writing mostly gone at this size) is divided
+    // out, so white paper is white and black ink is black, not brown under a warm lamp.
+    if t("wb", 1) > 0.5 {
+      let paper = maximum(shrink(image, 1 / 16), 4).applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: shrink(image, 1 / 16).extent)])
+        .clampedToExtent().cropped(to: ext)
+      image = paper.applyingFilter("CIDivideBlendMode", parameters: [kCIInputBackgroundImageKey: image]).cropped(to: ext)
+        .applyingFilter("CIColorClamp", parameters: ["inputMinComponents": CIVector(x: 0, y: 0, z: 0, w: 1), "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)])
+    }
     // Grain off first, or it would be read as ink.
     let calm = blur(image.applyingFilter("CINoiseReduction", parameters: ["inputNoiseLevel": 0.03, "inputSharpness": t("sharp", 0.6)]).cropped(to: ext), t("blur", 0.6) * soft)
 
@@ -106,7 +114,7 @@ enum ScanFilter {
       curve(greySmall.clampedToExtent().applyingFilter("CIMotionBlur", parameters: [kCIInputRadiusKey: 50 * px * q, kCIInputAngleKey: angle]).cropped(to: greySmall.extent),
             [(0, 1), (0.955, 1), (0.975, 0.4), (0.99, 0), (1, 0)])
     }
-    let near = sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
+    let near = t("rules", 1) > 0.5 ? sure : sure.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(0)])
       .applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: ruled(.pi / 2)]).cropped(to: greySmall.extent)
     let allowed = grow(blur(near, 3 * px * q), q)
     var ink = faint.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: allowed]).cropped(to: ext)
@@ -121,7 +129,7 @@ enum ScanFilter {
       func lines(_ w: CGFloat, _ hgt: CGFloat) -> CIImage {
         // Lightest value along a long run: only stays dark where the whole run is a line.
         let run = g2.clampedToExtent().applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(w), "inputHeight": odd(hgt)]).cropped(to: g2.extent)
-        let found = curve(run, [(0, 1), (t("lineDark", 0.9), 1), (t("lineDark", 0.9) + 0.04, 0.4), (0.985, 0), (1, 0)])
+        let found = curve(run, [(0, 1), (t("lineDark", 0.955), 1), (t("lineDark", 0.955) + 0.025, 0.4), (0.985, 0), (1, 0)])
         // Back out to the whole line, a little thicker than it is.
         return found.clampedToExtent().applyingFilter("CIMorphologyRectangleMaximum", parameters: ["inputWidth": odd(w), "inputHeight": odd(3 * px * r + 2)]).cropped(to: g2.extent)
       }
@@ -130,7 +138,10 @@ enum ScanFilter {
       let rule = grow(across.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: down]).cropped(to: g2.extent), r)
       // Only where it's pale: pen and print crossing a line keep every pixel.
       let pale = curve(grey, [(0, 0), (t("pale", 0.72), 0), (t("pale", 0.72) + 0.08, 1), (0.99, 1), (1, 1)])
+      let hue = colourless(flat.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: lum]).cropped(to: ext))
+      let tintedLine = blur(curve(hue, [(0, 0), (0.015, 0), (0.04, 1), (0.5, 1), (1, 1)]), 1.5 * px)
       let gone = rule.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: pale]).cropped(to: ext)
+        .applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: tintedLine]).cropped(to: ext)
       ink = ink.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: gone.applyingFilter("CIColorInvert")]).cropped(to: ext)
     }
 
@@ -161,8 +172,8 @@ enum ScanFilter {
       if t("neutral", 1) > 0.5 {
         let grey0 = colourless(pen)
         let chroma = colourless(pen.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: grey0]).cropped(to: ext))
-        let tinted = curve(chroma.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.0, kCIInputBrightnessKey: 0.0]), [(0, 0), (0.035, 0), (0.07, 0.5), (0.11, 1), (1, 1)])
-        let plain = curve(grey0, [(0, 0.05), (0.25, 0.08), (0.5, 0.25), (0.75, 0.55), (1, 0.9)])
+        let tinted = curve(chroma.applyingFilter("CIColorControls", parameters: [kCIInputContrastKey: 1.0, kCIInputBrightnessKey: 0.0]), [(0, 0), (0.05, 0), (0.09, 0.5), (0.14, 1), (1, 1)])
+        let plain = curve(grey0, [(0, 0.04), (0.3, 0.09), (0.55, 0.36), (0.8, 0.66), (1, 0.92)])
         colour = deep.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: plain, kCIInputMaskImageKey: tinted]).cropped(to: ext)
       }
       out = colour.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: sheet, kCIInputMaskImageKey: ink]).cropped(to: ext)

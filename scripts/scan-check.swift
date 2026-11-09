@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 @main
 struct Check {
   static let versions: [(String, [String: CGFloat])] = [
-    ("a-before", ["rules": 0, "neutral": 0]),
+    ("a-before", ["rules": 0, "neutral": 0, "wb": 0]),
     ("b-neutral-rules", [:]),
     ("c-thinner", ["cut": 0.05, "blur": 0.35]),
     ("d-thinnest", ["cut": 0.09, "blur": 0.3, "sharp": 0.9]),
@@ -30,8 +30,10 @@ struct Check {
         try ci.writeJPEGRepresentation(of: out, to: URL(fileURLWithPath: "\(output)/\(base)-\(label).jpg"), colorSpace: srgb, options: q)
         // A close-up at full size: the left part of the page, from a bit below the top.
         let e = out.extent
-        let zoom = CGRect(x: e.minX + e.width * 0.06, y: e.minY + e.height * 0.22, width: e.width * 0.5, height: e.height * 0.36)
-        try ci.writeJPEGRepresentation(of: out.cropped(to: zoom), to: URL(fileURLWithPath: "\(output)/\(base)-\(label)-zoom.jpg"), colorSpace: srgb, options: q)
+        for (tag, y) in [("low", 0.22), ("high", 0.55)] {
+          let zoom = CGRect(x: e.minX + e.width * 0.06, y: e.minY + e.height * y, width: e.width * 0.5, height: e.height * 0.36)
+          try ci.writeJPEGRepresentation(of: out.cropped(to: zoom), to: URL(fileURLWithPath: "\(output)/\(base)-\(label)-\(tag).jpg"), colorSpace: srgb, options: q)
+        }
         print("\(base) \(label): \(Int(e.width))x\(Int(e.height)) in \(String(format: "%.1f", Date().timeIntervalSince(t))) s")
       }
     }
