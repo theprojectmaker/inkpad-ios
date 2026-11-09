@@ -15,16 +15,32 @@ type Native = {
   icloudReadText(cloudRel: string): Promise<string | null>;
   icloudWriteText(cloudRel: string, text: string): Promise<boolean>;
   icloudRemove(cloudRel: string): Promise<void>;
+  networkKind?(): Promise<string>;
 };
 let native: Native | null = null;
 try { native = requireNativeModule<Native>('QuillCanvas'); } catch { native = null; }
 
 export type CloudStatus = 'on' | 'signed-out' | 'unavailable' | 'checking';
-type State = { status: CloudStatus; busy: boolean; at: number; error?: string; moved?: number };
-let state: State = { status: 'checking', busy: false, at: 0 };
+export type NetKind = 'wifi' | 'cellular' | 'wired' | 'none' | 'other';
+type State = { status: CloudStatus; busy: boolean; at: number; error?: string; moved?: number; net: NetKind; waiting?: boolean; retryAt?: number };
+let state: State = { status: 'checking', busy: false, at: 0, net: 'other' };
 const listeners = new Set<() => void>();
 const set = (s: Partial<State>) => { state = { ...state, ...s }; listeners.forEach((l) => l()); };
 export const useCloud = () => useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l); }, () => state, () => state);
+
+/** The sync state outside React (CloudSync reads it after a sync to see whether it failed). */
+export const getCloud = () => state;
+/** CloudSync notes here why it's holding back (cellular with Wi-Fi only on) and when it retries. */
+export const setSyncHints = (h: { waiting?: boolean; retryAt?: number }) => set(h);
+
+const NET: NetKind[] = ['wifi', 'cellular', 'wired', 'none', 'other'];
+/** How this iPad is online right now. A build without the native function answers 'other'. */
+export async function networkKind(): Promise<NetKind> {
+  let k: NetKind = 'other';
+  try { if (native?.networkKind) { const v = (await native.networkKind()) as NetKind; if (NET.includes(v)) k = v; } } catch {}
+  if (k !== state.net) set({ net: k });
+  return k;
+}
 
 export async function checkCloud(): Promise<CloudStatus> {
   let s: CloudStatus = 'unavailable';

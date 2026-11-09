@@ -62,8 +62,12 @@ export type Settings = {
   scribble?: boolean;        // Pencil handwriting in a text box turns into typing (on unless turned off)
   scratchOut?: boolean;      // scribbling back and forth over writing deletes it (off unless turned on)
   straightMarker?: boolean;  // straight highlighter (on unless turned off)
-  scheduleUnlocked?: boolean;   // the real Studento schedule, linked with a code
-  gamesUnlocked?: boolean;   // the Games tab, unlocked with a redeem code
+  wifiOnlySync?: boolean;    // iCloud holds off on cellular, syncs the moment Wi-Fi is back (on unless turned off)
+  haptics?: boolean;         // little taps from the iPad on snaps and picks (on unless turned off)
+  reduceMotion?: boolean;    // fades instead of slides, no bounces (off unless turned on)
+  confirmDelete?: boolean;   // ask before a note is deleted (on unless turned off)
+  pageNumbers?: boolean;     // a page number under each page (off unless turned on)
+  keepAwake?: boolean;       // the screen stays on while a note is open (off unless turned on)
 };
 export type InkTool = 'pen' | 'pencil' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'calligraphy' | 'comment' | 'measure' | 'compass' | 'shape' | 'brush';
 export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
@@ -72,7 +76,7 @@ export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: 
 export type FavTool = { kind: 'pen' | 'marker'; style: PenStyle; color: string; size: number };
 export type PenStyle = 'pen' | 'felt' | 'fountain' | 'pencil';
 
-const DEFAULTS: Settings = {
+export const DEFAULTS: Settings = {
   theme: 'system', view: 'grid', sort: 'updated',
   pencilOnly: false, pencilSeen: false, pressure: true, smoothing: 0.4, holdToShape: true, penType: 'fountain', hlStraight: true,
   tabs: [],
@@ -91,7 +95,11 @@ const DEFAULTS: Settings = {
     { kind: 'marker', style: 'pen', color: '#FFE14D', size: 1 },
   ],
   inkKind: 'pen', inkSize: 1, fingerDraws: false, penStyle: 'pen', textSizeIdx: 1,
+  wifiOnlySync: true, haptics: true, reduceMotion: false, confirmDelete: true, pageNumbers: false, keepAwake: false,
 };
+
+/** Settings > Reset: puts every preference back, but keeps your pens, favourites, templates and open tabs. */
+export const RESET_KEEPS: (keyof Settings)[] = ['tabs', 'favPens', 'favs', 'tk', 'myTemplates', 'recentColors', 'pencilSeen', 'measureScale', 'lastTool'];
 
 const KEY = 'inkpad.settings.v1';   // key kept from the app's first name (Inkpad) so settings survive the rename
 

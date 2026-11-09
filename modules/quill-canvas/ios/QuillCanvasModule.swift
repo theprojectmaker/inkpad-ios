@@ -40,6 +40,7 @@ public final class QuillCanvasModule: Module {
 
     // iCloud sync (see ICloudSync.swift). These wait on iCloud, so they run off the main thread.
     AsyncFunction("icloudStatus") { () -> String in ICloudSync.status() }
+    AsyncFunction("networkKind") { () -> String in NetWatch.current() }
     AsyncFunction("icloudPushDir") { (rel: String, cloudRel: String) -> Int in ICloudSync.pushDir(rel, to: cloudRel) }
     AsyncFunction("icloudPullDir") { (cloudRel: String, rel: String) -> Int in ICloudSync.pullDir(cloudRel, to: rel) }
     AsyncFunction("icloudReadText") { (cloudRel: String) -> String? in ICloudSync.readText(cloudRel) }

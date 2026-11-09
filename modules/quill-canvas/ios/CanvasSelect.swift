@@ -502,6 +502,49 @@ extension QuillCanvasView {
     ink.setNeedsInk(rebuild: true)
   }
 
+  /// Neaten handwriting, on the iPad with no internet: the selected writing is read line by line and
+  /// rewritten in the same place, same colour and roughly the same size, in a clean handwriting font.
+  /// Undo brings the original back.
+  func neatenSelection() {
+    commitSelection()
+    let picked = selection
+    guard !picked.isEmpty, let img = selectionImage(), let cg = img.cgImage else { return }
+    let box = selBox.insetBy(dx: -10, dy: -10)
+    selectionMessage("Neatening your writing…")
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let req = VNRecognizeTextRequest()
+      req.recognitionLevel = .accurate
+      req.usesLanguageCorrection = true
+      if #available(iOS 16.0, *) { req.automaticallyDetectsLanguage = true }
+      try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
+      let lines: [(String, CGRect)] = (req.results ?? []).compactMap { o in
+        guard let c = o.topCandidates(1).first, !c.string.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let b = o.boundingBox   // 0...1, measured from the bottom left
+        return (c.string, CGRect(x: box.minX + b.minX * box.width, y: box.minY + (1 - b.maxY) * box.height, width: b.width * box.width, height: b.height * box.height))
+      }
+      DispatchQueue.main.async {
+        guard let self else { return }
+        guard !lines.isEmpty else { self.selectionMessage("Couldn't read that writing. Try selecting just the words."); return }
+        let rgb = picked.first?.rgb ?? 0x111111
+        let hex = String(format: "#%02X%02X%02X", rgb & 255, rgb >> 8 & 255, rgb >> 16 & 255)
+        picked.forEach { $0.lifted = false }
+        self.selection = []; self.selTexts = []; self.selPics = []
+        self.ink.lifted = []
+        self.clearSelectionUI()
+        self.document.apply(removed: picked, added: [])
+        for (text, r) in lines.sorted(by: { $0.1.minY < $1.1.minY }) {
+          let size = max(11, min(64, Double(r.height) * 0.82))
+          self.texts.append(TextBox(id: UUID().uuidString, x: Double(r.minX), y: Double(r.minY) - size * 0.1, w: Double(max(60, r.width * 1.3)),
+                                    text: text, size: size, color: hex, font: "hand", bold: false))
+        }
+        self.renderTexts()
+        self.finishObjects(removed: picked, added: [])
+        self.ink.setNeedsInk(rebuild: true)
+        self.selectionMessage("Neatened (lines.count) (lines.count == 1 ? "line" : "lines"). Undo brings your writing back.")
+      }
+    }
+  }
+
   @objc func onSelExplain() {
     guard let path = selectionFile() else { return }
     onSelectionAction(["action": "explain", "path": path])
@@ -777,6 +820,7 @@ extension QuillCanvasView {
     let convert = make("Convert ›")
     convert.accessibilityLabel = "Convert"
     convert.menu = UIMenu(children: [
+      UIAction(title: "Neaten handwriting", image: UIImage(systemName: "wand.and.stars")) { [weak self] _ in self?.neatenSelection() },
       UIAction(title: "Text") { [weak self] _ in self?.convert("text") },
       UIAction(title: "Math") { [weak self] _ in self?.convert("math") },
       UIAction(title: "Graph") { [weak self] _ in self?.convert("graph") },

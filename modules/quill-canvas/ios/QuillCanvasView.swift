@@ -146,6 +146,10 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var shapeFill = false
   var shapeStart = CGPoint.zero
   var shapePage = CGRect.infinite
+  var shapeEnd = CGPoint.zero
+  var shapeEdit: ShapeEdit?          // the shape just drawn, while its handles are showing
+  var shapeDrag: Int?                // which handle is being moved
+  let shapeHandles = CAShapeLayer()
   var shapePoints: [CGPoint] = []
   var shapePieceList: [[CGPoint]] = []
   let compassDots = CAShapeLayer()
@@ -480,6 +484,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   private func syncInk() {
     if !zoomPreviewing { ink.scrolled(to: canvas.bounds, zoom: canvas.zoomScale) }
     placeSelectionUI()
+    placeShapeHandles()
     placeBoxBar()
     zoomWriter?.syncBox()
   }
@@ -824,6 +829,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if handMode { clearSelection(); selTap.isEnabled = false; return }
     let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : t.kind == "measure" ? .measure : t.kind == "compass" ? .compass : t.kind == "shape" ? .shape : .write
     if mode != .lasso { clearSelection() }
+    if mode != .shape { endShapeEdit() }
     inkMode = mode
     applyFingerRules()
     drawCompass()

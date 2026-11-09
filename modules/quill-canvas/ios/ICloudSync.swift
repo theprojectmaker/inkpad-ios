@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 /// Notes in iCloud Drive: Quill's own container (it doesn't show in the Files app). Each note is a
 /// folder, copied file by file; iOS does the uploading and downloading. Paths given here are relative:
@@ -142,5 +143,28 @@ enum ICloudSync {
     let v = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
     if let s = v?.ubiquitousItemDownloadingStatus { return s == .current }
     return fm.fileExists(atPath: url.path)
+  }
+}
+
+/// What the iPad is connected through right now: "wifi", "wired", "cellular", "none" or "other".
+enum NetWatch {
+  nonisolated(unsafe) private static var monitor: NWPathMonitor?
+  nonisolated(unsafe) private static var kind = "other"
+
+  static func current() -> String {
+    if monitor == nil {
+      let m = NWPathMonitor()
+      m.pathUpdateHandler = { p in
+        if p.status != .satisfied { kind = "none" }
+        else if p.usesInterfaceType(.wifi) { kind = "wifi" }
+        else if p.usesInterfaceType(.wiredEthernet) { kind = "wired" }
+        else if p.usesInterfaceType(.cellular) { kind = "cellular" }
+        else { kind = "other" }
+      }
+      m.start(queue: DispatchQueue(label: "quill.network"))
+      monitor = m
+      Thread.sleep(forTimeInterval: 0.25)   // the first answer comes straight after starting
+    }
+    return kind
   }
 }

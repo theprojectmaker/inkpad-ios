@@ -1320,6 +1320,77 @@ func shapeOutline(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) ->
   }
 }
 
+/// A shape that can still be reshaped by its handles.
+struct ShapeEdit {
+  var kind: String
+  var ctrl: [CGPoint]
+  var strokes: [InkStroke]
+  var fill: Bool
+}
+
+/// The points a shape is made from, which become its handles (nil: this shape has none).
+func shapeControls(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) -> [CGPoint]? {
+  var end = b
+  if lock {
+    if kind == "line" || kind == "arrow" || kind == "double" {
+      let step = CGFloat.pi / 12
+      let angle = (atan2(b.y - a.y, b.x - a.x) / step).rounded() * step
+      let length = hypot(b.x - a.x, b.y - a.y)
+      end = CGPoint(x: a.x + cos(angle) * length, y: a.y + sin(angle) * length)
+    } else {
+      let side = max(abs(b.x - a.x), abs(b.y - a.y))
+      end = CGPoint(x: a.x + (b.x >= a.x ? side : -side), y: a.y + (b.y >= a.y ? side : -side))
+    }
+  }
+  let r = CGRect(x: min(a.x, end.x), y: min(a.y, end.y), width: abs(end.x - a.x), height: abs(end.y - a.y))
+  func around(_ n: Int, _ k: (Int) -> CGFloat = { _ in 1 }, start: CGFloat = 0) -> [CGPoint] {
+    (0..<n).map { i in
+      let t = start + CGFloat(i) / CGFloat(n) * 2 * .pi
+      return CGPoint(x: r.midX + cos(t) * r.width / 2 * k(i), y: r.midY + sin(t) * r.height / 2 * k(i))
+    }
+  }
+  switch kind {
+  case "line", "arrow", "double": return [a, end]
+  case "rect": return [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+  case "triangle": return [CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+  case "righttri": return [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.maxX, y: r.maxY)]
+  case "diamond": return [CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.midY), CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX, y: r.midY)]
+  case "parallelogram":
+    let k = r.width * 0.25
+    return [CGPoint(x: r.minX + k, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX - k, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+  case "hexagon": return around(6)
+  case "ellipse": return around(8)
+  case "star": return around(10, { $0 % 2 == 0 ? 1 : 0.42 }, start: -.pi / 2)
+  case "check": return [CGPoint(x: r.minX, y: r.minY + r.height * 0.55), CGPoint(x: r.minX + r.width * 0.36, y: r.maxY), CGPoint(x: r.maxX, y: r.minY)]
+  default: return nil
+  }
+}
+
+/// The outline through a shape's points: straight sides, or for a circle a smooth loop, so dragging
+/// its points bends it like rubber.
+func shapeFromControls(_ kind: String, _ c: [CGPoint]) -> (points: [CGPoint], closed: Bool) {
+  switch kind {
+  case "line", "arrow", "double": return shapeOutline(kind, from: c[0], to: c[1], lock: false)
+  case "check": return (ShapeSnap.dense(c), false)
+  case "ellipse":
+    var out: [CGPoint] = []
+    let n = c.count
+    for i in 0..<n {
+      let p0 = c[(i - 1 + n) % n], p1 = c[i], p2 = c[(i + 1) % n], p3 = c[(i + 2) % n]
+      for s in 0..<16 {
+        let t = CGFloat(s) / 16, t2 = t * t, t3 = t2 * t
+        let f = { (a: CGFloat, b: CGFloat, c: CGFloat, d: CGFloat) -> CGFloat in
+          0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
+        }
+        out.append(CGPoint(x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y)))
+      }
+    }
+    if let first = out.first { out.append(first) }
+    return (out, true)
+  default: return (ShapeSnap.dense(c + [c[0]]), true)
+  }
+}
+
 /// Shapes drawn as more than one line: a cross, and axes for a graph. Everything else is one line.
 func shapePieces(_ kind: String, from a: CGPoint, to b: CGPoint, lock: Bool) -> [[CGPoint]] {
   var end = b
@@ -1446,6 +1517,21 @@ extension QuillCanvasView {
   }
 
   func shapeBegan(_ p: CGPoint) {
+    if let e = shapeEdit {
+      let reach = 26 / max(0.01, canvas.zoomScale)
+      if let i = e.ctrl.indices.min(by: { hypot(e.ctrl[$0].x - p.x, e.ctrl[$0].y - p.y) < hypot(e.ctrl[$1].x - p.x, e.ctrl[$1].y - p.y) }),
+         hypot(e.ctrl[i].x - p.x, e.ctrl[i].y - p.y) <= reach {
+        shapeDrag = i
+        document.apply(removed: e.strokes, added: [])
+        capture = PenCapture(pen: pen, seq: document.nextSeq(), zoom: canvas.zoomScale, at: p, time: CACurrentMediaTime())
+        ink.wet = capture?.wet
+        ink.penDown()
+        ink.setNeedsInk(rebuild: true)
+        shapeHandleMoved(p)
+        return
+      }
+      endShapeEdit()
+    }
     guard let page = frames.first(where: { $0.contains(p) }) else { return }
     shapeStart = p
     shapePage = page
@@ -1456,8 +1542,10 @@ extension QuillCanvasView {
   }
 
   func shapeMoved(_ p: CGPoint) {
+    if shapeDrag != nil { shapeHandleMoved(p); return }
     guard let c = capture else { return }
     let end = CGPoint(x: min(shapePage.maxX, max(shapePage.minX, p.x)), y: min(shapePage.maxY, max(shapePage.minY, p.y)))
+    shapeEnd = end
     shapePieceList = shapePieces(shapeKind, from: shapeStart, to: end, lock: shapeLock)
     shapePoints = shapePieceList.flatMap { $0 }
     c.wet.reset(shapePieceList.count == 1 ? shapeInk(shapePoints) : shapeInk(shapePieceList))
@@ -1465,6 +1553,7 @@ extension QuillCanvasView {
   }
 
   func shapeEnded() {
+    if shapeDrag != nil { shapeHandleEnded(); return }
     guard let c = capture else { return }
     capture = nil
     ink.wet = nil
@@ -1487,5 +1576,76 @@ extension QuillCanvasView {
     record(InkEdit(removed: [], added: added))
     ink.settle(added)
     ink.drawNow(finishing: true)
+    if let ctrl = shapeControls(shapeKind, from: shapeStart, to: shapeEnd, lock: shapeLock) {
+      shapeEdit = ShapeEdit(kind: shapeKind, ctrl: ctrl, strokes: added, fill: closed && shapeFill)
+      placeShapeHandles()
+    }
+  }
+
+  private func shapeHandleMoved(_ p: CGPoint) {
+    guard var e = shapeEdit, let i = shapeDrag, let c = capture else { return }
+    e.ctrl[i] = p
+    shapeEdit = e
+    c.wet.reset(shapeInk(shapeFromControls(e.kind, e.ctrl).points))
+    ink.drawNow()
+    placeShapeHandles()
+  }
+
+  private func shapeHandleEnded() {
+    guard let e = shapeEdit, let c = capture else { shapeDrag = nil; return }
+    capture = nil
+    ink.wet = nil
+    ink.penUp()
+    shapeDrag = nil
+    let outline = shapeFromControls(e.kind, e.ctrl).points
+    let now = Date().timeIntervalSince1970
+    var added: [InkStroke] = []
+    let rgb = e.strokes.last?.rgb ?? pen.rgb
+    let kind = e.strokes.last?.kind ?? pen.kind
+    if e.fill {
+      added.append(InkStroke(pts: outline.map { InkPoint(x: Float($0.x), y: Float($0.y), r: 0, a: 0.35) }, rgb: rgb, kind: .fill, seq: c.wet.seq, ts: now))
+      added.append(InkStroke(pts: shapeInk(outline), rgb: rgb, kind: kind, seq: document.nextSeq(), ts: now))
+    } else {
+      added.append(InkStroke(pts: shapeInk(outline), rgb: rgb, kind: kind, seq: c.wet.seq, ts: now))
+    }
+    document.apply(removed: [], added: added)
+    record(InkEdit(removed: e.strokes, added: added))
+    shapeEdit = ShapeEdit(kind: e.kind, ctrl: e.ctrl, strokes: added, fill: e.fill)
+    ink.settle(added)
+    ink.setNeedsInk(rebuild: true)
+    ink.drawNow(finishing: true)
+    placeShapeHandles()
+  }
+
+  /// The handles go away: the shape is finished.
+  func endShapeEdit() {
+    shapeEdit = nil
+    shapeDrag = nil
+    shapeHandles.isHidden = true
+  }
+
+  /// Round handles on the shape's points, kept in place as the page scrolls and zooms.
+  func placeShapeHandles() {
+    guard let e = shapeEdit, inkMode == .shape else { shapeHandles.isHidden = true; return }
+    if shapeHandles.superlayer == nil {
+      shapeHandles.fillColor = UIColor.white.cgColor
+      shapeHandles.strokeColor = UIColor(red: 0, green: 0.48, blue: 1, alpha: 1).cgColor
+      shapeHandles.lineWidth = 2
+      shapeHandles.shadowColor = UIColor.black.cgColor
+      shapeHandles.shadowOpacity = 0.18
+      shapeHandles.shadowRadius = 3
+      shapeHandles.shadowOffset = CGSize(width: 0, height: 1)
+      layer.addSublayer(shapeHandles)
+    }
+    let path = UIBezierPath()
+    for p in e.ctrl {
+      let v = pageHost.convert(p, to: self)
+      path.append(UIBezierPath(ovalIn: CGRect(x: v.x - 7, y: v.y - 7, width: 14, height: 14)))
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    shapeHandles.path = path.cgPath
+    shapeHandles.isHidden = false
+    CATransaction.commit()
   }
 }

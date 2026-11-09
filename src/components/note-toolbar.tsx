@@ -5,7 +5,7 @@
 import { Canvas, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
-import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, { FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import type { CanvasTool } from '@/components/quill-canvas';
 import { ToolIcon } from '@/components/tool-icons';
@@ -49,18 +49,21 @@ const SHAPES = [
   { id: 'numline', icon: 'numline', label: 'Number line' },
 ] as const;
 
+/** One scale for every writing tool: 1 is a hairline, 12 is as wide as a highlighter (in page points). */
+export const inkWidth = (n: number) => 0.5 + 0.2 * Math.pow(Math.max(1, Math.min(12, n)), 1.9);
+
 /** The width a 1-12 size means for a tool, in page points. */
 export function widthOf(id: string, n: number): number {
   switch (id) {
-    case 'marker': return 5 + n * 2.2;
-    case 'pencil': return 0.8 * Math.pow(n, 1.2);
-    case 'eraser': return 6 + n * 3;
+    case 'marker': return 4 + inkWidth(n) * 1.35;
+    case 'eraser': return 4 + n * 4.5;
     case 'tape': return 12 + n * 3;
-    case 'brush': return 0.9 * n;
-    case 'calligraphy': return 1.2 * n;
-    default: return 0.5 * Math.pow(n, 1.25);
+    default: return inkWidth(n);
   }
 }
+
+/** How big a size's preview dot is, inside its 24 pt circle. */
+const dotOf = (n: number) => Math.round(3 + (Math.max(1, Math.min(12, n)) - 1) * 1.6);
 
 /** What the canvas should use for the current settings. */
 export function currentTool(s: Settings): CanvasTool {
@@ -244,7 +247,7 @@ function LineGlyph({ line, color = INK, width = 40 }: { line: PenLine; color?: s
 }
 
 /** Thick-growing segmented slider, 1 to 12, with the number on its thumb. */
-export function ThicknessSlider({ value, onChange, onDone, max = 12 }: { value: number; onChange: (n: number) => void; onDone?: (n: number) => void; max?: number }) {
+export function ThicknessSlider({ value, onChange, onDone, max = 12, preview = true }: { value: number; onChange: (n: number) => void; onDone?: (n: number) => void; max?: number; preview?: boolean }) {
   const w = useRef(1);
   const last = useRef(value);
   const at = (e: GestureResponderEvent) => {
@@ -253,9 +256,13 @@ export function ThicknessSlider({ value, onChange, onDone, max = 12 }: { value: 
     onChange(n);
   };
   const f = (value - 1) / (max - 1);
+  const d = dotOf(value) * 1.4;
   return (
-    <View accessibilityLabel="Thickness" onLayout={(e) => { w.current = Math.max(1, e.nativeEvent.layout.width); }}
-      style={{ height: 40, justifyContent: 'center' }}
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+    {preview ? <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+      <Reanimated.View layout={LinearTransition.springify().damping(15)} style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: INK }} />
+    </View> : null}
+    <View accessibilityLabel="Thickness" style={{ flex: 1, height: 40, justifyContent: 'center' }} onLayout={(e) => { w.current = Math.max(1, e.nativeEvent.layout.width); }}
       onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderGrant={at} onResponderMove={at} onResponderRelease={() => onDone?.(last.current)}>
       <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
         {Array.from({ length: max }, (_, i) => (
@@ -266,6 +273,7 @@ export function ThicknessSlider({ value, onChange, onDone, max = 12 }: { value: 
         shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }}>
         <Text style={{ color: '#5A6478', fontSize: 12, fontWeight: '700' }}>{value}</Text>
       </View>
+    </View>
     </View>
   );
 }
@@ -361,7 +369,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const tint = on && tk.colors.length ? tk.colors[tk.color] : null;
     const shown = tint && tint.toUpperCase() !== '#FFFFFF' ? tint : on ? BLUE : INK;
     return (
-      <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} onLongPress={() => hide(x.id, x.label)} delayLongPress={500} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} onLongPress={() => hide(x.id, x.label)} delayLongPress={500} style={({ pressed }) => ({ width: 40, height: 44, alignItems: 'center', justifyContent: 'center', transform: [{ scale: pressed ? 0.86 : 1 }] })}>
         <ToolMark on={on} color={shown}>
           {x.id === 'text'
             ? <Text style={{ fontSize: 18, fontWeight: '500', color: shown, letterSpacing: -0.5 }}>Tt</Text>
@@ -406,11 +414,11 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   );
   const sizes = k.sizes.map((n, i) => {
     const on = i === k.size;
-    const d = [6, 10, 15][i] ?? 10;
+    const d = kind === 'text' ? [6, 10, 15][i] ?? 10 : dotOf(n);
     return (
       <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => { if (on) setPop(pop === 'size' ? null : 'size'); else { patch({ size: i }); setPop(null); } }} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
         <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: on ? '#fff' : '#ECEDF1', borderWidth: on ? 1.5 : 0, borderColor: BLUE, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: INK }} />
+          <Reanimated.View layout={LinearTransition.springify().damping(16)} style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: on && k.colors.length && (k.colors[k.color] ?? '').toUpperCase() !== '#FFFFFF' ? k.colors[k.color] : INK }} />
         </View>
       </Pressable>
     );
@@ -582,14 +590,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 </Pressable>
               ))}
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#15171C', marginTop: 8 }}>Streamline</Text>
-              <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
+              <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
             </View>
           </Card>
         ) : pop === 'line' ? (
           <Card width={Math.min(screen - 40, 300)}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: '#15171C', marginBottom: 2 }}>Streamline</Text>
             <Text style={{ fontSize: 12, color: '#5A6478', marginBottom: 2 }}>Higher smooths out a shaky hand.</Text>
-            <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
+            <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
             <View style={{ gap: 8, alignItems: 'center', marginTop: 8 }}>
               {LINES.map((l) => (
                 <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { patch({ line: l }); setPop(null); }}
