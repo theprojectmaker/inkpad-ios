@@ -443,11 +443,13 @@ extension QuillCanvasView {
     ink.blank()
   }
 
-  func pinchEnded() {
+  /// `now`: writing has started, so it ends this instant instead of waiting for the page to settle.
+  func pinchEnded(now: Bool = false) {
     guard zoomPreviewing else { return }
+    if now { stopGlide() }
     // A pinch usually ends still sliding or with a finger down. The pictures stay on the pages until
     // everything has come to rest, because they can't come apart from them.
-    if glide != nil || canvas.isZooming || canvas.isZoomBouncing || canvas.isDragging || canvas.isDecelerating {
+    if !now && (glide != nil || canvas.isZooming || canvas.isZoomBouncing || canvas.isDragging || canvas.isDecelerating) {
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in self?.pinchEnded() }
       return
     }

@@ -424,11 +424,13 @@ extension QuillCanvasView {
   private func holdPageStill() {
     scrollBack?.cancel()
     scrollBack = nil
-    let palm = canvas.isDragging
+    // A hand dragging the page (not a flick still coasting by itself).
+    let palm = canvas.isDragging && canvas.isTracking
+    stopGlide()
+    if zoomPreviewing { pinchEnded(now: true) }
     settleInk()
-    if zoomPreviewing { DispatchQueue.main.async { [weak self] in self?.pinchEnded() } }
-    canvas.panGestureRecognizer.isEnabled = false
     canvas.pinchGestureRecognizer?.isEnabled = false
+    canvas.panGestureRecognizer.isEnabled = false
     canvas.setContentOffset(palm ? dragStartOffset : canvas.contentOffset, animated: false)
   }
 
@@ -451,7 +453,7 @@ extension QuillCanvasView {
   /// A big touch has appeared: it's a hand, and hands don't scroll or zoom.
   func palmDown() {
     // Only a scroll that a hand set off while writing. A zoom is never interrupted.
-    guard pencilRecently, canvas.isDragging, !canvas.isZooming, !zoomPreviewing else { return }
+    guard pencilRecently, canvas.isDragging, canvas.isTracking, !canvas.isZooming, !zoomPreviewing else { return }
     let start = dragStartOffset
     canvas.panGestureRecognizer.isEnabled = false
     canvas.panGestureRecognizer.isEnabled = true
@@ -491,6 +493,7 @@ extension QuillCanvasView {
     guard isLoaded else { return }
     if t.type != .direct {
       canvas.pencilDown = true
+      ink.penTouching = true
       GestureLog.watching = true    // notes any late frame while writing
       holdPageStill()               // a writing finger still lets two fingers scroll
     }
@@ -542,6 +545,7 @@ extension QuillCanvasView {
     if t.type != .direct {
       canvas.pencilUpAt = CACurrentMediaTime()
       canvas.pencilDown = false
+      ink.penTouching = false
       GestureLog.watching = false
     }
     GestureLog.add("stroke end")
@@ -551,6 +555,7 @@ extension QuillCanvasView {
   func inkCancelled() {
     if canvas.pencilDown {
       canvas.pencilDown = false
+      ink.penTouching = false
       canvas.pencilUpAt = CACurrentMediaTime()
       GestureLog.watching = false
     }
@@ -620,7 +625,9 @@ extension QuillCanvasView {
         let dt = max(0.001, s.timestamp - c.lastRawTime)
         if jump > 90 && jump / CGFloat(dt) > 9000 {
           if let d = c.dropped, hypot(p.x - d.x, p.y - d.y) * canvas.zoomScale < 20 {
-            c.dropped = nil      // two samples agree: the Pencil really is there now
+            GestureLog.add("stroke ended at a jump of \(Int(jump)) pt")
+            finishStroke(c)      // two samples agree it's really over there: no line across
+            return
           } else {
             c.dropped = p
             GestureLog.add("dropped a jump of \(Int(jump)) pt in \(Int(dt * 1000)) ms")

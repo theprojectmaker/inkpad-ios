@@ -392,7 +392,12 @@ final class InkView: UIView {
   /// the picture go. If they overlap for a frame they're in the same place, so it can't be seen to jump.
   func endMoving() {
     guard moving else { return }
-    if plateBusy && !plateReady { endAfterPlate = true; return }
+    let writing = penTouching || link != nil
+    if plateBusy && !plateReady {
+      if writing { dropPlate(); return }   // the ink was never hidden: just stop making the picture
+      endAfterPlate = true
+      return
+    }
     moving = false
     plateRun += 1
     plateBusy = false
@@ -400,6 +405,7 @@ final class InkView: UIView {
     plateReady = false
     let run = plateRun
     resume { [weak self] in self?.hidePlate(run) }
+    if writing { reveal() }
     let g = showGen
     // If the iPad never says the frame arrived.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
@@ -583,7 +589,7 @@ final class InkView: UIView {
       reveal()
       drawNow(finishing: true)
       GestureLog.add("ink was hidden when writing started: shown")
-    } else if layer.opacity < 1 && onShown == nil {
+    } else if layer.opacity < 1 && (onShown == nil || penTouching || link != nil) {
       reveal()
       GestureLog.add("ink was faded when writing started: shown")
     }
@@ -627,6 +633,9 @@ final class InkView: UIView {
     pendingSettle.append(contentsOf: strokes)
     mirror?.settle(strokes)
   }
+
+  /// The Pencil is on the glass (set before anything else reacts to it).
+  var penTouching = false
 
   func penDown() {
     mirror?.penDown()
@@ -682,8 +691,9 @@ final class InkView: UIView {
 
   /// withPages: goes out in the same screen update as the pages moving under it (scrolling).
   /// Otherwise it goes straight out, the quickest path, for the Pencil.
-  func drawNow(withPages: Bool = false, finishing: Bool = false) {
+  func drawNow(withPages asked: Bool = false, finishing: Bool = false) {
     guard window != nil, bounds.width > 1 else { return }
+    let withPages = asked && wet == nil
     if let m = mirror {
       m.wet = wet
       m.lifted = lifted
