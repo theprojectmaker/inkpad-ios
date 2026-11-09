@@ -540,7 +540,8 @@ extension QuillCanvasView {
         self.renderTexts()
         self.finishObjects(removed: picked, added: [])
         self.ink.setNeedsInk(rebuild: true)
-        self.selectionMessage("Neatened (lines.count) (lines.count == 1 ? "line" : "lines"). Undo brings your writing back.")
+        let word = lines.count == 1 ? "line" : "lines"
+        self.selectionMessage("Neatened \(lines.count) \(word). Undo brings your writing back.")
       }
     }
   }
