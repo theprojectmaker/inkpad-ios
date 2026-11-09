@@ -41,6 +41,7 @@ import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, p
 import { enhanceImage } from '@/lib/ondevice';
 import { imagePages, listVersions, loadDoc, notePath, renderDir, restoreVersion, saveDoc, saveImage, saveVersion, scanPages } from '@/lib/noteio';
 import { setOpenNote } from '@/lib/icloud';
+import { keepAwake } from '@/lib/ondevice';
 import { canScan, scanEnhanced } from '@/lib/scan';
 import { paperMarks, paperOf } from '@/lib/paper';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -249,6 +250,12 @@ export default function Editor() {
   const leaving = useRef(false);
   const back = () => leave();
   useEffect(() => { setOpenNote(id); return () => setOpenNote(null); }, [id]);
+  // Settings > keep the screen on while a note is open.
+  useEffect(() => {
+    if (!s.keepAwake) return;
+    keepAwake(true);
+    return () => keepAwake(false);
+  }, [s.keepAwake]);
 
   const leave = async (to?: string) => {
     if (leaving.current) return;
@@ -659,7 +666,7 @@ export default function Editor() {
         ) : null}
         <View style={{ flex: 1 }}>
           {doc ? (
-            <QuillCanvas key={canvasKey} scribble={s.scribble !== false} scratchOut={!!s.scratchOut} straightMarker={s.straightMarker !== false} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
+            <QuillCanvas key={canvasKey} scribble={s.scribble !== false} pageNumbers={!!s.pageNumbers} scratchOut={!!s.scratchOut} straightMarker={s.straightMarker !== false} zoomWindow={zoomWin} ref={canvas} style={{ flex: 1 }} pages={pages} tool={tool} fingerDraws={!!s.fingerDraws} inkStats={!!s.inkStats} shapeSnap={s.holdToShape !== false} ruler={ruler}
               onPencilTap={onPencilTap} onSelectionAction={onSelectionAction} autoPage={s.autoPage !== false} onLastPageUsed={() => addPage(undefined, true)}
               inkTaps={audioOpen && !audio.rec && recordings.length > 0}
               onInkTapped={(e) => { const ms = e.nativeEvent.ts * 1000; const r = recordings.find((x) => ms >= x.created && soundAt(x, ms) <= x.dur); if (r) hear(r, soundAt(r, ms) / 1000); }}

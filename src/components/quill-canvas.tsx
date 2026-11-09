@@ -55,6 +55,7 @@ type Props = ViewProps & {
   fingerDraws?: boolean;
   scribble?: boolean;        // Apple Pencil handwriting turns into typing in text boxes
   scratchOut?: boolean;      // scribbling over writing deletes it
+  pageNumbers?: boolean;     // a small page number under each page
   straightMarker?: boolean;  // a nearly straight highlighter swipe comes out straight
   ruler?: boolean;
   inkStats?: boolean;        // the on-screen readout of how fast the ink is

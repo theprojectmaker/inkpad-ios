@@ -41,6 +41,9 @@ public final class QuillCanvasModule: Module {
     // iCloud sync (see ICloudSync.swift). These wait on iCloud, so they run off the main thread.
     AsyncFunction("icloudStatus") { () -> String in ICloudSync.status() }
     AsyncFunction("networkKind") { () -> String in NetWatch.current() }
+    Function("keepAwake") { (on: Bool) in
+      DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = on }
+    }
     AsyncFunction("icloudPushDir") { (rel: String, cloudRel: String) -> Int in ICloudSync.pushDir(rel, to: cloudRel) }
     AsyncFunction("icloudPullDir") { (cloudRel: String, rel: String) -> Int in ICloudSync.pullDir(cloudRel, to: rel) }
     AsyncFunction("icloudReadText") { (cloudRel: String) -> String? in ICloudSync.readText(cloudRel) }
@@ -162,6 +165,10 @@ public final class QuillCanvasModule: Module {
 
       Prop("scribble") { (view: QuillCanvasView, on: Bool) in
         view.scribble = on
+      }
+
+      Prop("pageNumbers") { (view: QuillCanvasView, on: Bool) in
+        view.setPageNumbers(on)
       }
 
       Prop("scratchOut") { (view: QuillCanvasView, on: Bool) in

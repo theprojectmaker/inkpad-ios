@@ -10,16 +10,21 @@ const size = Number(process.argv[3] || 1024);
 const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
 const C = {
-  bgTop: hex('#6E8BFF'), bgMid: hex('#5574F5'), bgLow: hex('#4462E6'), bgEdge: hex('#3A55D0'),
-  outline: hex('#1F2347'), vane: hex('#FFFFFF'), vaneShade: hex('#DCE3FA'), vaneDeep: hex('#B9C5F0'),
-  shaft: hex('#8A6A3C'), nib: hex('#2A2F45'), nibShine: hex('#7C86A8'), ink: hex('#FFD54A'), inkDeep: hex('#F2A900'),
+  outline: hex('#2A1650'), vane: hex('#FFFFFF'), vaneShade: hex('#D6F4FF'), vaneDeep: hex('#8FD3FF'),
+  vaneTeal: hex('#4FE0C8'), vaneTealDeep: hex('#22B8A8'), vaneGold: hex('#FFE07A'), vaneGoldDeep: hex('#FFB547'),
+  shaft: hex('#7A4A20'), nib: hex('#2B2F4A'), nibShine: hex('#FFD34D'), ink: hex('#FFFFFF'), inkDeep: hex('#FFE07A'),
+  spark: hex('#FFF6B0'), sparkWhite: hex('#FFFFFF'),
 };
+// Sunset bands, top to bottom, with a checker of the two colours where they meet (a pixel-art gradient).
+const BANDS = ['#FFB25A', '#FF8A5C', '#FF5F7E', '#E048A8', '#A945D8', '#6E45E4'].map(hex);
 
 const grid = Array.from({ length: N }, () => Array(N).fill(null));
 // Background: soft bands from the top, a darker rim.
 for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-  const band = y < 10 ? C.bgTop : y < 21 ? C.bgMid : C.bgLow;
-  grid[y][x] = x === 0 || y === 0 || x === N - 1 || y === N - 1 ? C.bgEdge : band;
+  const f = (y + x * 0.35) / (N + N * 0.35) * BANDS.length;
+  let i = Math.min(BANDS.length - 1, Math.floor(f));
+  if (f - i > 0.78 && i < BANDS.length - 1 && (x + y) % 2 === 0) i++;   // dithered seam
+  grid[y][x] = BANDS[i];
 }
 
 // The quill: its shaft runs from the nib (bottom left) to the tip (top right).
@@ -43,8 +48,10 @@ for (const i of vane) {
   const x = i % N, y = (i / N) | 0;
   const px = x + 0.5 - nib[0], py = y + 0.5 - nib[1];
   const s = px * nx + py * ny, t = (px * ux + py * uy) / len;
-  grid[y][x] = s < -2.2 ? C.vaneDeep : s < -0.6 ? C.vaneShade : C.vane;
-  if (t < 0.34) grid[y][x] = C.vaneShade;
+  const deep = s < -2.2, mid = s < -0.6;
+  if (t < 0.42) grid[y][x] = deep ? C.vaneTealDeep : C.vaneTeal;
+  else if (t > 0.84) grid[y][x] = deep || mid ? C.vaneGoldDeep : C.vaneGold;
+  else grid[y][x] = deep ? C.vaneDeep : mid ? C.vaneShade : C.vane;
 }
 // Outline every feather pixel's empty neighbours.
 const isVane = (x, y) => vane.has(y * N + x);
@@ -68,6 +75,10 @@ for (let t = 0; t <= 0.27; t += 0.005) {
 const line = [[3, 28], [4, 28], [5, 27], [6, 28], [7, 28], [8, 29], [9, 28], [10, 28], [11, 27], [12, 28], [13, 28], [14, 29], [15, 28], [16, 28]];
 line.forEach(([x, y], i) => { grid[y][x] = i % 4 === 3 ? C.inkDeep : C.ink; });
 grid[27][4] = C.ink;
+
+// Sparkles around the quill.
+const plus = (x, y, c, big) => { grid[y][x] = c; if (big) { grid[y - 1][x] = c; grid[y + 1][x] = c; grid[y][x - 1] = c; grid[y][x + 1] = c; } };
+plus(5, 6, C.sparkWhite, true); plus(27, 18, C.spark, true); plus(22, 26, C.sparkWhite, false); plus(9, 12, C.spark, false); plus(28, 27, C.spark, false);
 
 // Scale up with hard pixel edges and write a PNG (RGB, no alpha).
 const scale = size / N;

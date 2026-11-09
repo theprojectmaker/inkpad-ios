@@ -37,7 +37,8 @@ const zipDone = (r: { made: number; folders: number; skipped: string[]; failed: 
   (r.failed.length ? ` ${r.failed.length} couldn't be read.` : '');
 
 const EASE = Easing.bezier(0.25, 0.1, 0.25, 1);
-const tap = (f: () => Promise<void>) => { if (Platform.OS !== 'web') f().catch(() => {}); };
+let hapticsOn = true;
+const tap = (f: () => Promise<void>) => { if (Platform.OS !== 'web' && hapticsOn) f().catch(() => {}); };
 
 /** A thin bar that glides while an import is working. */
 function WorkingBar({ on, color, track, still }: { on: boolean; color: string; track: string; still: boolean }) {
@@ -70,6 +71,7 @@ export default function LibraryScreen() {
   const lib = useLibrary();
   const { toast, busy: showBusy } = useToast();
   const { s, set } = useSettings();
+  hapticsOn = s.haptics !== false;
   const still = useReducedMotion();
   // The busy overlay plus a gliding bar on Home while an import runs.
   const [working, setWorking] = useState(false);
@@ -604,7 +606,9 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         { label: target2.fav ? 'Remove from Favorites' : 'Add to Favorites', icon: target2.fav ? 'star.fill' : 'star', onPress: () => lib.updateNote(target2.id, { fav: !target2.fav }) },
         { label: 'Move to subject…', icon: 'folder', onPress: () => setSheet('move') },
         { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { try { toast((await lib.duplicateNote(target2.id)) ? 'Duplicated' : "Couldn't duplicate that note."); } catch { toast("Couldn't duplicate that note."); } } },
-        { label: 'Delete', icon: 'trash', danger: true, onPress: () => setSheet('delete') },
+        { label: 'Delete', icon: 'trash', danger: true, onPress: () => {
+          if (s.confirmDelete === false && target) { setSheet(null); lib.trashNote(target.id); toast('Moved to Recently Deleted'); } else setSheet('delete');
+        } },
       ] : []} />
       <PaperSheet visible={sheet === 'paper'} title="Templates" confirm="Apply" withSize
         style={s.defaultPaper?.style} color={s.defaultPaper?.color} size={s.defaultPaper?.size} onClose={() => setSheet(null)}

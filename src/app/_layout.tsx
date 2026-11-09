@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
 import { AppState, Pressable, Text, View } from 'react-native';
+import { ReducedMotionConfig, ReduceMotion } from 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ShareReceiver } from '@/components/share-receiver';
@@ -14,8 +15,10 @@ import { SettingsProvider, useSettings, useTheme } from '@/lib/settings';
 
 function Shell() {
   const t = useTheme();
+  const { s } = useSettings();
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
+      <ReducedMotionConfig mode={s.reduceMotion ? ReduceMotion.Always : ReduceMotion.System} />
       <StatusBar style={t.dark ? 'light' : 'dark'} />
       <ToastProvider>
         <ShareReceiver />

@@ -243,6 +243,30 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   lazy var panGR = UIPanGestureRecognizer(target: self, action: #selector(onTextPan(_:)))
   private var pageViews: [PageTileView] = []
   private var pageSeams: [UIView] = []
+  private var pageNumberLabels: [UILabel] = []
+  private var showPageNumbers = false
+
+  func setPageNumbers(_ on: Bool) {
+    guard on != showPageNumbers else { return }
+    showPageNumbers = on
+    placePageNumbers()
+  }
+
+  /// A small grey number under each page, in the gap before the next.
+  private func placePageNumbers() {
+    pageNumberLabels.forEach { $0.removeFromSuperview() }
+    pageNumberLabels = []
+    guard showPageNumbers else { return }
+    for (i, f) in frames.enumerated() {
+      let l = UILabel(frame: CGRect(x: f.minX, y: f.maxY + 3, width: f.width, height: 14))
+      l.text = "\(i + 1)"
+      l.font = .systemFont(ofSize: 10, weight: .medium)
+      l.textColor = UIColor(white: 0.55, alpha: 1)
+      l.textAlignment = .center
+      pageHost.addSubview(l)
+      pageNumberLabels.append(l)
+    }
+  }
   private var pageEdges: [UIView] = []
   var handMode = false
   var laserColor = UIColor(red: 1, green: 0.16, blue: 0.2, alpha: 1)
@@ -702,6 +726,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     if zip(oldFrames, frames).contains(where: { $0 != $1 }) { inkPictures = [:]; inkPatch = nil }
     refreshInkPicturesSoon()
     refreshInkPatchSoon()
+    placePageNumbers()
     lastPage = -1
     DispatchQueue.main.async { [weak self] in self?.reportPage() }
     if bounds.width > 1 {

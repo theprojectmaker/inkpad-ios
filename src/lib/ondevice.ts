@@ -101,3 +101,8 @@ export async function askLocal(instructions: string, prompt: string): Promise<st
   const out = await Native!.localAI(instructions, prompt.length > 9000 ? prompt.slice(0, 9000) + '\n…' : prompt);
   return out.trim();
 }
+
+/** Stops the screen dimming and locking while true (Settings > keep the screen on). */
+export function keepAwake(on: boolean) {
+  try { requireNativeModule<{ keepAwake(on: boolean): void }>('QuillCanvas').keepAwake(on); } catch {}
+}
