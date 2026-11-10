@@ -14,7 +14,8 @@
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDisplayName": "Quill",
         "NSSpeechRecognitionUsageDescription": "Quill turns what you record into text you can read and search, and uses it to write your notes."
-      }
+      },
+      "isTabletOnly": true
     },
     "web": {
       "output": "single"
@@ -67,7 +68,8 @@
           "image": "./assets/icon.png",
           "imageWidth": 120
         }
-      ]
+      ],
+      "./plugins/with-ipad-only"
     ],
     "experiments": {
       "typedRoutes": false

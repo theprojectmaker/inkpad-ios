@@ -502,6 +502,27 @@ extension QuillCanvasView {
     ink.setNeedsInk(rebuild: true)
   }
 
+  /// Tidy handwriting: the writing stays ink, but each line is levelled, words are evened to one
+  /// height and spacing, wobble is smoothed and the weight made steady. Undo brings the original back.
+  func tidySelection() {
+    commitSelection()
+    let old = selection
+    guard !old.isEmpty else { return }
+    let new = InkTidy.tidy(old, nextSeq: { self.document.nextSeq() })
+    document.apply(removed: old, added: new)
+    selection = new
+    new.forEach { $0.lifted = true }
+    ink.lifted = new
+    var b = new.reduce(CGRect.null) { $0.union($1.bounds) }
+    for id in selTexts { if let f = labels[id]?.frame { b = b.union(f) } }
+    for o in pics where selPics.contains(o.id) { b = b.union(pictureBounds(o)) }
+    selBox = b
+    finishObjects(removed: old, added: new)
+    ink.setNeedsInk(rebuild: true)
+    placeSelectionUI()
+    selectionMessage("Tidied. Undo brings your writing back.")
+  }
+
   /// Neaten handwriting, on the iPad with no internet: the selected writing is read line by line and
   /// rewritten in the same place, same colour and roughly the same size, in a clean handwriting font.
   /// Undo brings the original back.
@@ -545,6 +566,8 @@ extension QuillCanvasView {
       }
     }
   }
+
+  @objc func onSelTidy() { tidySelection() }
 
   @objc func onSelExplain() {
     guard let path = selectionFile() else { return }
@@ -812,6 +835,11 @@ extension QuillCanvasView {
       selBar.addArrangedSubview(b)
       selBar.addArrangedSubview(divider())
     }
+    let tidy = make("Tidy")
+    tidy.accessibilityLabel = "Tidy handwriting"
+    tidy.addTarget(self, action: #selector(onSelTidy), for: .touchUpInside)
+    selBar.addArrangedSubview(tidy)
+    selBar.addArrangedSubview(divider())
     let arrange = make("Arrange ›")
     arrange.accessibilityLabel = "Arrange"
     arrange.menu = arrangeMenu()
@@ -821,7 +849,8 @@ extension QuillCanvasView {
     let convert = make("Convert ›")
     convert.accessibilityLabel = "Convert"
     convert.menu = UIMenu(children: [
-      UIAction(title: "Neaten handwriting", image: UIImage(systemName: "wand.and.stars")) { [weak self] _ in self?.neatenSelection() },
+      UIAction(title: "Tidy handwriting", subtitle: "Stays as your ink: level lines, even size", image: UIImage(systemName: "wand.and.stars")) { [weak self] _ in self?.tidySelection() },
+      UIAction(title: "Neaten into typed handwriting", image: UIImage(systemName: "textformat")) { [weak self] _ in self?.neatenSelection() },
       UIAction(title: "Text") { [weak self] _ in self?.convert("text") },
       UIAction(title: "Math") { [weak self] _ in self?.convert("math") },
       UIAction(title: "Graph") { [weak self] _ in self?.convert("graph") },

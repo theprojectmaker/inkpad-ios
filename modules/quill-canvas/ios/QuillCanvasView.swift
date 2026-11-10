@@ -515,7 +515,45 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { zoomView }
 
-  func scrollViewDidZoom(_ scrollView: UIScrollView) { applyZoom() }
+  func scrollViewDidZoom(_ scrollView: UIScrollView) {
+    applyZoom()
+    if scrollView.isZooming { showZoomBadge() }
+  }
+
+  // MARK: - Zoom badge: "150%" while pinching, with a tick at the page width.
+  private lazy var zoomBadge: UILabel = {
+    let l = UILabel()
+    l.font = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+    l.textColor = .white
+    l.textAlignment = .center
+    l.backgroundColor = UIColor(white: 0.1, alpha: 0.72)
+    l.layer.cornerRadius = 15
+    l.layer.masksToBounds = true
+    l.alpha = 0
+    l.isUserInteractionEnabled = false
+    addSubview(l)
+    return l
+  }()
+  private var badgeAtFit = true
+  private let badgeTick = UISelectionFeedbackGenerator()
+
+  private func showZoomBadge() {
+    let fit = max(0.01, currentFit())
+    let pct = Int((canvas.zoomScale / fit * 100).rounded())
+    zoomBadge.text = "\(pct)%"
+    zoomBadge.frame = CGRect(x: (bounds.width - 76) / 2, y: bounds.height - 120, width: 76, height: 30)
+    bringSubviewToFront(zoomBadge)
+    let atFit = abs(pct - 100) <= 2
+    if atFit && !badgeAtFit { badgeTick.selectionChanged() }
+    badgeAtFit = atFit
+    if zoomBadge.alpha < 1 { UIView.animate(withDuration: 0.12) { self.zoomBadge.alpha = 1 } }
+    NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(hideZoomBadge), object: nil)
+    perform(#selector(hideZoomBadge), with: nil, afterDelay: 0.7)
+  }
+
+  @objc private func hideZoomBadge() {
+    UIView.animate(withDuration: 0.3) { self.zoomBadge.alpha = 0 }
+  }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     syncInk()

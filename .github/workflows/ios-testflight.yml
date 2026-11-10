@@ -59,6 +59,16 @@ jobs:
           unzip -p "$RUNNER_TEMP/app.ipa" 'Payload/*.app/main.jsbundle' | grep -aqF "$EXPO_PUBLIC_QUILL_TOKEN" \
             || { echo "::error::The QUILL_APP_TOKEN key is missing from the app bundle"; exit 1; }
 
+      - name: Check it's an iPad-only app (the app and its share extension)
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa" && unzip -q -o "$RUNNER_TEMP/app.ipa" -d "$RUNNER_TEMP/ipa"
+          for f in "$RUNNER_TEMP"/ipa/Payload/*.app/Info.plist "$RUNNER_TEMP"/ipa/Payload/*.app/PlugIns/*.appex/Info.plist; do
+            [ -f "$f" ] || continue
+            fam=$(plutil -extract UIDeviceFamily json -o - "$f" | tr -d ' \n')
+            echo "$f: $fam"
+            [ "$fam" = "[2]" ] || { echo "::error::$f is not iPad-only ($fam)"; exit 1; }
+          done
+
       - name: Keep the .ipa as a download
         uses: actions/upload-artifact@v4
         with:
