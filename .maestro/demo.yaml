@@ -12,7 +12,8 @@ appId: com.solyapps.notes
 # The simulator has no Apple Pencil, so writing with a finger is turned on first.
 - tapOn: { text: "Settings", optional: true }
 - waitForAnimationToEnd
-- scrollUntilVisible: { element: { text: "Draw with finger" }, direction: DOWN, timeout: 20000, optional: true }
+- tapOn: { text: "Pencil & Touch", optional: true }
+- waitForAnimationToEnd
 - tapOn: { text: "Draw with finger", optional: true }
 - takeScreenshot: v01b-finger-on
 - tapOn: { text: "Back to notes", optional: true }
