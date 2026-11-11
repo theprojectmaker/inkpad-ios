@@ -12,7 +12,9 @@ appId: com.solyapps.notes
 # The simulator has no Apple Pencil, so writing with a finger is turned on first.
 - tapOn: { text: "Settings", optional: true }
 - waitForAnimationToEnd
+- scrollUntilVisible: { element: { text: "Draw with finger" }, direction: DOWN, timeout: 20000, optional: true }
 - tapOn: { text: "Draw with finger", optional: true }
+- takeScreenshot: v01b-finger-on
 - tapOn: { text: "Back to notes", optional: true }
 - waitForAnimationToEnd
 # A new note
@@ -58,11 +60,13 @@ appId: com.solyapps.notes
 - waitForAnimationToEnd
 - takeScreenshot: v07-learn
 - tapOn: { text: "Summary", optional: true }
+- tapOn: { text: "Write a summary", optional: true }
 - extendedWaitUntil: { visible: "Photosynthesis.*|.*glucose.*|.*chloroplast.*", timeout: 30000, optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: v08-summary
-- tapOn: { text: "Back", optional: true }
+- tapOn: { text: "Back to Learn", optional: true }
 - tapOn: { text: "Flashcards", optional: true }
+- tapOn: { text: "Make flashcards", optional: true }
 - extendedWaitUntil: { visible: ".*[Cc]hloroplast.*|.*glucose.*", timeout: 30000, optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: v09-cards
