@@ -44,33 +44,23 @@ appId: com.solyapps.notes
 - tapOn: { text: "Tidy", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: v05-tidied
-- tapOn: { point: "80%, 85%", optional: true }
-- waitForAnimationToEnd
-# Typed text, so the AI has something to read
-- tapOn: { text: "Text", optional: true }
-- tapOn: { text: "Text", optional: true }
-- tapOn: { point: "70%, 85%", optional: true }
-- tapOn: { point: "20%, 50%" }
-- inputText: "Photosynthesis: plants use sunlight, water and carbon dioxide to make glucose and oxygen. It happens in the chloroplasts."
-- tapOn: { point: "75%, 88%" }
+- tapOn: { point: "85%, 60%", optional: true }
 - waitForAnimationToEnd
 - tapOn: { text: "Pen", optional: true }
-- takeScreenshot: v06-typed
-# Study with AI: a summary of the page
+- takeScreenshot: v06-after-tidy
+# Study with AI: homework help answers a question
 - tapOn: { text: "Study with AI", optional: true }
 - waitForAnimationToEnd
 - takeScreenshot: v07-learn
-- tapOn: { text: "Summary", optional: true }
-- tapOn: { text: "Write a summary", optional: true }
-- extendedWaitUntil: { visible: "Photosynthesis.*|.*glucose.*|.*chloroplast.*", timeout: 30000, optional: true }
+- tapOn: { text: "Question help", optional: true }
 - waitForAnimationToEnd
-- takeScreenshot: v08-summary
-- tapOn: { text: "Back to Learn", optional: true }
-- tapOn: { text: "Flashcards", optional: true }
-- tapOn: { text: "Make flashcards", optional: true }
-- extendedWaitUntil: { visible: ".*[Cc]hloroplast.*|.*glucose.*", timeout: 30000, optional: true }
+- tapOn: { text: "Type a question.*", optional: true }
+- inputText: "How do plants make glucose?"
+- tapOn: { text: "Help with this", optional: true }
+- extendedWaitUntil: { visible: ".*[Pp]hotosynthesis.*|.*[Cc]hloroplast.*|.*sunlight.*", timeout: 45000, optional: true }
 - waitForAnimationToEnd
-- takeScreenshot: v09-cards
+- takeScreenshot: v08-answer
+- hideKeyboard
 - tapOn: { text: "Study with AI", optional: true }
 - waitForAnimationToEnd
 # Share a link, then stop sharing
