@@ -1,0 +1,95 @@
+# The App Review demo video: from a fresh launch, the main things a student does.
+# Make a note, write, Tidy the writing, type, study it with AI, share a link and stop sharing,
+# then the Study hub. Steps are optional so one miss doesn't stop the recording.
+appId: com.solyapps.notes
+---
+- launchApp:
+    clearState: true
+    permissions: { all: allow }
+- extendedWaitUntil: { visible: "Home", timeout: 60000 }
+- waitForAnimationToEnd
+- takeScreenshot: v01-home
+# The simulator has no Apple Pencil, so writing with a finger is turned on first.
+- tapOn: { text: "Settings", optional: true }
+- waitForAnimationToEnd
+- tapOn: { text: "Draw with finger", optional: true }
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+# A new note
+- tapOn: { text: "New" }
+- tapOn: { text: "Note", optional: true }
+- extendedWaitUntil: { visible: "More tools", timeout: 20000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v02-new-note
+# Some uneven "handwriting": three words on a sloping line, different sizes
+- swipe: { start: "16%, 30%", end: "22%, 27%", duration: 300 }
+- swipe: { start: "22%, 27%", end: "26%, 31%", duration: 300 }
+- swipe: { start: "29%, 32%", end: "37%, 26%", duration: 300 }
+- swipe: { start: "37%, 26%", end: "40%, 33%", duration: 300 }
+- swipe: { start: "44%, 35%", end: "49%, 31%", duration: 300 }
+- swipe: { start: "49%, 31%", end: "54%, 36%", duration: 300 }
+- swipe: { start: "56%, 37%", end: "60%, 33%", duration: 300 }
+- waitForAnimationToEnd
+- takeScreenshot: v03-written
+# Tidy: lasso the writing, tap Tidy
+- tapOn: { text: "Lasso", optional: true }
+- tapOn: { text: "Boxed", optional: true }
+- tapOn: { point: "70%, 85%", optional: true }
+- swipe: { start: "12%, 22%", end: "64%, 40%", duration: 700 }
+- waitForAnimationToEnd
+- takeScreenshot: v04-selected
+- tapOn: { text: "Tidy", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v05-tidied
+- tapOn: { point: "80%, 85%", optional: true }
+- waitForAnimationToEnd
+# Typed text, so the AI has something to read
+- tapOn: { text: "Text", optional: true }
+- tapOn: { text: "Text", optional: true }
+- tapOn: { point: "70%, 85%", optional: true }
+- tapOn: { point: "20%, 50%" }
+- inputText: "Photosynthesis: plants use sunlight, water and carbon dioxide to make glucose and oxygen. It happens in the chloroplasts."
+- tapOn: { point: "75%, 88%" }
+- waitForAnimationToEnd
+- tapOn: { text: "Pen", optional: true }
+- takeScreenshot: v06-typed
+# Study with AI: a summary of the page
+- tapOn: { text: "Study with AI", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v07-learn
+- tapOn: { text: "Summary", optional: true }
+- extendedWaitUntil: { visible: "Photosynthesis.*|.*glucose.*|.*chloroplast.*", timeout: 30000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v08-summary
+- tapOn: { text: "Back", optional: true }
+- tapOn: { text: "Flashcards", optional: true }
+- extendedWaitUntil: { visible: ".*[Cc]hloroplast.*|.*glucose.*", timeout: 30000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v09-cards
+- tapOn: { text: "Study with AI", optional: true }
+- waitForAnimationToEnd
+# Share a link, then stop sharing
+- tapOn: { text: "More" }
+- waitForAnimationToEnd
+- tapOn: { text: "Share settings", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v10-share
+- tapOn: { text: "Create link", optional: true }
+- extendedWaitUntil: { visible: "Stop sharing", timeout: 30000, optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v11-link
+- tapOn: { text: "Stop sharing", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v12-stopped
+- tapOn: { point: "50%, 8%", optional: true }
+- waitForAnimationToEnd
+# Back home: the note is there, then the Study hub
+- tapOn: { text: "Back to notes", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v13-home-with-note
+- tapOn: { text: "Study", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v14-study-hub
+- tapOn: { text: "Reference", optional: true }
+- waitForAnimationToEnd
+- takeScreenshot: v15-reference
