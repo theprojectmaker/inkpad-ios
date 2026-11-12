@@ -20,7 +20,7 @@ enum ShapeSnap {
     let box = bounds(shape)
     let diag = hypot(box.width, box.height)
     // Pausing while writing is normal, so small strokes (letters, tiny marks) never snap.
-    guard diag > 45 else { return nil }
+    guard diag > 60 else { return nil }
 
     let length = zip(shape, shape.dropFirst()).reduce(0) { $0 + dist($1.0, $1.1) }
     if dist(start, last) >= max(14, diag * 0.22) {
@@ -31,10 +31,13 @@ enum ShapeSnap {
     }
     let corners = simplify(shape + [start], tolerance: diag * 0.07)
     let n = corners.count - 1   // the closing point repeats the first
-    if n == 3 { return (Array(corners.prefix(3)) + [corners[0]], true) }
+    // Only snap what was really drawn as that shape: handwriting that happens to end near where it
+    // started (loops, cursive) must stay as written, not turn into an oval or a box.
+    func keep(_ o: [CGPoint]) -> (points: [CGPoint], closed: Bool)? { fits(shape, o, diag: diag, length: length) ? (o, true) : nil }
+    if n == 3 { return keep(Array(corners.prefix(3)) + [corners[0]]) }
     if n == 4 {
       let square = squareUp(Array(corners.prefix(4)), box: box)
-      return (square + [square[0]], true)
+      return keep(square + [square[0]])
     }
     // An ellipse (a circle if it's nearly round), from the drawn bounds.
     var r = box
@@ -43,10 +46,33 @@ enum ShapeSnap {
       r = CGRect(x: r.midX - s / 2, y: r.midY - s / 2, width: s, height: s)
     }
     let steps = max(36, Int((r.width + r.height) / 4))
-    return ((0...steps).map { i in
+    return keep((0...steps).map { i in
       let a = CGFloat(i) / CGFloat(steps) * 2 * .pi - .pi / 2
       return CGPoint(x: r.midX + cos(a) * r.width / 2, y: r.midY + sin(a) * r.height / 2)
-    }, true)
+    })
+  }
+
+  /// The drawn points all lie close to the outline, and the stroke went round it about once
+  /// (a scribble that loops several times is writing, not a shape).
+  private static func fits(_ drawn: [CGPoint], _ outline: [CGPoint], diag: CGFloat, length: CGFloat) -> Bool {
+    guard outline.count >= 2 else { return false }
+    let perimeter = zip(outline, outline.dropFirst()).reduce(0) { $0 + dist($1.0, $1.1) }
+    guard length < perimeter * 1.4, length > perimeter * 0.6 else { return false }
+    var total: CGFloat = 0, worst: CGFloat = 0
+    for p in drawn {
+      var best = CGFloat.greatestFiniteMagnitude
+      for (a, b) in zip(outline, outline.dropFirst()) { best = min(best, segmentDistance(p, a, b)) }
+      total += best
+      worst = max(worst, best)
+    }
+    return total / CGFloat(drawn.count) < diag * 0.06 && worst < diag * 0.16
+  }
+
+  private static func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    let vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy
+    if l2 < 0.000001 { return dist(p, a) }
+    let t = max(0, min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / l2))
+    return dist(p, CGPoint(x: a.x + vx * t, y: a.y + vy * t))
   }
 
   /// Points along an outline, close together so the corners stay sharp in the curve drawn through them.

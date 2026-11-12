@@ -193,6 +193,16 @@ final class PenCapture {
   var rulerEdge: CGFloat?
   let startedAt = Date().timeIntervalSince1970   // when it was written, to line up with a recording
 
+  /// A sample too far from the last one, too quickly, for a hand to have moved there: a bad reading
+  /// (or a second touch) that would otherwise draw a straight line across to it. Measured on screen.
+  /// Fast handwriting moves a few thousand points a second; a bad reading arrives at tens of thousands.
+  func isJump(_ p: CGPoint, at time: TimeInterval, zoom: CGFloat) -> Bool {
+    guard let q = lastRaw else { return false }
+    let jump = hypot(p.x - q.x, p.y - q.y) * zoom
+    let dt = max(0.001, time - lastRawTime)
+    return jump > 28 && jump / CGFloat(dt) > 6000
+  }
+
   init(pen: InkPen, seq: UInt32, zoom: CGFloat, at p: CGPoint, time: TimeInterval) {
     self.pen = pen
     self.zoom = Float(max(0.01, zoom))
@@ -620,21 +630,20 @@ extension QuillCanvasView {
       // Samples from before it reached the page aren't part of this stroke.
       if !opened && !c.page.contains(p) { continue }
       // A jump across the page between two samples isn't the hand: drop it rather than draw a line to it.
-      if let q = c.lastRaw {
+      if c.isJump(p, at: s.timestamp, zoom: canvas.zoomScale) {
+        let q = c.lastRaw ?? p
         let jump = hypot(p.x - q.x, p.y - q.y) * canvas.zoomScale
         let dt = max(0.001, s.timestamp - c.lastRawTime)
-        if jump > 90 && jump / CGFloat(dt) > 9000 {
-          if let d = c.dropped, hypot(p.x - d.x, p.y - d.y) * canvas.zoomScale < 20 {
-            GestureLog.add("stroke ended at a jump of \(Int(jump)) pt")
-            finishStroke(c)      // two samples agree it's really over there: no line across
-            return
-          } else {
-            c.dropped = p
-            GestureLog.add("dropped a jump of \(Int(jump)) pt in \(Int(dt * 1000)) ms")
-            continue
-          }
+        if let d = c.dropped, hypot(p.x - d.x, p.y - d.y) * canvas.zoomScale < 20 {
+          GestureLog.add("stroke ended at a jump of \(Int(jump)) pt")
+          finishStroke(c)      // two samples agree it's really over there: no line across
+          return
         }
+        c.dropped = p
+        GestureLog.add("dropped a jump of \(Int(jump)) pt in \(Int(dt * 1000)) ms")
+        continue
       }
+      c.dropped = nil
       c.lastRaw = p
       c.lastRawTime = s.timestamp
       let force = s.type == .pencil && s.maximumPossibleForce > 0 ? Float(s.force / s.maximumPossibleForce) : 0
@@ -710,6 +719,12 @@ extension QuillCanvasView {
     if c.snap == nil {
       var p = location(t)
       if let e = c.rulerEdge { p = onRuler(p, e) }
+      // The lift-off reading can be wild too: then the line ends where it was, with no tail to it.
+      if c.isJump(p, at: t.timestamp, zoom: canvas.zoomScale) {
+        GestureLog.add("ignored a jump at lift-off")
+        finishStroke(c)
+        return
+      }
       let force = t.type == .pencil && t.maximumPossibleForce > 0 ? Float(t.force / t.maximumPossibleForce) : 0
       if !c.page.contains(p) { p = CGPoint(x: min(c.page.maxX, max(c.page.minX, p.x)), y: min(c.page.maxY, max(c.page.minY, p.y))) }
       c.add(p, force: force, altitude: t.type == .pencil ? Float(t.altitudeAngle) : Float.pi / 2, time: t.timestamp, first: false)
