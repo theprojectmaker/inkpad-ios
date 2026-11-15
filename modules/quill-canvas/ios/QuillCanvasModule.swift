@@ -183,6 +183,10 @@ public final class QuillCanvasModule: Module {
         view.shapeSnap = on
       }
 
+      Prop("tethered") { (view: QuillCanvasView, on: Bool) in
+        view.tethered = on
+      }
+
       Prop("inkStats") { (view: QuillCanvasView, on: Bool) in
         view.setInkStats(on)
       }

@@ -49,6 +49,7 @@ export type Settings = {
   inkSize: number;           // 0 | 1 | 2
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
+  smoothMove: boolean;       // the tethered style: ink stays locked to the page while it scrolls and zooms
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
   inkStats?: boolean;        // numbers on the page: how fast the ink is
   icloud?: boolean;          // sync notes with iCloud (on unless turned off)
@@ -94,7 +95,7 @@ export const DEFAULTS: Settings = {
     { kind: 'pen', style: 'pen', color: '#E5322D', size: 1 },
     { kind: 'marker', style: 'pen', color: '#FFE14D', size: 1 },
   ],
-  inkKind: 'pen', inkSize: 1, fingerDraws: false, penStyle: 'pen', textSizeIdx: 1,
+  inkKind: 'pen', inkSize: 1, fingerDraws: false, smoothMove: true, penStyle: 'pen', textSizeIdx: 1,
   wifiOnlySync: true, haptics: true, reduceMotion: false, confirmDelete: true, pageNumbers: false, keepAwake: false,
 };
 

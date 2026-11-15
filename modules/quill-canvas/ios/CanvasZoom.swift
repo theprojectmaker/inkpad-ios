@@ -216,8 +216,13 @@ extension QuillCanvasView {
 /// screen at different moments: the writing lagged behind the page and ran off its edge. So
 /// during a pinch the ink is a picture on each page, and they can't come apart.
 extension QuillCanvasView {
-  private func inkPicture(_ strokes: [InkStroke], page f: CGRect) -> CGImage? {
-    let k: CGFloat = 3
+  /// As sharp as the screen at the page width (the pictures are what you see while the page moves), within reason.
+  private func pictureScale() -> CGFloat {
+    let screen = window?.screen.scale ?? UIScreen.main.scale
+    return min(4, max(3, currentFit() * screen))
+  }
+
+  private func inkPicture(_ strokes: [InkStroke], page f: CGRect, scale k: CGFloat) -> CGImage? {
     let fmt = UIGraphicsImageRendererFormat()
     fmt.scale = k
     fmt.opaque = false
@@ -255,13 +260,14 @@ extension QuillCanvasView {
     let strokes = document.strokes.filter { !$0.lifted }
     let jobs = near.filter { $0 < specs.count && !pictureIsCurrent($0) }.map { (specs[$0].id, frames[$0]) }
     if jobs.isEmpty { return }
+    let k = pictureScale()
     DispatchQueue.global(qos: .utility).async { [weak self] in
       for (id, f) in jobs {
         // A newer round makes this one pointless.
         var live = false
         DispatchQueue.main.sync { live = self?.pictureRun == run }
         guard live, let self else { return }
-        let image = autoreleasepool { self.inkPicture(strokes, page: f) }
+        let image = autoreleasepool { self.inkPicture(strokes, page: f, scale: k) }
         DispatchQueue.main.async {
           if !self.document.changed(f, since: version) { self.inkPictures[id] = (version, image) }
         }
@@ -402,6 +408,66 @@ extension QuillCanvasView {
     glide = nil
   }
 
+  /// Puts each nearby page's ink on the page as a picture. What's on screen is made this instant; the
+  /// rest follow without holding anything up. Pages that have gone far away give theirs back.
+  private func showPagePictures(_ near: ClosedRange<Int>) {
+    let version = document.version
+    let k = pictureScale()
+    var strokes: [InkStroke]?
+    func all() -> [InkStroke] {
+      if let s = strokes { return s }
+      let s = document.strokes.filter { !$0.lifted }
+      strokes = s
+      return s
+    }
+    let visibleArea = canvas.convert(canvas.bounds, to: pageHost)
+    var later: [(Int, String, CGRect)] = []
+    for i in near where i < pageViewList.count && i < specs.count {
+      let id = specs[i].id
+      if !pictureIsCurrent(i) {
+        if frames[i].intersects(visibleArea) {
+          inkPictures[id] = (version, inkPicture(all(), page: frames[i], scale: k))
+        } else if !picturesInFlight.contains(id) {
+          picturesInFlight.insert(id)
+          later.append((i, id, frames[i]))
+        }
+      }
+      pageViewList[i].showInk(inkPictures[id]?.image, in: inkLowView)
+    }
+    for i in pageViewList.indices where i < near.lowerBound - 1 || i > near.upperBound + 1 { pageViewList[i].showInk(nil, in: inkLowView) }
+    if later.isEmpty { return }
+    let list = all()
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      for (i, id, f) in later {
+        guard let self else { return }
+        let image = autoreleasepool { self.inkPicture(list, page: f, scale: k) }
+        DispatchQueue.main.async {
+          self.picturesInFlight.remove(id)
+          guard i < self.specs.count, self.specs[i].id == id, !self.document.changed(f, since: version) else { return }
+          self.inkPictures[id] = (version, image)
+          if self.zoomPreviewing, i < self.pageViewList.count { self.pageViewList[i].showInk(image, in: self.inkLowView) }
+        }
+      }
+    }
+  }
+
+  /// The page being looked at changed while the pictures are up (a long scroll): the pages now
+  /// coming into view get theirs.
+  func extendPagePictures() {
+    guard zoomPreviewing, let near = nearPages() else { return }
+    trimInkPictures()
+    showPagePictures(near)
+  }
+
+  /// The page is about to move (a drag, or a jump to another page). In the tethered style the ink rides
+  /// on the pages as pictures, exactly as in a pinch, so it can never lag behind or drift off them.
+  /// Returns false when that can't be used (writing is going on): the caller falls back to the moving picture.
+  func moveBegan() -> Bool {
+    guard tethered, capture == nil, !canvas.pencilDown else { return false }
+    if !zoomPreviewing { pinchBegan() }
+    return zoomPreviewing
+  }
+
   func pinchBegan() {
     guard !zoomPreviewing, let near = nearPages() else { return }
     let began = CACurrentMediaTime()
@@ -409,35 +475,7 @@ extension QuillCanvasView {
     trimInkPictures()
     pictureRun += 1
     zoomPreviewing = true
-    let version = document.version
-    let strokes = document.strokes.filter { !$0.lifted }
-    // Only what's on screen has to be right this instant; the rest follow without holding up the pinch.
-    let visibleArea = canvas.convert(canvas.bounds, to: pageHost)
-    var later: [Int] = []
-    for i in near where i < pageViewList.count {
-      let id = specs[i].id
-      if !pictureIsCurrent(i) {
-        if frames[i].intersects(visibleArea) {
-          inkPictures[id] = (version, inkPicture(strokes, page: frames[i]))
-        } else { later.append(i) }
-      }
-      pageViewList[i].showInk(inkPictures[id]?.image, in: inkLowView)
-    }
-    let run = pictureRun
-    if !later.isEmpty {
-      let jobs = later.map { ($0, specs[$0].id, frames[$0]) }
-      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-        for (i, id, f) in jobs {
-          guard let self else { return }
-          let image = autoreleasepool { self.inkPicture(strokes, page: f) }
-          DispatchQueue.main.async {
-            guard run == self.pictureRun, self.zoomPreviewing, i < self.pageViewList.count else { return }
-            self.inkPictures[id] = (version, image)
-            self.pageViewList[i].showInk(image, in: self.inkLowView)
-          }
-        }
-      }
-    }
+    showPagePictures(near)
     showPatch()
     ink.dropPlate()
     ink.blank()

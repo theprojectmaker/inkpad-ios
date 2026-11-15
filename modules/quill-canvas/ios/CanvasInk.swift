@@ -507,6 +507,8 @@ extension QuillCanvasView {
       GestureLog.watching = true    // notes any late frame while writing
       holdPageStill()               // a writing finger still lets two fingers scroll
     }
+    // A finger starting to write while the page is still coasting: the sharp ink comes back now.
+    if zoomPreviewing && inkMode == .write && !canvas.isZooming { pinchEnded(now: true) }
     if !zoomPreviewing { ink.ensureShown() }
     if let z = zoomWriter { z.capturing = z.pad.bounds.contains(t.location(in: z.pad)) }
     let p = location(t)

@@ -132,6 +132,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   static let thumbQueue = DispatchQueue(label: "quill.thumbs", qos: .userInitiated)
   var zoomPreviewing = false
   var pictureRun = 0
+  var picturesInFlight = Set<String>()
+  /// The tethered style: while the page moves the ink rides on the pages (see moveBegan).
+  var tethered = true
   var inkPatch: (rect: CGRect, zoom: CGFloat, version: Int, image: CGImage?)?
   var patchRun = 0
   var patchSoon: DispatchWorkItem?
@@ -526,8 +529,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     l.font = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     l.textColor = .white
     l.textAlignment = .center
-    l.backgroundColor = UIColor(white: 0.1, alpha: 0.72)
+    l.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.92)
     l.layer.cornerRadius = 15
+    l.layer.cornerCurve = .continuous
     l.layer.masksToBounds = true
     l.alpha = 0
     l.isUserInteractionEnabled = false
@@ -565,7 +569,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     dragStartOffset = canvas.contentOffset
     if fingerDraws || inkMode == .compass || inkMode == .shape { inkGesture.fingerGesturing() }
     // A pinch is also a two-finger drag. Its pictures on the pages scale with them; the moving picture wouldn't.
-    if !zoomPreviewing && !canvas.isZooming { ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale) }
+    if !zoomPreviewing && !canvas.isZooming && !moveBegan() { ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale) }
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -652,6 +656,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       if away <= 3 { v.setNear(true) } else if away > 7 { v.setNear(false) }
     }
     onPageChange(["page": i, "count": frames.count])
+    if zoomPreviewing { extendPagePictures() }
     refreshInkPicturesSoon()
   }
 
@@ -674,11 +679,14 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
       ink.resume()
       return
     }
-    if !zoomPreviewing { ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale) }
+    if !zoomPreviewing && !moveBegan() { ink.beginMoving(visible: canvas.bounds, zoom: canvas.zoomScale) }
     canvas.setContentOffset(p, animated: true)
   }
 
-  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { settleInk() }
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    settleInk()
+    if zoomPreviewing && !canvas.isZooming { pinchEnded() }
+  }
 
   // MARK: - Pages
 

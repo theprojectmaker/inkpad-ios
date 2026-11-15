@@ -267,6 +267,8 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
     case 'pencil': return (
       <>
         <Section title="Apple Pencil and fingers">
+          <Row icon="hand.point.up.left" label="Smooth scrolling and zoom" note="New: the ink stays locked to the page while it moves. Turn off for the old way."
+            onPress={() => set({ smoothMove: s.smoothMove === false })} right={<Toggle label="Smooth scrolling and zoom" value={s.smoothMove !== false} onChange={(v) => set({ smoothMove: v })} />} />
           <Row icon="hand.draw" label="Draw with finger" note="Off: only Apple Pencil writes, fingers scroll and zoom." last
             onPress={() => set({ fingerDraws: !s.fingerDraws })} right={<Toggle label="Draw with finger" value={!!s.fingerDraws} onChange={(v) => set({ fingerDraws: v })} />} />
         </Section>
