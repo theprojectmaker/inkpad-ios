@@ -2,8 +2,8 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Component, createContext, Fragment, type ErrorInfo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewProps, type ViewStyle, type StyleProp } from 'react-native';
-import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewProps, type ViewStyle, type StyleProp } from 'react-native';
+import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { useTheme } from '@/lib/settings';
 
@@ -276,7 +276,7 @@ function GuardCard({ label, error, retry }: { label?: string; error: Error; retr
 
 /** A floating surface: clear Liquid Glass where the iPad has it (iPadOS 26), a see-through white card where it doesn't. */
 const HAS_GLASS = (() => { try { return Platform.OS === 'ios' && isLiquidGlassAvailable(); } catch { return false; } })();
-export function Glass({ radius = 22, style, children, ...rest }: ViewProps & { radius?: number }) {
+function GlassBody({ radius, style, children, ...rest }: ViewProps & { radius: number }) {
   return (
     HAS_GLASS ? (
       // The buttons sit inside the glass, so it lights up and flexes under a touch like the system's bars.
@@ -286,5 +286,40 @@ export function Glass({ radius = 22, style, children, ...rest }: ViewProps & { r
       {children}
     </View>
     )
+  );
+}
+
+/** Where the surface sits (these go on the part that moves); everything else styles the glass itself. */
+const PLACE_KEYS = ['position', 'top', 'left', 'right', 'bottom', 'alignSelf', 'zIndex', 'maxWidth', 'margin', 'marginTop', 'marginBottom', 'marginLeft', 'marginRight', 'marginHorizontal', 'marginVertical'];
+
+/**
+ * `stretchy`: pulling on the surface stretches it toward the finger, like pulling on something soft, and it springs
+ * back when let go. 'vertical' only answers pulls up and down, for bars whose contents scroll sideways.
+ */
+export function Glass({ radius = 22, style, children, stretchy, ...rest }: ViewProps & { radius?: number; stretchy?: boolean | 'vertical' }) {
+  const px = useSharedValue(0), py = useSharedValue(0);
+  const mode = useRef(stretchy);
+  mode.current = stretchy;
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => !!mode.current && Math.hypot(g.dx, g.dy) > 12 && (mode.current !== 'vertical' || Math.abs(g.dy) > Math.abs(g.dx) * 1.5),
+    onPanResponderMove: (_, g) => { px.value = mode.current === 'vertical' ? 0 : g.dx; py.value = g.dy; },
+    onPanResponderRelease: () => { px.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); py.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); },
+    onPanResponderTerminate: () => { px.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); py.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); },
+  })).current;
+  const pull = useAnimatedStyle(() => {
+    // The further it's pulled the less it gives, up to about 44 points.
+    const ax = Math.abs(px.value), ay = Math.abs(py.value);
+    const x = (px.value < 0 ? -1 : 1) * 44 * (1 - 1 / (ax / 90 + 1));
+    const y = (py.value < 0 ? -1 : 1) * 44 * (1 - 1 / (ay / 90 + 1));
+    return { transform: [{ translateX: x * 0.5 }, { translateY: y * 0.5 }, { scaleX: 1 + Math.abs(x) / 150 - Math.abs(y) / 520 }, { scaleY: 1 + Math.abs(y) / 150 - Math.abs(x) / 520 }] };
+  });
+  if (!stretchy) return <GlassBody radius={radius} style={style} {...rest}>{children}</GlassBody>;
+  const flat = (StyleSheet.flatten(style) ?? {}) as Record<string, unknown>;
+  const outer: Record<string, unknown> = {}, inner: Record<string, unknown> = {};
+  for (const k of Object.keys(flat)) (PLACE_KEYS.includes(k) ? outer : inner)[k] = flat[k];
+  return (
+    <Reanimated.View {...pan.panHandlers} style={[outer as ViewStyle, pull]}>
+      <GlassBody radius={radius} style={inner as ViewStyle} {...rest}>{children}</GlassBody>
+    </Reanimated.View>
   );
 }

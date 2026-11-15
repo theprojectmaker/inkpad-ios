@@ -11,7 +11,7 @@ import type { CanvasTool } from '@/components/quill-canvas';
 import { ToolIcon } from '@/components/tool-icons';
 import { Glass, Icon, useToast } from '@/components/ui';
 import { pickColor } from '@/lib/ondevice';
-import { type InkTool, type PenLine, type Settings, type ToolKit, useSettings } from '@/lib/settings';
+import { type InkTool, type PenLine, type PenNib, type Settings, type ToolKit, useSettings } from '@/lib/settings';
 
 export const KITS: Record<string, ToolKit> = {
   pen: { colors: ['#000000', '#0A66F0', '#E01E26', '#FFFFFF', '#F28C0F'], color: 0, sizes: [2, 3, 5], size: 1, line: 'even' },
@@ -65,6 +65,17 @@ export function widthOf(id: string, n: number): number {
 /** How big a size's preview dot is, inside its 24 pt circle. */
 const dotOf = (n: number) => Math.round(3 + (Math.max(1, Math.min(12, n)) - 1) * 1.6);
 
+/** The Pen tool's nibs. Ballpoint is the plain pen; the others have their own feel. */
+const NIBS: { id: PenNib; label: string }[] = [
+  { id: 'ball', label: 'Ballpoint' },
+  { id: 'gel', label: 'Gel' },
+  { id: 'fineliner', label: 'Fineliner' },
+  { id: 'felt', label: 'Felt tip' },
+  { id: 'sketch', label: 'Sketch' },
+];
+const nibKind = (nib: PenNib | undefined, pressure: boolean): CanvasTool['kind'] =>
+  nib === 'gel' ? 'gel' : nib === 'fineliner' ? 'fineliner' : nib === 'felt' ? 'feltTip' : nib === 'sketch' ? 'sketch' : pressure ? 'pen' : 'monoline';
+
 /** What the canvas should use for the current settings. */
 export function currentTool(s: Settings): CanvasTool {
   const id = s.inkKind ?? 'pen';
@@ -73,7 +84,7 @@ export function currentTool(s: Settings): CanvasTool {
   const n = k.sizes[k.size] ?? k.sizes[0];
   const broken = k.line === 'dash' || k.line === 'dot' ? k.line : '';
   switch (id) {
-    case 'pen': return { kind: k.line === 'pressure' ? 'pen' : 'monoline', color, width: widthOf('pen', n), mode: broken, streamline: s.streamline };
+    case 'pen': return { kind: nibKind(s.penNib, k.line === 'pressure'), color, width: widthOf('pen', n), mode: broken, streamline: s.streamline };
     case 'pencil': return { kind: 'pencil', color, width: widthOf('pencil', n), mode: broken, streamline: s.streamline };
     case 'marker': return { kind: 'marker', color, width: widthOf('marker', n), mode: broken, streamline: s.streamline };
     case 'brush': return { kind: s.brushType ?? 'brushpen', color, width: widthOf('brush', n), streamline: s.streamline };
@@ -555,6 +566,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         <Bar />
         {sizes}
         {kind !== 'calligraphy' ? <><Bar />{lineChip}</> : null}
+        {kind === 'pen' ? <><Bar />{chip(NIBS.find((x) => x.id === (s.penNib ?? 'ball'))?.label ?? 'Ballpoint', (s.penNib ?? 'ball') !== 'ball', () => { const i = NIBS.findIndex((x) => x.id === (s.penNib ?? 'ball')); const next = NIBS[(i + 1) % NIBS.length]; set({ penNib: next.id }); toast(next.label + ' nib'); })}</> : null}
       </View>
     );
   }
@@ -747,11 +759,11 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
       ) : (
         // Two capsules, each only as wide as what's in it: the tools, and the picked tool's options.
         <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', alignItems: 'center', flexDirection: dock === 'bottom' ? 'column-reverse' : 'column', gap: 8 }, place, moved]}>
-          <Glass radius={24} style={{ maxWidth: '100%' }}>
+          <Glass stretchy="vertical" radius={24} style={{ maxWidth: '100%' }}>
             {grip}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false} style={{ flexGrow: 0 }} contentContainerStyle={{ height: 48, alignItems: 'center', paddingHorizontal: 8 }}>{tools}</ScrollView>
           </Glass>
-          <Glass radius={24} style={{ maxWidth: '100%' }}>
+          <Glass stretchy="vertical" radius={24} style={{ maxWidth: '100%' }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ flexGrow: 0 }}>{options}</ScrollView>
           </Glass>
         </Reanimated.View>

@@ -14,6 +14,7 @@ import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke
 import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/audio-bar';
 import { CommentSheet, firstLine } from '@/components/comment-sheet';
 import { NoteTabs } from '@/components/note-tabs';
+import { QuickBubble } from '@/components/quick-bubble';
 import { ShareLinkSheet } from '@/components/share-link';
 import { graphLines } from '@/lib/graph';
 import { ToolIcon } from '@/components/tool-icons';
@@ -274,10 +275,11 @@ export default function Editor() {
   // Opening: the note grows into place. Closing or switching tab: it settles back the moment you tap,
   // while the saving goes on behind it, then hands over to the next screen.
   const shown = useSharedValue(0);
-  useEffect(() => { shown.value = withSpring(1, { damping: 18, stiffness: 170, mass: 0.9 }); }, [shown]);
+  // A swoosh: the note sweeps in from the right, fast at first and settling gently, and sweeps back out the same way.
+  useEffect(() => { shown.value = withTiming(1, { duration: 460, easing: Easing.bezier(0.16, 1, 0.3, 1) }); }, [shown]);
   const openStyle = useAnimatedStyle(() => {
-    const k = Math.max(0, Math.min(1.05, shown.value));
-    return { opacity: Math.min(1, 0.1 + 1.6 * k), borderRadius: 36 * (1 - Math.min(1, k)), overflow: 'hidden', transform: [{ translateY: 70 * (1 - k) }, { scale: 0.88 + 0.12 * k }] };
+    const k = Math.max(0, Math.min(1, shown.value));
+    return { opacity: Math.min(1, k * 1.8), borderRadius: 28 * (1 - k), overflow: 'hidden', transform: [{ translateX: width * 0.32 * (1 - k) }, { scale: 0.94 + 0.06 * k }] };
   });
   useEffect(() => { setOpenNote(id); return () => setOpenNote(null); }, [id]);
   // Settings > keep the screen on while a note is open.
@@ -290,7 +292,7 @@ export default function Editor() {
   const leave = async (to?: string) => {
     if (leaving.current) return;
     leaving.current = true;
-    shown.value = withTiming(0, { duration: 260, easing: Easing.inOut(Easing.cubic) });
+    shown.value = withTiming(0, { duration: 300, easing: Easing.bezier(0.5, 0, 0.75, 0) });
     // Recording, or just stopped: its notes and pages have to land before the note closes.
     try { if (audio.rec) await stopRecording(); else if (stopRun.current) await stopRun.current; } catch {}
     try { await canvas.current?.save(); } catch {}
@@ -780,11 +782,11 @@ export default function Editor() {
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
             onRuler={setRuler} raised={audioOpen} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onFlag={toggleFlag} flagged={flagged} onScratch={() => setScratch((v) => !v)} scratchOn={scratch} onTimer={() => setTimerOpen((v) => !v)} timerOn={timerOpen} onPresent={() => { setPresent(true); setFocus(true); canvas.current?.fitWidth(); }} onFind={() => { const was = find; closePanels(); setFind(!was); }} findOn={find} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
-          <Glass radius={24} style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 5 }}>
+          <Glass stretchy radius={24} style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 5 }}>
             <TopBtn icon="back" label="Back to notes" onPress={back} />
             {tabs.length > 1 ? <TopBtn icon="tabs" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} /> : null}
           </Glass>
-          <Glass radius={24} style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', padding: 5 }}>
+          <Glass stretchy radius={24} style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', padding: 5 }}>
             <TopBtn icon="undo" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
             <TopBtn icon="redo" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
             <TopBtn icon="ai" label="Study with AI" active={study} onPress={() => { const was = study; closePanels(); setStudy(!was); }} />
@@ -849,6 +851,7 @@ export default function Editor() {
       ]} />
       <MenuSheet topRight visible={viewMenu} onClose={() => setViewMenu(false)} items={[
         { group: 1, label: 'Present', sub: 'Full screen, one page at a time', icon: 'play.rectangle', onPress: () => { setPresent(true); setFocus(true); canvas.current?.fitWidth(); } },
+        { group: 1, label: 'Quick button', sub: 'Drag it anywhere; tap for the eraser', icon: 'circle.dashed', checked: !!s.bubble, onPress: () => set({ bubble: !s.bubble }) },
         { group: 1, label: 'Focus mode', sub: 'Hides the toolbars', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
         { group: 1, label: 'Fit page to width', icon: 'arrow.left.and.right', onPress: () => canvas.current?.fitWidth() },
       ]} />
@@ -928,6 +931,7 @@ export default function Editor() {
         ...(commentsList ?? []).map((c) => ({ label: firstLine(c.text) || 'Comment', sub: `Page ${c.page + 1}`, icon: 'bubble.left', onPress: () => { canvas.current?.scrollToPage(c.page); setComment({ id: c.id, text: c.text }); } })),
       ]} />
       {tabsOpen ? <NoteTabs current={id} onClose={() => setTabsOpen(false)} onPick={(n) => { setTabsOpen(false); leave(n); }} /> : null}
+      {s.bubble && !present ? <QuickBubble onUndo={() => canvas.current?.undo()} onRedo={() => canvas.current?.redo()} onFlag={toggleFlag} /> : null}
       {scratch && !focus ? (
         <Glass radius={18} style={{ position: 'absolute', top: 70, right: 12, width: 250, padding: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -938,7 +942,7 @@ export default function Editor() {
         </Glass>
       ) : null}
       {timerOpen && !present ? (
-        <Glass radius={26} style={{ position: 'absolute', bottom: 28, left: 14, flexDirection: 'row', alignItems: 'center', padding: 6, gap: 4 }}>
+        <Glass stretchy radius={26} style={{ position: 'absolute', bottom: 28, left: 14, flexDirection: 'row', alignItems: 'center', padding: 6, gap: 4 }}>
           <Text accessibilityLabel="Focus timer" style={{ color: timerLeft === 0 ? '#E8590C' : '#15171C', fontSize: 18, fontWeight: '700', minWidth: 62, textAlign: 'center', fontVariant: ['tabular-nums'] }}>{String(Math.floor(timerLeft / 60)).padStart(2, '0')}:{String(timerLeft % 60).padStart(2, '0')}</Text>
           <IconButton name={timerRun ? 'pause.fill' : 'play.fill'} label={timerRun ? 'Pause the timer' : 'Start the timer'} onPress={() => { if (timerLeft === 0) setTimerLeft(timerMin * 60); setTimerRun((r) => !r); }} />
           <Pressable accessibilityLabel={`Timer length ${timerMin} minutes. Tap to change.`} onPress={nextLength} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(60,60,67,0.1)' }}><Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>{timerMin} min</Text></Pressable>
@@ -946,7 +950,7 @@ export default function Editor() {
         </Glass>
       ) : null}
       {focus && present ? (
-        <Glass radius={28} style={{ position: 'absolute', bottom: 28, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', padding: 6, gap: 6 }}>
+        <Glass stretchy radius={28} style={{ position: 'absolute', bottom: 28, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', padding: 6, gap: 6 }}>
           <IconButton name="chevron.left" label="Previous page" disabled={page.page <= 0} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} />
           <Text style={{ color: '#15171C', fontSize: 15, fontWeight: '600', minWidth: 64, textAlign: 'center' }}>{page.page + 1} / {page.count}</Text>
           <IconButton name="chevron.right" label="Next page" disabled={page.page >= page.count - 1} onPress={() => canvas.current?.scrollToPage(Math.min(page.count - 1, page.page + 1))} />
