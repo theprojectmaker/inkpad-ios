@@ -31,6 +31,7 @@ const fmtDate = (t: number) => {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
 };
 
+const greeting = () => { const hr = new Date().getHours(); return hr < 5 ? 'Up late' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'; };
 const defaultTitle = () => `Note ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
 
 const zipDone = (r: { made: number; folders: number; skipped: string[]; failed: string[] }) =>
@@ -273,6 +274,8 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
   const trashed = lib.lib.notes.filter((n) => n.trashed).length;
   const list = s.view === 'list';
   const showHome = filter.kind === 'home' && !q.trim();
+  const pinned = live.filter((n) => n.pin).slice(0, 6);
+  const sectionTitle = { color: t.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.3, marginTop: 30, marginBottom: 14 } as const;
   const recent = useMemo(() => live.slice().sort((a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated)).slice(0, 6), [lib.lib.notes]);
   const rowW = mainW - (pad - 10) * 2;
 
@@ -495,7 +498,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
           <ScrollView style={{ flex: 1 }} scrollEnabled={!dragging} contentContainerStyle={{ paddingHorizontal: 12, gap: 2, paddingBottom: 20 }}>
             {sideRow('Home', filter.kind === 'home', () => setFilter({ kind: 'home' }), { icon: 'house' })}
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length, drop: NONE })}
-            {sideRow('Gallery', false, () => setSheet('paper'), { icon: 'photo.artframe' })}
+            {sideRow('Templates', false, () => setSheet('paper'), { icon: 'doc.plaintext' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
             {sideRow('Drawing Board', false, () => router.push('/draw' as never), { icon: 'paintbrush.pointed' })}
             {sideRow('Study', false, () => router.push('/study'), { icon: 'book' })}
@@ -527,7 +530,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
           {!wide ? <IconButton name="gearshape" label="Settings" onPress={() => router.push('/settings')} /> : null}
           {wide ? <IconButton name="ellipsis.circle" label="More" onPress={() => setSheet('home')} /> : null}
           <Pressable onPress={() => setSheet('new')} accessibilityLabel="New"
-            style={({ pressed }) => ({ flexDirection: 'row', gap: 8, height: 40, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3F6AF2', opacity: pressed ? 0.8 : 1 })}>
+            style={({ pressed }) => ({ flexDirection: 'row', gap: 8, height: 40, paddingHorizontal: 18, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 })}>
             <Icon name="plus" size={16} color="#fff" />
             <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>New</Text>
           </Pressable>
@@ -550,30 +553,42 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
         <Reanimated.View key={JSON.stringify(filter)} entering={still ? undefined : FadeIn.duration(220).easing(EASE)} exiting={still ? undefined : FadeOut.duration(160).easing(EASE)} style={StyleSheet.absoluteFill}>
         {showHome ? (
           <ScrollView scrollEnabled={!dragging} contentContainerStyle={{ paddingHorizontal: pad, paddingBottom: 60 }}>
-            <View style={{ alignItems: 'center', marginTop: 8 }}>
-              <Icon name="pencil.and.scribble" size={54} color="#3F6AF2" />
-              <Text style={{ color: t.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6, marginTop: 14 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
-            </View>
+            {/* A calm header: the date, a greeting, then what's due today. Everything lines up on the left. */}
+            <Text style={{ color: t.sub, fontSize: 15, fontWeight: '600', marginTop: 6 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+            <Text style={{ color: t.text, fontSize: 34, fontWeight: '800', letterSpacing: -0.8, marginTop: 2 }}>{greeting()}</Text>
             <TodayStrip />
             <HomeStrip onToday={openToday} />
-            <View style={{ flexDirection: 'row', gap: 16, marginTop: 32 }}>
+            <Text style={sectionTitle}>Start</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
               {[
-                { label: 'Import Flashcards', icon: 'rectangle.on.rectangle', bg: t.card, line: '#C3D3F7', go: () => router.push('/flashcards') },
-                { label: 'Record a lecture', icon: 'mic', bg: t.dark ? t.card : '#FFF6E9', line: '#F3D9AE', go: () => newNote('blank', 'white', 'letter', true) },
-                { label: 'Import a file', icon: 'square.and.arrow.down', bg: t.dark ? t.card : '#EDF2FE', line: '#C3D3F7', go: importPdf },
-                { label: 'Drawing Board', icon: 'paintbrush.pointed', bg: t.dark ? t.card : '#F3EEFF', line: '#D5C6F5', go: () => router.push('/draw' as never) },
-                { label: 'Find a template', icon: 'doc.plaintext', bg: t.dark ? t.card : '#F4F5F8', line: t.line, go: () => setSheet('paper') },
+                { label: 'New note', icon: 'square.and.pencil', tint: t.accent, go: () => newNote(s.defaultPaper?.style ?? 'lined', s.defaultPaper?.color ?? 'white', s.defaultPaper?.size ?? 'letter') },
+                { label: 'Record a lecture', icon: 'mic', tint: '#E8590C', go: () => newNote('blank', 'white', 'letter', true) },
+                { label: 'Import a file', icon: 'square.and.arrow.down', tint: '#30A46C', go: importPdf },
+                { label: 'Drawing Board', icon: 'paintbrush.pointed', tint: '#6E56CF', go: () => router.push('/draw' as never) },
+                { label: 'Flashcards', icon: 'rectangle.on.rectangle', tint: '#D6409F', go: () => router.push('/flashcards') },
+                { label: 'Templates', icon: 'doc.plaintext', tint: '#0E7490', go: () => setSheet('paper') },
               ].map((c) => (
-                <Pressable key={c.label} accessibilityLabel={c.label} onPress={c.go} style={({ pressed }) => ({ flex: 1, height: 112, borderRadius: 14, borderWidth: 1, borderColor: c.line, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 8, opacity: pressed ? 0.8 : 1, shadowColor: '#000', shadowOpacity: t.dark ? 0 : 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } })}>
-                  <Icon name={c.icon} size={22} color={t.text} />
-                  <Text style={{ color: t.text, fontSize: 15, fontWeight: '600', textAlign: 'center' }}>{c.label}</Text>
+                <Pressable key={c.label} accessibilityLabel={c.label} onPress={c.go} style={({ pressed }) => ({ flex: 1, height: 96, borderRadius: 18, borderCurve: 'continuous', backgroundColor: t.dark ? t.card : t.side, alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 6, transform: [{ scale: pressed ? 0.96 : 1 }] })}>
+                  <View style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: c.tint + '22' }}>
+                    <Icon name={c.icon} size={18} color={c.tint} />
+                  </View>
+                  <Text numberOfLines={1} style={{ color: t.text, fontSize: 13.5, fontWeight: '600', textAlign: 'center' }}>{c.label}</Text>
                 </Pressable>
               ))}
             </View>
-            <Text style={{ color: t.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4, marginTop: 36, marginBottom: 16 }}>Recent notes</Text>
+            {pinned.length ? (
+              <>
+                <Text style={sectionTitle}>Pinned</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{pinned.map((n) => <View key={n.id}>{card(n)}</View>)}</View>
+              </>
+            ) : null}
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text style={[sectionTitle, { flex: 1 }]}>Recent</Text>
+              {live.length > recent.length ? <Pressable accessibilityLabel="See all notes" hitSlop={10} onPress={() => setFilter({ kind: 'all' })}><Text style={{ color: t.accent, fontSize: 15, fontWeight: '600' }}>See all</Text></Pressable> : null}
+            </View>
             {recent.length ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: gapX, rowGap: 28 }}>{recent.map((n, i) => <Reanimated.View key={n.id} entering={still ? undefined : FadeIn.delay(i * 25).duration(200).easing(EASE)} exiting={still ? undefined : FadeOut.duration(160)} layout={still ? undefined : LinearTransition.duration(220).easing(EASE)}>{card(n)}</Reanimated.View>)}</View>
-            ) : <Text style={{ color: t.sub, fontSize: 16 }}>Your notes will show up here.</Text>}
+            ) : <Text style={{ color: t.sub, fontSize: 16 }}>Nothing yet. Tap New note to start your first one.</Text>}
           </ScrollView>
         ) : null}
         {filter.kind === 'trash' && notes.length ? (

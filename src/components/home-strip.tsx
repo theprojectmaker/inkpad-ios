@@ -19,7 +19,7 @@ export function HomeStrip({ onToday }: { onToday: () => void }) {
     </Pressable>
   );
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 14 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
       {chip('today', 'calendar', "Today's note", onToday, t.accent)}
       {due.map((n) => chip(n.id, 'bell.fill', `Review: ${n.title}`, () => router.push(`/note/${n.id}`), '#E8590C'))}
     </View>

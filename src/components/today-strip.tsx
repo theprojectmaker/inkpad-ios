@@ -39,7 +39,7 @@ export function TodayStrip() {
 
   if (!items.length) return null;
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
       {items.map((x) => (
         <Reanimated.View key={x.key} entering={still ? undefined : FadeIn.duration(200)} exiting={still ? undefined : FadeOut.duration(160)} layout={still ? undefined : LinearTransition.duration(200)}>
           <Pressable accessibilityLabel={x.text} onPress={() => router.push(x.go as never)}
