@@ -497,6 +497,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length, drop: NONE })}
             {sideRow('Gallery', false, () => setSheet('paper'), { icon: 'photo.artframe' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
+            {sideRow('Drawing Board', false, () => router.push('/draw' as never), { icon: 'paintbrush.pointed' })}
             {sideRow('Study', false, () => router.push('/study'), { icon: 'book' })}
             {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 4, paddingLeft: 12 }}>
@@ -560,6 +561,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
                 { label: 'Import Flashcards', icon: 'rectangle.on.rectangle', bg: t.card, line: '#C3D3F7', go: () => router.push('/flashcards') },
                 { label: 'Record a lecture', icon: 'mic', bg: t.dark ? t.card : '#FFF6E9', line: '#F3D9AE', go: () => newNote('blank', 'white', 'letter', true) },
                 { label: 'Import a file', icon: 'square.and.arrow.down', bg: t.dark ? t.card : '#EDF2FE', line: '#C3D3F7', go: importPdf },
+                { label: 'Drawing Board', icon: 'paintbrush.pointed', bg: t.dark ? t.card : '#F3EEFF', line: '#D5C6F5', go: () => router.push('/draw' as never) },
                 { label: 'Find a template', icon: 'doc.plaintext', bg: t.dark ? t.card : '#F4F5F8', line: t.line, go: () => setSheet('paper') },
               ].map((c) => (
                 <Pressable key={c.label} accessibilityLabel={c.label} onPress={c.go} style={({ pressed }) => ({ flex: 1, height: 112, borderRadius: 14, borderWidth: 1, borderColor: c.line, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 8, opacity: pressed ? 0.8 : 1, shadowColor: '#000', shadowOpacity: t.dark ? 0 : 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } })}>
@@ -611,6 +613,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
 
       <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
         { group: 1, label: "Today's note", icon: 'calendar', onPress: openToday },
+        { group: 1, label: 'Drawing Board', icon: 'paintbrush.pointed', onPress: () => router.push('/draw' as never) },
         { group: 1, label: 'Import a PDF or zip', icon: 'square.and.arrow.down', onPress: importPdf },
         { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
         { group: 1, label: 'Import Flashcards', icon: 'rectangle.on.rectangle', onPress: () => router.push('/flashcards') },

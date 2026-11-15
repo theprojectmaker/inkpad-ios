@@ -274,8 +274,11 @@ export default function Editor() {
   // Opening: the note grows into place. Closing or switching tab: it settles back the moment you tap,
   // while the saving goes on behind it, then hands over to the next screen.
   const shown = useSharedValue(0);
-  useEffect(() => { shown.value = withSpring(1, { damping: 22, stiffness: 240, mass: 0.9 }); }, [shown]);
-  const openStyle = useAnimatedStyle(() => ({ opacity: 0.25 + 0.75 * Math.min(1, shown.value), transform: [{ scale: 0.95 + 0.05 * shown.value }] }));
+  useEffect(() => { shown.value = withSpring(1, { damping: 18, stiffness: 170, mass: 0.9 }); }, [shown]);
+  const openStyle = useAnimatedStyle(() => {
+    const k = Math.max(0, Math.min(1.05, shown.value));
+    return { opacity: Math.min(1, 0.1 + 1.6 * k), borderRadius: 36 * (1 - Math.min(1, k)), overflow: 'hidden', transform: [{ translateY: 70 * (1 - k) }, { scale: 0.88 + 0.12 * k }] };
+  });
   useEffect(() => { setOpenNote(id); return () => setOpenNote(null); }, [id]);
   // Settings > keep the screen on while a note is open.
   useEffect(() => {
@@ -287,7 +290,7 @@ export default function Editor() {
   const leave = async (to?: string) => {
     if (leaving.current) return;
     leaving.current = true;
-    shown.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+    shown.value = withTiming(0, { duration: 260, easing: Easing.inOut(Easing.cubic) });
     // Recording, or just stopped: its notes and pages have to land before the note closes.
     try { if (audio.rec) await stopRecording(); else if (stopRun.current) await stopRun.current; } catch {}
     try { await canvas.current?.save(); } catch {}
