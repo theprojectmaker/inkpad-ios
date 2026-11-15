@@ -95,6 +95,8 @@ const INK = '#3B4252';
 const BLUE = '#007AFF';
 /** How many tools sit on the first row; the rest are one tap away. */
 const FIRST_ROW = 6;
+const FIRST_MIN = 4;
+const FIRST_MAX = 14;
 
 const PALETTES = [
   ['#FFFF00', '#F28C0F', '#E01E26', '#F000C8', '#A8FF1E', '#5CC840', '#9000B8', '#541E88', '#0A7A38', '#0A66F0', '#1A3EA8', '#12006C', '#FFFFFF', '#8C8C8C', '#000000', '#845A30'],
@@ -172,6 +174,8 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
   const { s, set } = useSettings();
   const order = fullOrder(s.toolOrder);
   const hidden = s.toolHidden ?? [];
+  const firstN = Math.max(FIRST_MIN, Math.min(FIRST_MAX, s.toolFirstPage ?? FIRST_ROW));
+  const onFirstPage = new Set(order.filter((id) => !hidden.includes(id)).slice(0, firstN));
   const [drag, setDrag] = useState<{ from: number; dy: number } | null>(null);
   const clampTo = (from: number, dy: number) => Math.max(0, Math.min(order.length - 1, from + Math.round(dy / TOOLBOX_ROW)));
   const drop = (from: number, dy: number) => {
@@ -210,6 +214,12 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
               </Pressable>
             ))}
           </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingBottom: 12 }}>
+            <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Tools on the first page</Text>
+            <Pressable accessibilityLabel="Fewer tools on the first page" disabled={firstN <= FIRST_MIN} onPress={() => set({ toolFirstPage: firstN - 1 })} style={{ width: 32, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECEDF1', opacity: firstN <= FIRST_MIN ? 0.35 : 1 }}><Text style={{ fontSize: 18, fontWeight: '600', color: '#15171C' }}>−</Text></Pressable>
+            <Text accessibilityLabel={`${firstN} tools on the first page`} style={{ width: 26, textAlign: 'center', fontSize: 16, fontWeight: '700', color: BLUE }}>{firstN}</Text>
+            <Pressable accessibilityLabel="More tools on the first page" disabled={firstN >= FIRST_MAX} onPress={() => set({ toolFirstPage: firstN + 1 })} style={{ width: 32, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECEDF1', opacity: firstN >= FIRST_MAX ? 0.35 : 1 }}><Text style={{ fontSize: 18, fontWeight: '600', color: '#15171C' }}>+</Text></Pressable>
+          </View>
           <ScrollView scrollEnabled={!drag}>
             {order.map((id, i) => {
               const x = ALL_TOOLS.find((t) => t.id === id)!;
@@ -221,6 +231,7 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
                   </Pressable>
                   {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <ToolIcon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
                   <Text style={{ flex: 1, fontSize: 16, color: off ? '#9AA2B2' : '#15171C' }}>{x.label}</Text>
+                  {!off ? <Text style={{ fontSize: 12, fontWeight: '600', color: onFirstPage.has(id) ? BLUE : '#9AA2B2' }}>{onFirstPage.has(id) ? 'Page 1' : 'Page 2'}</Text> : null}
                   <DragGrip label={'Reorder ' + x.label} onDrag={(dy) => setDrag({ from: i, dy })} onDrop={(dy) => drop(i, dy)} />
                 </View>
               );
@@ -518,7 +529,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const hidden = s.toolHidden ?? [];
   const shown = order.filter((id) => !hidden.includes(id));
   // Room for a whole row of tools on either page, plus the options row below it.
-  const firstW = (Math.min(shown.length, FIRST_ROW) + 1) * 40 + 28;
+  const firstN = Math.max(FIRST_MIN, Math.min(FIRST_MAX, s.toolFirstPage ?? FIRST_ROW));
+  const firstW = (Math.min(shown.length, firstN) + 1) * 40 + 28;
   // On a narrow screen it can't share a line with the buttons on each side, so it sits below them.
   const below = dock === 'top' && firstW + 2 * 230 > screen;
   // The second set scrolls sideways inside whatever room is left between those buttons.
@@ -530,8 +542,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const x = ALL_TOOLS.find((t) => t.id === id);
     return x ? toolBtn(x as { id: InkTool; icon: string; label: string }) : null;
   };
-  const first = shown.slice(0, FIRST_ROW);
-  const second = shown.slice(FIRST_ROW);
+  const first = shown.slice(0, firstN);
+  const second = shown.slice(firstN);
   return (
     <>
       <Toolbox visible={toolbox} onClose={() => setToolbox(false)} onSettings={onSettings} />

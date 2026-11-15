@@ -286,7 +286,7 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
           <Row icon="star" label="Favourites bar" note="The floating bar of your saved pens."
             onPress={() => set({ showFavs: s.showFavs === false })} right={<Toggle label="Favourites bar" value={s.showFavs !== false} onChange={(v) => set({ showFavs: v })} />} />
           <Row icon="arrow.counterclockwise" label="Reset toolbar" note="Every tool back on the toolbar, in the first order." last
-            onPress={() => Alert.alert('Reset toolbar?', 'All tools come back in their first order.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', onPress: () => set({ toolOrder: undefined, toolHidden: undefined }) }])} />
+            onPress={() => Alert.alert('Reset toolbar?', 'All tools come back in their first order.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', onPress: () => set({ toolOrder: undefined, toolHidden: undefined, toolFirstPage: undefined }) }])} />
         </Section>
       </>
     );
