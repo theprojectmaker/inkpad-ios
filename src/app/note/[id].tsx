@@ -776,7 +776,7 @@ export default function Editor() {
       {!focus ? (
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
-            onRuler={setRuler} raised={audioOpen} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
+            onRuler={setRuler} raised={audioOpen} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onFlag={toggleFlag} flagged={flagged} onScratch={() => setScratch((v) => !v)} scratchOn={scratch} onTimer={() => setTimerOpen((v) => !v)} timerOn={timerOpen} onPresent={() => { setPresent(true); setFocus(true); canvas.current?.fitWidth(); }} onFind={() => { const was = find; closePanels(); setFind(!was); }} findOn={find} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
           <Glass radius={24} style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 5 }}>
             <TopBtn icon="back" label="Back to notes" onPress={back} />
             {tabs.length > 1 ? <TopBtn icon="tabs" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} /> : null}

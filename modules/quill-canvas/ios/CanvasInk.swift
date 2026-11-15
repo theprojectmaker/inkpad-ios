@@ -1179,6 +1179,7 @@ extension QuillCanvasView {
   private var compassTip: CGPoint { CGPoint(x: compassCentre.x + cos(compassAngle) * compassRadius, y: compassCentre.y + sin(compassAngle) * compassRadius) }
 
   func compassBegan(_ p: CGPoint) {
+    compassTravel = 0
     let reach = 30 / max(0.01, canvas.zoomScale)
     if compassPlaced {
       if hypot(p.x - compassCentre.x, p.y - compassCentre.y) < reach { compassGrab = .needle; return }
@@ -1188,6 +1189,8 @@ extension QuillCanvasView {
       compassLast = atan2(p.y - compassCentre.y, p.x - compassCentre.x)
       compassStart = compassLast
       compassSweep = 0
+      compassSweepShown = 0
+      compassLastSnap = -99
       capture = PenCapture(pen: pen, seq: document.nextSeq(), zoom: canvas.zoomScale, at: p, time: CACurrentMediaTime())
       ink.wet = capture?.wet
       ink.penDown()
@@ -1212,9 +1215,23 @@ extension QuillCanvasView {
   func compassMoved(_ p: CGPoint) {
     switch compassGrab {
     case .needle:
-      if frames.contains(where: { $0.contains(p) }) { compassCentre = p }
+      if frames.contains(where: { $0.contains(p) }) {
+        compassTravel += hypot(p.x - compassCentre.x, p.y - compassCentre.y)
+        compassCentre = p
+      }
     case .leg:
-      compassRadius = hypot(p.x - compassCentre.x, p.y - compassCentre.y)
+      var r = hypot(p.x - compassCentre.x, p.y - compassCentre.y)
+      // Sizes catch on an eighth of an inch, with a tick.
+      let unit: CGFloat = 72 / 8
+      let near = (r / unit).rounded() * unit
+      if near > 0, abs(r - near) < 4 / max(0.01, canvas.zoomScale) {
+        r = near
+        let step = Int((near / unit).rounded())
+        if step != compassLastSnap { compassLastSnap = step; compassTick.selectionChanged() }
+      } else {
+        compassLastSnap = -99
+      }
+      compassRadius = r
       compassAngle = atan2(p.y - compassCentre.y, p.x - compassCentre.x)
     case .arc:
       let a = atan2(p.y - compassCentre.y, p.x - compassCentre.x)
@@ -1223,8 +1240,17 @@ extension QuillCanvasView {
       compassLast = a
       compassSweep = max(-2 * .pi, min(2 * .pi, compassSweep + d))
       compassAngle = a
+      // The sweep catches on quarter-turns and on the full circle, with a tick.
+      let shown = snapSweep(compassSweep)
+      if shown != compassSweep {
+        let step = Int((shown / (.pi / 4)).rounded())
+        if step != compassLastSnap { compassLastSnap = step; compassTick.selectionChanged() }
+      } else {
+        compassLastSnap = -99
+      }
+      compassSweepShown = shown
       if let c = capture {
-        c.wet.reset(compassInk(compassPoints(centre: compassCentre, radius: compassRadius, from: compassStart, sweep: compassSweep)))
+        c.wet.reset(compassInk(compassPoints(centre: compassCentre, radius: compassRadius, from: compassStart, sweep: shown)))
         ink.drawNow()
       }
     case .none: return
@@ -1234,6 +1260,11 @@ extension QuillCanvasView {
 
   func compassEnded() {
     defer { compassGrab = .none; drawCompass() }
+    // Two quick taps on the needle draw the whole circle.
+    if compassGrab == .needle, compassTravel * canvas.zoomScale < 6 {
+      let now = CACurrentMediaTime()
+      if now - compassTapAt < 0.4 { compassTapAt = 0; compassFullCircle() } else { compassTapAt = now }
+    }
     if compassGrab == .leg, compassRadius > 1 {
       UserDefaults.standard.set(Double(compassRadius), forKey: Self.compassSizeKey)
     }
@@ -1241,8 +1272,8 @@ extension QuillCanvasView {
     capture = nil
     ink.wet = nil
     ink.penUp()
-    if abs(compassSweep) > 0.02 {
-      compassCommit(compassPoints(centre: compassCentre, radius: compassRadius, from: compassStart, sweep: compassSweep), seq: c.wet.seq)
+    if abs(compassSweepShown) > 0.02 {
+      compassCommit(compassPoints(centre: compassCentre, radius: compassRadius, from: compassStart, sweep: compassSweepShown), seq: c.wet.seq)
     } else { ink.setNeedsInk() }
   }
 
@@ -1256,6 +1287,12 @@ extension QuillCanvasView {
   func compassReset() {
     compassPlaced = false
     drawCompass()
+  }
+
+  private func snapSweep(_ s: CGFloat) -> CGFloat {
+    if abs(s) > 2 * .pi * 0.97 { return s < 0 ? -2 * .pi : 2 * .pi }
+    let q = (s / (.pi / 4)).rounded() * (.pi / 4)
+    return abs(s - q) < 0.044 ? q : s
   }
 
   private func compassInk(_ pts: [CGPoint]) -> [InkPoint] {
@@ -1282,15 +1319,22 @@ extension QuillCanvasView {
   func drawCompass() {
     if compassLayer.superlayer == nil {
       tapeHost.layer.addSublayer(compassLayer)
+      compassLayer.addSublayer(compassWedge)
       compassLayer.addSublayer(compassGuide)
       compassLayer.addSublayer(compassArms)
+      compassLayer.addSublayer(compassPencil)
+      compassWedge.fillColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 0.12).cgColor
+      compassWedge.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 0.4).cgColor
+      compassPencil.fillColor = nil
+      compassPencil.lineCap = .round
+      compassArms.lineCap = .round
       compassLayer.addSublayer(compassDots)
       compassDots.fillColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
       compassLayer.addSublayer(compassLabel)
       compassGuide.fillColor = nil
       compassGuide.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 0.35).cgColor
       compassArms.fillColor = nil
-      compassArms.strokeColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
+      compassArms.strokeColor = UIColor(white: 0.36, alpha: 1).cgColor
       compassLabel.alignmentMode = .center
       compassLabel.foregroundColor = UIColor(red: 0.25, green: 0.42, blue: 0.95, alpha: 1).cgColor
     }
@@ -1315,17 +1359,39 @@ extension QuillCanvasView {
     let hinge = CGPoint(x: mid.x + nx * lift, y: mid.y + ny * lift)
     let dots = UIBezierPath(arcCenter: c, radius: 4.5 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true)
     if r > 1 {
-      arms.move(to: c); arms.addLine(to: hinge); arms.addLine(to: tip)
-      dots.append(UIBezierPath(arcCenter: hinge, radius: 4 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
+      arms.move(to: c); arms.addLine(to: hinge)
+      // The grip on top, where the real one is held.
+      arms.move(to: hinge); arms.addLine(to: CGPoint(x: hinge.x + nx * 16 * k, y: hinge.y + ny * 16 * k))
+      dots.append(UIBezierPath(arcCenter: hinge, radius: 5.5 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
       dots.append(UIBezierPath(arcCenter: tip, radius: 6 * k, startAngle: 0, endAngle: 2 * .pi, clockwise: true))
     }
-    compassArms.lineWidth = 1.5 * k
+    compassArms.lineWidth = 2.2 * k
     compassArms.path = arms.cgPath
+    let leg = UIBezierPath()
+    if r > 1 { leg.move(to: hinge); leg.addLine(to: tip) }
+    compassPencil.path = r > 1 ? leg.cgPath : nil
+    compassPencil.lineWidth = 3.4 * k
+    compassPencil.strokeColor = UIColor(red: CGFloat(pen.rgb & 255) / 255, green: CGFloat(pen.rgb >> 8 & 255) / 255, blue: CGFloat(pen.rgb >> 16 & 255) / 255, alpha: 1).cgColor
+    // While turning: the wedge swept so far.
+    if compassGrab == .arc, r > 1 {
+      let wedge = UIBezierPath()
+      wedge.move(to: c)
+      wedge.addArc(withCenter: c, radius: r, startAngle: compassStart, endAngle: compassStart + compassSweepShown, clockwise: compassSweepShown >= 0)
+      wedge.close()
+      compassWedge.lineWidth = 1 * k
+      compassWedge.path = wedge.cgPath
+    } else {
+      compassWedge.path = nil
+    }
     compassDots.path = dots.cgPath
 
     let inches = r / 72
     compassLabel.isHidden = r < 8
-    compassLabel.string = String(format: "%.2f in  ·  %.1f cm", inches, inches * 2.54)
+    if compassGrab == .arc {
+      compassLabel.string = String(format: "%d°  ·  %.2f in", Int((abs(compassSweepShown) * 180 / .pi).rounded()), inches)
+    } else {
+      compassLabel.string = String(format: "%.2f in  ·  %.1f cm", inches, inches * 2.54)
+    }
     compassLabel.fontSize = 13 * k
     compassLabel.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
     compassLabel.contentsScale = UIScreen.main.scale * max(1, canvas.zoomScale)

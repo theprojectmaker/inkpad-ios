@@ -55,9 +55,10 @@ export type Settings = {
   inkStats?: boolean;        // numbers on the page: how fast the ink is
   icloud?: boolean;          // sync notes with iCloud (on unless turned off)
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
+  toolOn?: string[];         // quick tools (flag, scratchpad, timer, present, find) put on the toolbar; they start off
   toolFirstPage?: number;    // how many tools sit on the toolbar's first page (6 unless changed, 4 to 14)
   toolDock?: 'top' | 'bottom' | 'left' | 'right';   // which edge of the screen the toolbar sits on
-  brushType?: 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray';
+  brushType?: 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray' | 'charcoal' | 'pastel' | 'wax' | 'airbrush' | 'inkwash' | 'gel' | 'fineliner' | 'sketch' | 'flat' | 'hlchisel';
   shapeType?: 'line' | 'arrow' | 'double' | 'rect' | 'ellipse' | 'triangle' | 'righttri' | 'diamond' | 'hexagon' | 'parallelogram' | 'star' | 'check' | 'cross' | 'axes' | 'numline';
   shapeLock?: boolean;       // lines to 15 degree steps, square boxes, round circles
   shapeFill?: boolean;

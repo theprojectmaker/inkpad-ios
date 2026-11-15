@@ -89,6 +89,18 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   let laserDot = CAShapeLayer()
   let laserCore = CAShapeLayer()
   var laserBands: [CAShapeLayer] = []
+  // An area picked with the lasso that holds nothing: it can still be copied or shared as a photo.
+  var regionBox: CGRect?
+  let regionOutline = CAShapeLayer()
+  let regionBar = UIStackView()
+  // The compass: tap-tap on the needle draws the circle; sizes and sweeps snap with a tick.
+  let compassPencil = CAShapeLayer()
+  let compassWedge = CAShapeLayer()
+  var compassSweepShown: CGFloat = 0
+  var compassTapAt: CFTimeInterval = 0
+  var compassTravel: CGFloat = 0
+  var compassLastSnap = -99
+  let compassTick = UISelectionFeedbackGenerator()
   var lassoPts: [CGPoint] = []
   let lassoLayer = CAShapeLayer()
   var selection: [InkStroke] = []
@@ -916,7 +928,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     updatePanFingers()
     if handMode { clearSelection(); selTap.isEnabled = false; return }
     let mode: InkMode = t.kind == "eraser" ? .erase : t.kind == "lasso" ? .lasso : t.kind == "tape" ? .tape : t.kind == "laser" ? .laser : t.kind == "comment" ? .comment : t.kind == "measure" ? .measure : t.kind == "compass" ? .compass : t.kind == "shape" ? .shape : .write
-    if mode != .lasso { clearSelection() }
+    if mode != .lasso { clearSelection(); clearRegion() }
     if mode != .shape { endShapeEdit() }
     inkMode = mode
     applyFingerRules()

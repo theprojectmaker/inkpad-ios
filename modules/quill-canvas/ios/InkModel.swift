@@ -157,9 +157,9 @@ struct InkPen {
   var stabilize = false    // calligraphy: a much steadier line
   var streamline: Float = 0   // 0...1: how much the hand's wobble is smoothed out
 
-  var kind: InkKind { style == "dash" ? .dash : style == "dot" ? .dot : type == "spray" ? .spray : type == "marker" || type == "watercolor" ? .marker : type == "pencil" || type == "crayon" ? .pencil : .pen }
+  var kind: InkKind { style == "dash" ? .dash : style == "dot" ? .dot : type == "spray" ? .spray : type == "marker" || type == "watercolor" || type == "airbrush" || type == "inkwash" || type == "hlchisel" ? .marker : type == "pencil" || type == "crayon" || type == "charcoal" || type == "pastel" || type == "wax" ? .pencil : .pen }
   /// Pens that start thin and grow into the line.
-  var tapers: Bool { type == "pen" || type == "fountain" || type == "brushpen" }
+  var tapers: Bool { type == "pen" || type == "fountain" || type == "brushpen" || type == "inkwash" || type == "sketch" }
 
   /// Radius and opacity for one moment of the stroke. `p` is pressure 0...1.
   func shape(p: Float, dirX: Float, dirY: Float, altitude: Float) -> (r: Float, a: Float) {
@@ -193,6 +193,31 @@ struct InkPen {
       return (half * (0.8 + 0.6 * p), 0.28)
     case "spray":
       return (half * 2.2, 0.75)
+    case "charcoal":
+      // Grainy, and tilting the Pencil smudges it wide, like the side of a stick.
+      let tilt = max(0, min(1, (1.05 - altitude) / 0.75))
+      return (half * (1.15 + 0.9 * p + 3 * tilt), max(0.22, min(0.95, 0.3 + 0.7 * p)) * (1 - 0.35 * tilt))
+    case "pastel":
+      return (half * (1.6 + 0.6 * p), 0.5 + 0.35 * p)
+    case "wax":
+      return (half * (1.5 + 0.3 * p), 0.82)
+    case "airbrush":
+      // A haze that builds up as it is gone over.
+      return (half * (1.8 + 1.2 * p), 0.1 + 0.2 * p)
+    case "inkwash":
+      return (half * (0.4 + 2.2 * pow(p, 1.2)), 0.38)
+    case "gel":
+      return (half * (0.85 + 0.3 * p), 1)
+    case "fineliner":
+      return (half * 0.62, 1)
+    case "sketch":
+      return (half * (0.5 + 0.9 * pow(p, 1.3)), 0.55 + 0.4 * p)
+    case "flat":
+      // A flat edge held level: broad going down, thin going across.
+      return (half * (0.15 + 0.85 * abs(dirY)), 1)
+    case "hlchisel":
+      let slant = abs(dirX * -sin(Float.pi / 4) + dirY * cos(Float.pi / 4))
+      return (half * (0.2 + 0.8 * slant), 0.42)
     default:  // the pressure pen: a hairline when light, bold when pressed
       return (half * (0.16 + 1.5 * pow(p, 1.25)), 1)
     }

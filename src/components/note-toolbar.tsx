@@ -5,7 +5,7 @@
 import { Canvas, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
-import Reanimated, { FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Reanimated, { Easing, FadeIn, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import type { CanvasTool } from '@/components/quill-canvas';
 import { ToolIcon } from '@/components/tool-icons';
@@ -132,7 +132,19 @@ const ALL_TOOLS: { id: string; icon: string; label: string }[] = [
   TOOLS_B[0],
   { id: 'zoom', icon: 'zoom', label: 'Zoom' },
   ...TOOLS_B.slice(1),
+  // Quick actions: one tap for what lives in the More menu. They start off the bar; the Toolbox puts them on.
+  { id: 'flag', icon: 'flag', label: 'Flag page' },
+  { id: 'scratch', icon: 'scratch', label: 'Scratchpad' },
+  { id: 'timer', icon: 'timer', label: 'Focus timer' },
+  { id: 'present', icon: 'present', label: 'Present' },
+  { id: 'find', icon: 'find', label: 'Find in note' },
 ];
+const DEFAULT_OFF = ['flag', 'scratch', 'timer', 'present', 'find'];
+const hiddenOf = (s: Settings) => [...(s.toolHidden ?? []), ...DEFAULT_OFF.filter((id) => !(s.toolOn ?? []).includes(id))];
+/** The settings change that hides or shows one tool. */
+const hidePatch = (s: Settings, id: string, off: boolean): Partial<Settings> => DEFAULT_OFF.includes(id)
+  ? { toolOn: off ? (s.toolOn ?? []).filter((x) => x !== id) : [...(s.toolOn ?? []), id] }
+  : { toolHidden: off ? [...(s.toolHidden ?? []), id] : (s.toolHidden ?? []).filter((x) => x !== id) };
 const fullOrder = (saved?: string[]) => {
   const ids = ALL_TOOLS.map((t) => t.id);
   return [...(saved ?? []).filter((x) => ids.includes(x)), ...ids.filter((x) => !(saved ?? []).includes(x))];
@@ -145,6 +157,16 @@ const BRUSHES = [
   { id: 'crayon', label: 'Crayon', note: 'Waxy and textured' },
   { id: 'watercolor', label: 'Watercolor', note: 'See-through, builds up where it overlaps' },
   { id: 'spray', label: 'Spray', note: 'A scatter of fine specks' },
+  { id: 'charcoal', label: 'Charcoal', note: 'Grainy and smudgy, tilt to shade' },
+  { id: 'pastel', label: 'Soft pastel', note: 'Chalky and wide' },
+  { id: 'wax', label: 'Wax crayon', note: 'Thick, creamy colour' },
+  { id: 'airbrush', label: 'Airbrush', note: 'A soft haze that builds up' },
+  { id: 'inkwash', label: 'Ink wash', note: 'Thins and thickens, see-through' },
+  { id: 'gel', label: 'Gel pen', note: 'Smooth, even and glossy' },
+  { id: 'fineliner', label: 'Fineliner', note: 'Thin and steady, ignores pressure' },
+  { id: 'sketch', label: 'Sketch pen', note: 'Light lines that darken as you press' },
+  { id: 'flat', label: 'Flat brush', note: 'Broad going down, thin going across' },
+  { id: 'hlchisel', label: 'Chisel highlighter', note: 'A flat, see-through marker' },
 ] as const;
 
 const TOOLBOX_ROW = 50;
@@ -173,7 +195,7 @@ function DragGrip({ label, onDrag, onDrop }: { label: string; onDrag: (dy: numbe
 function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: () => void; onSettings: () => void }) {
   const { s, set } = useSettings();
   const order = fullOrder(s.toolOrder);
-  const hidden = s.toolHidden ?? [];
+  const hidden = hiddenOf(s);
   const firstN = Math.max(FIRST_MIN, Math.min(FIRST_MAX, s.toolFirstPage ?? FIRST_ROW));
   const onFirstPage = new Set(order.filter((id) => !hidden.includes(id)).slice(0, firstN));
   const [drag, setDrag] = useState<{ from: number; dy: number } | null>(null);
@@ -208,7 +230,7 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
           <Text style={{ color: '#6B7385', fontSize: 14, paddingHorizontal: 18, paddingBottom: 10 }}>Drag to reorder, or hide the Toolbox tools. You can also hold a tool in the bar to hide it.</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingBottom: 12 }}>
             <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Toolbar position</Text>
-            {(['top', 'bottom', 'left', 'right'] as const).map((d) => (
+            {(['top', 'bottom'] as const).map((d) => (
               <Pressable key={d} accessibilityLabel={`Toolbar on the ${d}`} onPress={() => set({ toolDock: d })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: (s.toolDock ?? 'top') === d ? '#E9EEFD' : '#ECEDF1' }}>
                 <Text style={{ color: (s.toolDock ?? 'top') === d ? BLUE : '#15171C', fontSize: 13, fontWeight: '500' }}>{d[0].toUpperCase() + d.slice(1)}</Text>
               </Pressable>
@@ -226,7 +248,7 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
               const off = hidden.includes(id);
               return (
                 <View key={id} style={{ flexDirection: 'row', alignItems: 'center', height: TOOLBOX_ROW, paddingLeft: 14, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EC', backgroundColor: '#fff', zIndex: drag?.from === i ? 2 : 0, transform: [{ translateY: shift(i) }], shadowColor: '#000', shadowOpacity: drag?.from === i ? 0.14 : 0, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
-                  <Pressable accessibilityLabel={(off ? 'Show ' : 'Hide ') + x.label} onPress={() => set({ toolHidden: off ? hidden.filter((h) => h !== id) : [...hidden, id] })} hitSlop={8}>
+                  <Pressable accessibilityLabel={(off ? 'Show ' : 'Hide ') + x.label} onPress={() => set(hidePatch(s, id, !off))} hitSlop={8}>
                     <Icon name={off ? 'eye.slash' : 'eye'} size={20} color="#9AA2B2" />
                   </Pressable>
                   {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <ToolIcon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
@@ -344,17 +366,27 @@ const Card = ({ children, width, top = 110, align }: { children: React.ReactNode
 
 const LINES: PenLine[] = ['even', 'pressure', 'dash', 'dot'];
 
-export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudio, onRuler, onZoom, onCalibrate, onSettings, onPaste, onTape, onCompass, raised }: {
+export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudio, onRuler, onZoom, onCalibrate, onSettings, onPaste, onTape, onCompass, raised, onFlag, flagged, onScratch, scratchOn, onTimer, timerOn, onPresent, onFind, findOn }: {
   recording: boolean; hasAudio: boolean; ruler: boolean; zoom: boolean; onInsert: () => void; onAudio: () => void; onRuler: (on: boolean) => void; onZoom: () => void; onCalibrate: () => void; onSettings: () => void;
   onPaste: () => void; onTape: (what: 'show' | 'hide' | 'clear') => void; onCompass: (what: 'circle' | 'reset') => void; raised?: boolean;
+  onFlag: () => void; flagged: boolean; onScratch: () => void; scratchOn: boolean; onTimer: () => void; timerOn: boolean; onPresent: () => void; onFind: () => void; findOn: boolean;
 }) {
   const { s, set } = useSettings();
   const { width: screen, height: screenH } = useWindowDimensions();
   const { toast } = useToast();
-  const dock = s.toolDock ?? 'top';
+  // Top or bottom only: the toolbar no longer docks to the sides.
+  const dock = (s.toolDock === 'bottom' ? 'bottom' : 'top') as 'top' | 'bottom' | 'left' | 'right';
   const upright = dock === 'left' || dock === 'right';
   cardPlace = dock;
   const [set2, setSet2] = useState(false);
+  // Between the two pages of tools: the row slides right off the bar and the other slides in from the far side.
+  const slide = useSharedValue(0);
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slide.value }], opacity: 1 - Math.min(1, Math.abs(slide.value) / 230) * 0.85 }));
+  const land = (to: boolean, from: number) => { setSet2(to); slide.value = -from; slide.value = withSpring(0, { damping: 19, stiffness: 190 }); };
+  const flip = (to: boolean) => {
+    const out = (to ? -1 : 1) * 230;
+    slide.value = withTiming(out, { duration: 190, easing: Easing.in(Easing.cubic) }, (done) => { if (done) runOnJS(land)(to, out); });
+  };
   const [pop, setPop] = useState<null | 'colors' | 'addColor' | 'size' | 'line' | 'nib' | 'brush' | 'shapes'>(null);
   const [toolbox, setToolbox] = useState(false);
   const kind = (s.inkKind ?? 'pen') as string;
@@ -368,7 +400,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     if (adding) { const list = k.colors.includes(c) ? k.colors : [...k.colors, c].slice(-8); patch({ colors: list, color: list.indexOf(c) }); } else { const list = k.colors.slice(); list[k.color] = c; patch({ colors: list }); }
   };
   const hide = (id: string, label: string) => {
-    set({ toolHidden: [...(s.toolHidden ?? []), id] });
+    set(hidePatch(s, id, true));
     toast(`${label} hidden. Bring it back from the gear in the Toolbox.`);
   };
   const pick = (id: InkTool) => {
@@ -526,7 +558,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   }
 
   const order = fullOrder(s.toolOrder);
-  const hidden = s.toolHidden ?? [];
+  const hidden = hiddenOf(s);
   const shown = order.filter((id) => !hidden.includes(id));
   // Room for a whole row of tools on either page, plus the options row below it.
   const firstN = Math.max(FIRST_MIN, Math.min(FIRST_MAX, s.toolFirstPage ?? FIRST_ROW));
@@ -539,6 +571,11 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     if (id === 'media') return plain('media', 'Insert', onInsert, undefined, false, 'media');
     if (id === 'record') return plain(hasAudio && !recording ? 'play' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined, false, 'record');
     if (id === 'zoom') return plain('zoom', 'Zoom', onZoom, undefined, zoom, 'zoom');
+    if (id === 'flag') return plain('flag', 'Flag page', onFlag, flagged ? '#F59E0B' : undefined, flagged, 'flag');
+    if (id === 'scratch') return plain('scratch', 'Scratchpad', onScratch, undefined, scratchOn, 'scratch');
+    if (id === 'timer') return plain('timer', 'Focus timer', onTimer, undefined, timerOn, 'timer');
+    if (id === 'present') return plain('present', 'Present', onPresent, undefined, false, 'present');
+    if (id === 'find') return plain('find', 'Find in note', onFind, undefined, findOn, 'find');
     const x = ALL_TOOLS.find((t) => t.id === id);
     return x ? toolBtn(x as { id: InkTool; icon: string; label: string }) : null;
   };
@@ -598,12 +635,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         ) : pop === 'brush' ? (
           <Card width={Math.min(screen - 40, 300)}>
             <View style={{ gap: 6 }}>
+              <ScrollView style={{ maxHeight: 330 }} contentContainerStyle={{ gap: 6 }}>
               {BRUSHES.map((b) => (
                 <Pressable key={b.id} accessibilityLabel={b.label} onPress={() => { set({ brushType: b.id }); setPop(null); }} style={{ height: 44, paddingHorizontal: 12, borderRadius: 10, justifyContent: 'center', backgroundColor: (s.brushType ?? 'brushpen') === b.id ? '#E9EEFD' : '#F2F3F6' }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: '#15171C' }}>{b.label}</Text>
                   <Text style={{ fontSize: 12, color: '#5A6478' }}>{b.note}</Text>
                 </Pressable>
               ))}
+              </ScrollView>
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#15171C', marginTop: 8 }}>Streamline</Text>
               <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
             </View>
@@ -634,18 +673,22 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         )}
       </Modal> : null}
       <DockedPill dock={dock} below={below} raised={raised} width={room} maxHeight={screenH - 150} onDock={(d) => set({ toolDock: d })}
-        tools={!set2 ? (
-          <Reanimated.View key="first" entering={FadeIn.duration(120)} style={{ flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: upright ? 0 : 6 }}>
-            {first.map(render)}
-            <Div />
-            {second.length ? plain('next', 'More tools', () => setSet2(true)) : plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
-          </Reanimated.View>
-        ) : (
-          <Reanimated.View key="second" entering={FadeIn.duration(120)} style={{ flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: upright ? 0 : 6 }}>
-            {plain('prev', 'Back to the main tools', () => setSet2(false))}
-            <Div />
-            {second.map(render)}
-            {plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
+        tools={(
+          <Reanimated.View style={[{ flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: upright ? 0 : 6 }, slideStyle]}>
+            {!set2 ? (
+              <>
+                {first.map(render)}
+                <Div />
+                {second.length ? plain('next', 'More tools', () => flip(true)) : plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
+              </>
+            ) : (
+              <>
+                {plain('prev', 'Back to the main tools', () => flip(false))}
+                <Div />
+                {second.map(render)}
+                {plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
+              </>
+            )}
           </Reanimated.View>
         )}
         options={<Reanimated.View key={kind} entering={FadeIn.duration(100)} style={upright ? { paddingVertical: 4, paddingHorizontal: 4, alignItems: 'center' } : { height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>{row2}</Reanimated.View>} />
@@ -674,7 +717,7 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
       const { width: w, height: h } = on.current.size;
       if (Math.hypot(g.dx, g.dy) < 12) return;
       // Whichever edge it's let go nearest.
-      const edges = [['left', g.moveX], ['right', w - g.moveX], ['top', g.moveY], ['bottom', h - g.moveY]] as const;
+      const edges = [['top', g.moveY], ['bottom', h - g.moveY]] as const;
       on.current.onDock([...edges].sort((a, b) => a[1] - b[1])[0][0]);
     },
     onPanResponderTerminate: () => { x.value = 0; y.value = 0; },

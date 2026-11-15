@@ -20,6 +20,7 @@ extension QuillCanvasView {
   // MARK: - Drawing the lasso
 
   func beginLasso(_ p: CGPoint) {
+    clearRegion()
     if hasSelection {
       if beginDragSelection(at: p) { return }
       clearSelection()
@@ -60,6 +61,11 @@ extension QuillCanvasView {
       return area.contains(CGPoint(x: f.midX, y: f.midY))
     }.map(\.id)
     let pids = pics.filter { area.contains(CGPoint(x: $0.x + $0.w / 2, y: $0.y + $0.h / 2)) }.map(\.id)
+    // Nothing written there: the area itself can still be copied or shared as a photo.
+    if picked.isEmpty && tids.isEmpty && pids.isEmpty {
+      if box.width * canvas.zoomScale > 30 && box.height * canvas.zoomScale > 30 { showRegion(box) }
+      return
+    }
     select(picked, texts: tids, pics: pids)
   }
 
@@ -836,6 +842,18 @@ extension QuillCanvasView {
     selBar.alignment = .center
     let actions: [(String, Selector)] = [("Style", #selector(onSelStyle)), ("Duplicate", #selector(onSelDuplicate)), ("Cut", #selector(onSelCut)), ("Copy", #selector(onSelCopy)), ("Delete", #selector(onSelDelete))]
     for (title, action) in actions {
+      if title == "Copy" {
+        let b = make("Copy ›")
+        b.accessibilityLabel = "Copy"
+        b.menu = UIMenu(children: [
+          UIAction(title: "Copy ink", subtitle: "Paste it back as ink you can still edit", image: UIImage(systemName: "scribble")) { [weak self] _ in self?.onSelCopy() },
+          UIAction(title: "Copy as photo", subtitle: "A picture of this area, paper included", image: UIImage(systemName: "photo")) { [weak self] _ in self?.onSelCopyPhoto() },
+        ])
+        b.showsMenuAsPrimaryAction = true
+        selBar.addArrangedSubview(b)
+        selBar.addArrangedSubview(divider())
+        continue
+      }
       let b = make(title)
       b.addTarget(self, action: action, for: .touchUpInside)
       selBar.addArrangedSubview(b)
@@ -852,6 +870,12 @@ extension QuillCanvasView {
     arrange.showsMenuAsPrimaryAction = true
     selBar.addArrangedSubview(arrange)
     selBar.addArrangedSubview(divider())
+    let morph = make("Morph ›")
+    morph.accessibilityLabel = "Morph"
+    morph.menu = morphMenu()
+    morph.showsMenuAsPrimaryAction = true
+    selBar.addArrangedSubview(morph)
+    selBar.addArrangedSubview(divider())
     let convert = make("Convert ›")
     convert.accessibilityLabel = "Convert"
     convert.menu = UIMenu(children: [
@@ -866,5 +890,233 @@ extension QuillCanvasView {
     convert.showsMenuAsPrimaryAction = true
     selBar.addArrangedSubview(convert)
     addSubview(selBar)
+    makeRegionUI()
+  }
+}
+
+// MARK: - Photos of an area, and morphing ink
+
+extension QuillCanvasView {
+  /// What is on the page in this area, as it looks: the paper, photos, ink and typed text.
+  func regionImage(_ box: CGRect, strokes: [InkStroke]) -> UIImage? {
+    guard box.width > 1, box.height > 1 else { return nil }
+    var k = min(4, max(2, canvas.zoomScale * (window?.screen.scale ?? 2)))
+    while box.width * k * box.height * k > 16_000_000 { k *= 0.8 }
+    let fmt = UIGraphicsImageRendererFormat()
+    fmt.scale = k
+    fmt.opaque = true
+    return UIGraphicsImageRenderer(size: box.size, format: fmt).image { c in
+      UIColor.white.setFill()
+      c.fill(CGRect(origin: .zero, size: box.size))
+      for (i, f) in frames.enumerated() where f.intersects(box) && i < specs.count {
+        c.cgContext.saveGState()
+        c.cgContext.translateBy(x: f.minX - box.minX, y: f.minY - box.minY)
+        c.cgContext.clip(to: CGRect(origin: .zero, size: f.size))
+        PageArt.draw(specs[i], in: c.cgContext)
+        c.cgContext.restoreGState()
+      }
+      drawPictures(onPage: box, in: c.cgContext)
+      InkRaster.draw(strokes.filter { $0.bounds.intersects(box) }, rect: box, in: c.cgContext)
+      drawTexts(onPage: box, in: c.cgContext)
+    }
+  }
+
+  private func putPhoto(_ img: UIImage) {
+    UIPasteboard.general.image = img
+    InkClipboard.changeCount = -1   // so Paste makes a picture, not ink
+  }
+
+  @objc func onSelCopyPhoto() {
+    commitSelection()
+    let box = selBox.insetBy(dx: -14, dy: -14)
+    guard let img = regionImage(box, strokes: document.strokes) else { return }
+    putPhoto(img)
+    selectionMessage("Copied as a photo")
+  }
+
+  // The area picked with nothing in it.
+
+  func showRegion(_ box: CGRect) {
+    regionBox = box
+    placeRegionUI()
+  }
+
+  func clearRegion() {
+    guard regionBox != nil else { return }
+    regionBox = nil
+    regionOutline.isHidden = true
+    regionBar.isHidden = true
+  }
+
+  func placeRegionUI() {
+    guard let box = regionBox else { return }
+    let a = pageHost.convert(box.origin, to: self)
+    let b = pageHost.convert(CGPoint(x: box.maxX, y: box.maxY), to: self)
+    let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    regionOutline.path = UIBezierPath(roundedRect: r, cornerRadius: 4).cgPath
+    regionOutline.isHidden = false
+    CATransaction.commit()
+    regionBar.isHidden = false
+    bringSubviewToFront(regionBar)
+    let size = regionBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+    regionBar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 120, width: size.width, height: size.height)
+  }
+
+  func makeRegionUI() {
+    regionOutline.fillColor = UIColor.systemBlue.withAlphaComponent(0.08).cgColor
+    regionOutline.strokeColor = UIColor.systemBlue.cgColor
+    regionOutline.lineWidth = 1.5
+    regionOutline.lineDashPattern = [6, 4]
+    regionOutline.isHidden = true
+    layer.addSublayer(regionOutline)
+    regionBar.axis = .horizontal
+    regionBar.spacing = 0
+    regionBar.alignment = .center
+    regionBar.backgroundColor = .white
+    regionBar.layer.cornerRadius = 22
+    regionBar.layer.shadowColor = UIColor.black.cgColor
+    regionBar.layer.shadowOpacity = 0.16
+    regionBar.layer.shadowRadius = 12
+    regionBar.layer.shadowOffset = CGSize(width: 0, height: 3)
+    regionBar.isLayoutMarginsRelativeArrangement = true
+    regionBar.layoutMargins = UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+    regionBar.isHidden = true
+    let items: [(String, Selector)] = [("Copy as photo", #selector(onRegionCopy)), ("Share", #selector(onRegionShare)), ("Done", #selector(onRegionDone))]
+    for (i, item) in items.enumerated() {
+      let b = UIButton(type: .system)
+      b.setTitle(item.0, for: .normal)
+      b.setTitleColor(UIColor(white: 0.1, alpha: 1), for: .normal)
+      b.titleLabel?.font = .systemFont(ofSize: 15)
+      b.contentEdgeInsets = UIEdgeInsets(top: 11, left: 12, bottom: 11, right: 12)
+      b.addTarget(self, action: item.1, for: .touchUpInside)
+      regionBar.addArrangedSubview(b)
+      if i < items.count - 1 {
+        let d = UIView()
+        d.backgroundColor = UIColor(white: 0.85, alpha: 1)
+        d.translatesAutoresizingMaskIntoConstraints = false
+        d.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        d.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        regionBar.addArrangedSubview(d)
+      }
+    }
+    addSubview(regionBar)
+  }
+
+  @objc func onRegionCopy() {
+    guard let box = regionBox, let img = regionImage(box, strokes: document.strokes) else { return }
+    putPhoto(img)
+    selectionMessage("Copied as a photo")
+    clearRegion()
+  }
+
+  @objc func onRegionShare() {
+    guard let box = regionBox, let img = regionImage(box, strokes: document.strokes), let data = img.jpegData(compressionQuality: 0.92) else { return }
+    let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("quill_region_\(UUID().uuidString).jpg")
+    guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+    onSelectionAction(["action": "share", "path": url.path])
+    clearRegion()
+  }
+
+  @objc func onRegionDone() { clearRegion() }
+
+  // Morphing: one clean shape out of what was drawn, or a warp of the ink.
+
+  func morphSelection(_ shape: String) {
+    commitSelection()
+    let old = selection
+    guard !old.isEmpty else { return }
+    var minX = Float.greatestFiniteMagnitude, minY = minX, maxX = -minX, maxY = -minX
+    var rSum: Float = 0, n: Float = 0
+    for s in old where s.kind != .fill {
+      for p in s.pts {
+        minX = min(minX, p.x); maxX = max(maxX, p.x); minY = min(minY, p.y); maxY = max(maxY, p.y)
+        rSum += p.r; n += 1
+      }
+    }
+    guard n > 0, maxX - minX > 4 || maxY - minY > 4 else { return }
+    let box = CGRect(x: CGFloat(minX), y: CGFloat(minY), width: CGFloat(maxX - minX), height: CGFloat(maxY - minY))
+    let style = old.first { $0.kind != .fill } ?? old[0]
+    let r = rSum / n
+    let outline: [CGPoint]
+    switch shape {
+    case "line":
+      let a = style.pts.first.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) } ?? CGPoint(x: box.minX, y: box.maxY)
+      let b = old.last?.pts.last.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) } ?? CGPoint(x: box.maxX, y: box.minY)
+      outline = [a, b]
+    case "rect":
+      outline = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.minX, y: box.minY)]
+    case "triangle":
+      outline = [CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.midX, y: box.minY)]
+    case "diamond":
+      outline = [CGPoint(x: box.midX, y: box.minY), CGPoint(x: box.maxX, y: box.midY), CGPoint(x: box.midX, y: box.maxY), CGPoint(x: box.minX, y: box.midY), CGPoint(x: box.midX, y: box.minY)]
+    default:
+      let steps = 64
+      outline = (0...steps).map { i in
+        let a = CGFloat(i) / CGFloat(steps) * 2 * .pi - .pi / 2
+        return CGPoint(x: box.midX + cos(a) * box.width / 2, y: box.midY + sin(a) * box.height / 2)
+      }
+    }
+    let alpha = style.pts.first?.a ?? 1
+    let made = InkStroke(pts: ShapeSnap.dense(outline).map { InkPoint(x: Float($0.x), y: Float($0.y), r: r, a: alpha) },
+                         rgb: style.rgb, kind: style.kind, seq: document.nextSeq(), ts: Date().timeIntervalSince1970)
+    document.apply(removed: old, added: [made])
+    selection = [made]
+    made.lifted = true
+    ink.lifted = [made]
+    selBox = made.bounds
+    finishObjects(removed: old, added: [made])
+    ink.setNeedsInk(rebuild: true)
+    placeSelectionUI()
+    selectionMessage("Made it clean. Undo brings your drawing back.")
+  }
+
+  /// Bends the selected ink: every point moves by `f`, given the point and the box around the selection.
+  private func warpSelection(_ f: @escaping (CGPoint, CGRect) -> CGPoint) {
+    reshapeSelection { box in
+      return { s in
+        let pts = InkStroke.resampled(s.pts, spacing: 2).map { p -> InkPoint in
+          let q = f(CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)), box)
+          return InkPoint(x: Float(q.x), y: Float(q.y), r: p.r, a: p.a)
+        }
+        return InkStroke(pts: pts, rgb: s.rgb, kind: s.kind, seq: s.seq, ts: s.ts)
+      }
+    }
+  }
+
+  func morphMenu() -> UIMenu {
+    let make = { [weak self] (name: String) in { (_: UIAction) in self?.morphSelection(name) } }
+    let shapes = UIMenu(title: "Make it a clean…", image: UIImage(systemName: "square.on.circle"), children: [
+      UIAction(title: "Line", image: UIImage(systemName: "line.diagonal"), handler: make("line")),
+      UIAction(title: "Rectangle", image: UIImage(systemName: "rectangle"), handler: make("rect")),
+      UIAction(title: "Ellipse", image: UIImage(systemName: "circle"), handler: make("ellipse")),
+      UIAction(title: "Triangle", image: UIImage(systemName: "triangle"), handler: make("triangle")),
+      UIAction(title: "Diamond", image: UIImage(systemName: "diamond"), handler: make("diamond")),
+    ])
+    // The warps work on the whole selection together, so they use its overall box.
+    let all = { [weak self] (f: @escaping (CGPoint, CGRect) -> CGPoint) in self?.warpSelection(f) }
+    let warps = UIMenu(title: "Bend the ink", image: UIImage(systemName: "wand.and.rays"), children: [
+      UIAction(title: "Slant", image: UIImage(systemName: "arrow.up.right")) { _ in all { p, b in CGPoint(x: p.x + (p.y - b.midY) * 0.35, y: p.y) } },
+      UIAction(title: "Wave", image: UIImage(systemName: "water.waves")) { _ in all { p, b in CGPoint(x: p.x, y: p.y + sin((p.x - b.minX) / max(1, b.width) * .pi * 4) * b.height * 0.07) } },
+      UIAction(title: "Bulge", image: UIImage(systemName: "circle.circle")) { _ in
+        all { p, b in
+          let c = CGPoint(x: b.midX, y: b.midY), rad = max(1, max(b.width, b.height) / 2)
+          let dx = p.x - c.x, dy = p.y - c.y
+          let d = min(1, hypot(dx, dy) / rad)
+          let k = 1 + 0.45 * (1 - d) * (1 - d)
+          return CGPoint(x: c.x + dx * k, y: c.y + dy * k)
+        }
+      },
+      UIAction(title: "Twist", image: UIImage(systemName: "tornado")) { _ in
+        all { p, b in
+          let c = CGPoint(x: b.midX, y: b.midY), rad = max(1, max(b.width, b.height) / 2)
+          let dx = p.x - c.x, dy = p.y - c.y
+          let a = (1 - min(1, hypot(dx, dy) / rad)) * .pi / 2
+          return CGPoint(x: c.x + dx * cos(a) - dy * sin(a), y: c.y + dx * sin(a) + dy * cos(a))
+        }
+      },
+    ])
+    return UIMenu(children: [shapes, warps])
   }
 }

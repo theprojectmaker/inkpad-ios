@@ -46,7 +46,7 @@ export type CanvasHandle = {
   setReplay(cut: number, from: number, to: number): Promise<void>;
 };
 
-export type ToolKind = 'shape' | 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray' | 'compass' | 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
+export type ToolKind = 'shape' | 'brushpen' | 'feltTip' | 'crayon' | 'chisel' | 'watercolor' | 'spray' | 'charcoal' | 'pastel' | 'wax' | 'airbrush' | 'inkwash' | 'gel' | 'fineliner' | 'sketch' | 'flat' | 'hlchisel' | 'compass' | 'felt' | 'pen' | 'fountain' | 'pencil' | 'monoline' | 'marker' | 'eraser' | 'lasso' | 'text' | 'tape' | 'laser' | 'hand' | 'comment' | 'measure';
 export type CanvasTool = { kind: ToolKind; color: string; width: number; streamline?: number; mode?: string; bold?: boolean; angle?: number; stabilize?: boolean; italic?: boolean; underline?: boolean };
 
 type Props = ViewProps & {
