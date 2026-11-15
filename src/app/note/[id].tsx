@@ -27,7 +27,7 @@ import { PageSidebar } from '@/components/page-sidebar';
 import { StudyPanel } from '@/components/study-panel';
 import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
-import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
+import { ConfirmSheet, Glass, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
 import { askStudy } from '@/lib/ai';
 import { copyText, readText } from '@/lib/ondevice';
 import { loadPageText, pageTextToSearch, readPages, snapPages } from '@/lib/handindex';
@@ -54,8 +54,8 @@ const absPath = (path: string) => decodeURIComponent(fsx.uri(path).replace(/^fil
 function TopBtn({ icon, label, onPress, active, disabled }: { icon: string; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} hitSlop={3}
-      style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1, backgroundColor: active ? '#E9EEFD' : pressed ? '#F0F1F4' : 'transparent' })}>
-      <ToolIcon name={icon} size={20} color={active ? '#3F6AF2' : '#3B4252'} />
+      style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1, backgroundColor: active ? 'rgba(0,122,255,0.14)' : pressed ? 'rgba(60,60,67,0.1)' : 'transparent' })}>
+      <ToolIcon name={icon} size={20} color={active ? '#007AFF' : '#3B4252'} />
     </Pressable>
   );
 }
@@ -711,18 +711,17 @@ export default function Editor() {
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
             onRuler={setRuler} raised={audioOpen} onCompass={(what) => canvas.current?.compass(what)} onZoom={() => setZoomWin((v) => !v)} onCalibrate={() => { if (!s.measureScale) setCalibrate({ need: true }); }} onSettings={() => router.push('/settings')} onPaste={paste} onTape={(w) => { if (w === 'clear') canvas.current?.clearTape(); else canvas.current?.setAllTape(w === 'show'); }} />
-          <View style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 3, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          <Glass radius={24} style={{ position: 'absolute', top: 10, left: 12, flexDirection: 'row', padding: 5 }}>
             <TopBtn icon="back" label="Back to notes" onPress={back} />
             {tabs.length > 1 ? <TopBtn icon="tabs" label="Open notes" active={tabsOpen} onPress={() => setTabsOpen(true)} /> : null}
-          </View>
-          <View style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', borderRadius: 14, backgroundColor: '#fff', padding: 3, shadowColor: '#000', shadowOpacity: 0.09, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          </Glass>
+          <Glass radius={24} style={{ position: 'absolute', top: 10, right: 12, flexDirection: 'row', padding: 5 }}>
             <TopBtn icon="undo" label="Undo" disabled={!st.canUndo} onPress={() => canvas.current?.undo()} />
             <TopBtn icon="redo" label="Redo" disabled={!st.canRedo} onPress={() => canvas.current?.redo()} />
-            <TopBtn icon="share" label="Share" onPress={share} />
-            <TopBtn icon="more" label="More" onPress={() => setMenu(true)} />
             <TopBtn icon="ai" label="Study with AI" active={study} onPress={() => { const was = study; closePanels(); setStudy(!was); }} />
             <TopBtn icon="pages" label={sidebar ? 'Hide pages' : 'Show pages'} active={sidebar} onPress={() => { setVer((v) => v + 1); setSidebar((v) => !v); }} />
-          </View>
+            <TopBtn icon="more" label="More" onPress={() => setMenu(true)} />
+          </Glass>
           {meta?.hw ? (
             <View style={{ position: 'absolute', top: 70, left: 12, flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 6, borderRadius: 18, backgroundColor: '#fff', maxWidth: 220, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
               <Pressable onPress={() => openAssignment(meta.hw!)} accessibilityLabel="Assignment" style={{ flexShrink: 1, paddingHorizontal: 6 }}>

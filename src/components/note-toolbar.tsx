@@ -9,7 +9,7 @@ import Reanimated, { FadeIn, LinearTransition, useAnimatedStyle, useSharedValue,
 
 import type { CanvasTool } from '@/components/quill-canvas';
 import { ToolIcon } from '@/components/tool-icons';
-import { Icon, useToast } from '@/components/ui';
+import { Glass, Icon, useToast } from '@/components/ui';
 import { pickColor } from '@/lib/ondevice';
 import { type InkTool, type PenLine, type Settings, type ToolKit, useSettings } from '@/lib/settings';
 
@@ -92,7 +92,9 @@ export function currentTool(s: Settings): CanvasTool {
 }
 
 const INK = '#3B4252';
-const BLUE = '#3F6AF2';
+const BLUE = '#007AFF';
+/** How many tools sit on the first row; the rest are one tap away. */
+const FIRST_ROW = 6;
 
 const PALETTES = [
   ['#FFFF00', '#F28C0F', '#E01E26', '#F000C8', '#A8FF1E', '#5CC840', '#9000B8', '#541E88', '#0A7A38', '#0A66F0', '#1A3EA8', '#12006C', '#FFFFFF', '#8C8C8C', '#000000', '#845A30'],
@@ -309,11 +311,11 @@ export function ColorGrid({ current, onPick }: { current?: string; onPick: (c: s
 function ToolMark({ on, color, children }: { on: boolean; color: string; children: React.ReactNode }) {
   const k = useSharedValue(on ? 1 : 0);
   useEffect(() => { k.value = withTiming(on ? 1 : 0, { duration: 110 }); }, [on, k]);
-  const mark = useAnimatedStyle(() => ({ opacity: k.value }));
+  const tile = useAnimatedStyle(() => ({ opacity: k.value * 0.14 }));
   return (
     <>
+      <Reanimated.View style={[{ position: 'absolute', width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: color === INK ? BLUE : color }, tile]} />
       {children}
-      <Reanimated.View style={[{ position: 'absolute', bottom: 2, width: 18, height: 2, borderRadius: 1, backgroundColor: color }, mark]} />
     </>
   );
 }
@@ -385,7 +387,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   );
   const Div = () => <View style={upright ? { height: 1, width: 20, backgroundColor: '#D5D9E2', marginVertical: 4 } : { width: 1, height: 22, backgroundColor: '#E2E5EC', marginHorizontal: 6 }} />;
   const Bar = () => <View style={upright ? { height: 1, alignSelf: 'stretch', backgroundColor: '#E2E5EC', marginVertical: 6 } : { width: 1, height: 22, backgroundColor: '#E2E5EC', marginHorizontal: 10 }} />;
-  const R2 = { flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', flex: upright ? undefined : 1 } as const;
+  const R2 = { flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center' } as const;
 
   const chip = (label: string, on: boolean, onPress: () => void) => (
     <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 30, paddingHorizontal: 14, borderRadius: 15, justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
@@ -445,11 +447,11 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   } else if (kind === 'lasso') {
     row2 = <View style={{ ...R2, gap: upright ? 6 : 12 }}>{chip('Freeform', !s.lassoBox, () => set({ lassoBox: false }))}{chip('Boxed', !!s.lassoBox, () => set({ lassoBox: true }))}{chip('Paste', false, onPaste)}</View>;
   } else if (kind === 'eraser') {
-    row2 = <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' }}>{sizes}<Bar />{chip('Whole', s.eraser === 'stroke', () => set({ eraser: 'stroke' }))}<View style={{ width: 8 }} />{chip('Partial', s.eraser !== 'stroke', () => set({ eraser: 'partial' }))}</View>;
+    row2 = <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>{sizes}<Bar />{chip('Whole', s.eraser === 'stroke', () => set({ eraser: 'stroke' }))}<View style={{ width: 8 }} />{chip('Partial', s.eraser !== 'stroke', () => set({ eraser: 'partial' }))}</View>;
   } else if (kind === 'hand') {
-    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 13 }}>The Pencil scrolls the page. Pick a pen to write again.</Text>;
+    row2 = <Text style={{ textAlign: 'center', color: '#6B7385', fontSize: 13, paddingHorizontal: 6 }}>The Pencil scrolls the page. Pick a pen to write again.</Text>;
   } else if (kind === 'comment') {
-    row2 = <Text style={{ flex: 1, textAlign: 'center', color: '#6B7385', fontSize: 13 }}>Tap the page to leave a comment. Tap a pin to read or change it.</Text>;
+    row2 = <Text style={{ textAlign: 'center', color: '#6B7385', fontSize: 13, paddingHorizontal: 6 }}>Tap the page to leave a comment. Tap a pin to read or change it.</Text>;
   } else if (kind === 'laser') {
     row2 = <View style={R2}>{dots}</View>;
   } else if (kind === 'brush') {
@@ -516,10 +518,11 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const hidden = s.toolHidden ?? [];
   const shown = order.filter((id) => !hidden.includes(id));
   // Room for a whole row of tools on either page, plus the options row below it.
-  const mostTools = Math.max(Math.min(shown.length, 8) + (shown.length > 8 ? 2 : 1), Math.max(0, shown.length - 8) + 2);
-  const pillW = Math.min(screen - 24, Math.max(470, mostTools * 40 + 44));
+  const firstW = (Math.min(shown.length, FIRST_ROW) + 1) * 40 + 28;
   // On a narrow screen it can't share a line with the buttons on each side, so it sits below them.
-  const below = dock === 'top' && pillW + 2 * 240 > screen;
+  const below = dock === 'top' && firstW + 2 * 230 > screen;
+  // The second set scrolls sideways inside whatever room is left between those buttons.
+  const room = dock === 'top' && !below ? Math.max(firstW, screen - 2 * 230) : screen - 24;
   const render = (id: string) => {
     if (id === 'media') return plain('media', 'Insert', onInsert, undefined, false, 'media');
     if (id === 'record') return plain(hasAudio && !recording ? 'play' : recording ? 'waveform' : 'mic', 'Audio', onAudio, recording ? '#E5322D' : undefined, false, 'record');
@@ -527,8 +530,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const x = ALL_TOOLS.find((t) => t.id === id);
     return x ? toolBtn(x as { id: InkTool; icon: string; label: string }) : null;
   };
-  const first = shown.slice(0, 8);
-  const second = shown.slice(8);
+  const first = shown.slice(0, FIRST_ROW);
+  const second = shown.slice(FIRST_ROW);
   return (
     <>
       <Toolbox visible={toolbox} onClose={() => setToolbox(false)} onSettings={onSettings} />
@@ -618,22 +621,22 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
           </Card>
         )}
       </Modal> : null}
-      <DockedPill dock={dock} below={below} raised={raised} width={pillW} maxHeight={screenH - 150} onDock={(d) => set({ toolDock: d })}
+      <DockedPill dock={dock} below={below} raised={raised} width={room} maxHeight={screenH - 150} onDock={(d) => set({ toolDock: d })}
         tools={!set2 ? (
           <Reanimated.View key="first" entering={FadeIn.duration(120)} style={{ flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: upright ? 0 : 6 }}>
             {first.map(render)}
-            {second.length ? <Div /> : null}
-            {second[0] ? render(second[0]) : null}
-            {plain('next', 'More tools', () => setSet2(true))}
+            <Div />
+            {second.length ? plain('next', 'More tools', () => setSet2(true)) : plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
           </Reanimated.View>
         ) : (
           <Reanimated.View key="second" entering={FadeIn.duration(120)} style={{ flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: upright ? 0 : 6 }}>
+            {plain('prev', 'Back to the main tools', () => setSet2(false))}
+            <Div />
             {second.map(render)}
             {plain('settings', 'Toolbox settings', () => { setPop(null); setToolbox(true); })}
-            {plain('prev', 'Back to the main tools', () => setSet2(false))}
           </Reanimated.View>
         )}
-        options={<Reanimated.View key={kind} entering={FadeIn.duration(100)} style={upright ? { paddingVertical: 4, paddingHorizontal: 4, alignItems: 'center' } : { height: 42, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>{row2}</Reanimated.View>} />
+        options={<Reanimated.View key={kind} entering={FadeIn.duration(100)} style={upright ? { paddingVertical: 4, paddingHorizontal: 4, alignItems: 'center' } : { height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>{row2}</Reanimated.View>} />
     </>
   );
 }
@@ -673,22 +676,27 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
   const hair = upright ? { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' as const, backgroundColor: '#E2E5EC' } : { height: StyleSheet.hairlineWidth, marginHorizontal: 14, backgroundColor: '#E2E5EC' };
   return (
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: upright ? undefined : 'center' }]}>
-      <Reanimated.View style={[{ position: 'absolute', borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } }, place, moved]}>
-        {grip}
-        {upright ? (
-          <View style={{ flexDirection: dock === 'left' ? 'row' : 'row-reverse', maxHeight: maxHeight - 18 }}>
-            <ScrollView showsVerticalScrollIndicator={false} style={{ width: 46, flexGrow: 0 }}>{tools}</ScrollView>
-            <View style={hair} />
-            <ScrollView showsVerticalScrollIndicator={false} style={{ width: 112, flexGrow: 0 }}>{options}</ScrollView>
-          </View>
-        ) : (
-          <>
-            <View style={{ height: 46, overflow: 'hidden', justifyContent: 'center' }}>{tools}</View>
-            <View style={hair} />
-            {options}
-          </>
-        )}
-      </Reanimated.View>
+      {upright ? (
+        <Reanimated.View style={[{ position: 'absolute' }, place, moved]}>
+          <Glass radius={22}>
+            {grip}
+            <View style={{ flexDirection: dock === 'left' ? 'row' : 'row-reverse', maxHeight: maxHeight - 18 }}>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ width: 46, flexGrow: 0 }}>{tools}</ScrollView>
+              <View style={hair} />
+              <ScrollView showsVerticalScrollIndicator={false} style={{ width: 112, flexGrow: 0 }}>{options}</ScrollView>
+            </View>
+          </Glass>
+        </Reanimated.View>
+      ) : (
+        // Two capsules, each only as wide as what's in it: the tools, and the picked tool's options.
+        <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', alignItems: 'center', flexDirection: dock === 'bottom' ? 'column-reverse' : 'column', gap: 8 }, place, moved]}>
+          <Glass radius={24} style={{ maxWidth: '100%' }}>
+            {grip}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false} style={{ flexGrow: 0 }} contentContainerStyle={{ height: 48, alignItems: 'center', paddingHorizontal: 8 }}>{tools}</ScrollView>
+          </Glass>
+          <Glass radius={22} style={{ maxWidth: '100%' }}>{options}</Glass>
+        </Reanimated.View>
+      )}
     </View>
   );
 }

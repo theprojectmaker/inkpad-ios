@@ -1,7 +1,8 @@
 // Small shared UI pieces: icons, buttons, sheets, prompts, toasts.
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Component, createContext, Fragment, type ErrorInfo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewStyle, type StyleProp } from 'react-native';
+import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewProps, type ViewStyle, type StyleProp } from 'react-native';
 import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { useTheme } from '@/lib/settings';
@@ -269,6 +270,17 @@ function GuardCard({ label, error, retry }: { label?: string; error: Error; retr
         <Text selectable numberOfLines={4} style={{ color: t.faint, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : undefined }}>{String(error?.message ?? error)}</Text>
         <View style={{ flexDirection: 'row' }}><Button title="Try again" kind="primary" onPress={retry} /></View>
       </View>
+    </View>
+  );
+}
+
+/** A floating surface: Liquid Glass where the iPad has it (iPadOS 26), a white card with a soft shadow where it doesn't. */
+const HAS_GLASS = (() => { try { return Platform.OS === 'ios' && isLiquidGlassAvailable(); } catch { return false; } })();
+export function Glass({ radius = 22, style, children, ...rest }: ViewProps & { radius?: number }) {
+  return (
+    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, HAS_GLASS ? null : { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
+      {HAS_GLASS ? <GlassView glassEffectStyle="regular" style={[StyleSheet.absoluteFill, { borderRadius: radius, borderCurve: 'continuous' }]} /> : null}
+      {children}
     </View>
   );
 }
