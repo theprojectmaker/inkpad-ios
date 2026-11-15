@@ -8,23 +8,25 @@ import { type GestureResponderEvent, Pressable, ScrollView, Text, View } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmSheet, Glass, Icon, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
-import { boundsOf, densify, mapPts, mostlyInLoop, outline, pushPts, symmetric, SYMMETRIES, WARPS, type Box, type Sym } from '@/lib/draw-geom';
+import { boundsOf, densify, inLoop, mapPts, mostlyInLoop, outline, pushPts, symmetric, SYMMETRIES, WARPS, type Box, type Sym } from '@/lib/draw-geom';
 import { type Blend, type Board, type BrushId, BRUSHES, type DStroke, frameJpeg, framePicture, framePixels, loadBoard, newLayer, polyPath, saveBoard } from '@/lib/draw-model';
 import { fsx } from '@/lib/fsx';
 import { encodeGif, toIndexes } from '@/lib/gif';
 import { uid } from '@/lib/model';
 import { pickColor } from '@/lib/ondevice';
 
-type Tool = 'draw' | 'line' | 'rect' | 'ellipse' | 'select' | 'push';
+type Tool = 'draw' | 'line' | 'rect' | 'ellipse' | 'select' | 'push' | 'pick' | 'fill';
 type Mode = 'none' | 'stroke' | 'shape' | 'lasso' | 'move' | 'push' | 'pinch';
 
-const BRUSH_ICON: Record<BrushId, string> = { pen: 'pencil.tip', pencil: 'pencil', marker: 'highlighter', brush: 'paintbrush.pointed', airbrush: 'aqi.medium', crayon: 'pencil.and.outline', eraser: 'eraser' };
+const BRUSH_ICON: Record<BrushId, string> = { pen: 'pencil.tip', pencil: 'pencil', marker: 'highlighter', brush: 'paintbrush.pointed', airbrush: 'aqi.medium', crayon: 'pencil.and.outline', ink: 'pencil.tip.crop.circle', neon: 'sparkles', dots: 'ellipsis', spray: 'aqi.low', eraser: 'eraser' };
 const TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: 'line', icon: 'line.diagonal', label: 'Line' },
   { id: 'rect', icon: 'rectangle', label: 'Rectangle' },
   { id: 'ellipse', icon: 'circle', label: 'Ellipse' },
   { id: 'select', icon: 'lasso', label: 'Select and move' },
   { id: 'push', icon: 'hand.point.up.left', label: 'Push ink' },
+  { id: 'fill', icon: 'drop.fill', label: 'Fill a closed shape' },
+  { id: 'pick', icon: 'eyedropper', label: 'Pick a colour from the drawing' },
 ];
 const SWATCHES = ['#111111', '#FFFFFF', '#E5322D', '#F28C18', '#FFD60A', '#30A46C', '#0A84FF', '#6E56CF', '#E0408A', '#8B5E3C'];
 const BLENDS: Blend[] = ['normal', 'multiply', 'screen', 'overlay'];
@@ -63,7 +65,12 @@ export default function DrawBoard() {
   const [area, setArea] = useState({ w: 1, h: 1 });
   const [, setTick] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [sheet, setSheet] = useState<null | 'layers' | 'more' | 'sym' | 'bend' | 'rename' | 'clear'>(null);
+  const [sheet, setSheet] = useState<null | 'layers' | 'more' | 'sym' | 'bend' | 'rename' | 'clear' | 'layerMenu' | 'layerName'>(null);
+  const [layerTarget, setLayerTarget] = useState('');
+  const [steady, setSteady] = useState(false);
+  const [grid, setGrid] = useState(false);
+  const [recent, setRecent] = useState<string[]>([]);
+  const smooth = useRef({ x: 0, y: 0 });
   const [busy, setBusy] = useState(false);
   const undo = useRef<Board[]>([]);
   const redo = useRef<Board[]>([]);
@@ -211,7 +218,32 @@ export default function DrawBoard() {
     last.current = p;
     const layer = b.layers.find((l) => l.id === layerId);
     if (tool !== 'select' && layer && !layer.visible) { toast('That layer is hidden. Show it to draw on it.'); mode.current = 'none'; return; }
-    if (tool === 'draw') { mode.current = 'stroke'; live.current = [p.x, p.y, pressure(e)]; }
+    if (tool === 'pick') {
+      // The topmost ink under the finger gives its colour.
+      const reach = 14 / geo.current.s;
+      for (const l of b.layers.slice().reverse()) {
+        if (!l.visible) continue;
+        const hit = strokesOf(b, fi, l.id).slice().reverse().find((x) => {
+          if (x.brush === 'eraser') return false;
+          for (let i = 0; i + 2 < x.pts.length + 0; i += 3) if (Math.hypot(x.pts[i] - p.x, x.pts[i + 1] - p.y) < Math.max(reach, x.width)) return true;
+          return false;
+        });
+        if (hit) { setColor(hit.color); setTool('draw'); toast('Colour picked'); break; }
+      }
+      mode.current = 'none';
+      return;
+    }
+    if (tool === 'fill') {
+      // The topmost closed shape around the finger is filled with the colour in hand.
+      const list = strokesOf(b, fi, layerId);
+      const loopOf = (x: DStroke) => { const o: number[] = []; for (let i = 0; i + 2 < x.pts.length + 0; i += 3) o.push(x.pts[i], x.pts[i + 1]); return o; };
+      const hit = list.slice().reverse().find((x) => x.brush !== 'eraser' && x.pts.length >= 12 && inLoop(loopOf(x), p.x, p.y));
+      if (hit) apply(setStrokes(b, fi, layerId, list.map((x) => (x === hit ? { ...x, fill: true, fillColor: color } : x))));
+      else toast('Tap inside a shape on this layer to fill it.');
+      mode.current = 'none';
+      return;
+    }
+    if (tool === 'draw') { mode.current = 'stroke'; live.current = [p.x, p.y, pressure(e)]; smooth.current = p; }
     else if (tool === 'line' || tool === 'rect' || tool === 'ellipse') { mode.current = 'shape'; live.current = []; }
     else if (tool === 'select') {
       const box = selBox();
@@ -254,7 +286,10 @@ export default function DrawBoard() {
     const dx = p.x - last.current.x, dy = p.y - last.current.y;
     if (mode.current === 'stroke') {
       if (Math.hypot(dx, dy) * geo.current.s < 1.2) return;
-      live.current.push(p.x, p.y, pressure(e));
+      // Steady hand: the line follows a little behind the finger, which irons out the wobble.
+      const q = steady ? { x: smooth.current.x + (p.x - smooth.current.x) * 0.28, y: smooth.current.y + (p.y - smooth.current.y) * 0.28 } : p;
+      smooth.current = q;
+      live.current.push(q.x, q.y, pressure(e));
     } else if (mode.current === 'lasso') {
       live.current.push(p.x, p.y, 1);
     } else if (mode.current === 'shape') {
@@ -284,6 +319,7 @@ export default function DrawBoard() {
       const base = { brush, color, width: widthPx, alpha };
       const made: DStroke[] = symmetric(pts, sym, b.w, b.h).map((q) => ({ id: uid('s'), ...base, pts: q, closed: m === 'shape' && tool !== 'line', fill: m === 'shape' && tool !== 'line' && fill && brush !== 'eraser' }));
       apply(setStrokes(b, fi, layerId, [...strokesOf(b, fi, layerId), ...made]));
+      if (brush !== 'eraser') setRecent((r) => [color, ...r.filter((c) => c !== color)].slice(0, 4));
     } else if (m === 'lasso') {
       const loop: number[] = [];
       for (let i = 0; i + 2 < pts.length + 0; i += 3) loop.push(pts[i], pts[i + 1]);
@@ -318,6 +354,33 @@ export default function DrawBoard() {
     const layers = b.layers.filter((l) => l.id !== lid);
     apply({ ...b, layers, frames: b.frames.map((f) => { const st = { ...f.strokes }; delete st[lid]; return { strokes: st }; }) });
     if (layerId === lid) setLayerId(layers[layers.length - 1].id);
+    setSel([]);
+  };
+  const duplicateLayer = (lid: string) => {
+    const b = boardRef.current, src = b?.layers.find((l) => l.id === lid);
+    if (!b || !src) return;
+    const copy = { ...newLayer(src.name + ' copy'), opacity: src.opacity, blend: src.blend };
+    const at = b.layers.findIndex((l) => l.id === lid) + 1;
+    apply({ ...b, layers: [...b.layers.slice(0, at), copy, ...b.layers.slice(at)], frames: b.frames.map((f) => ({ strokes: { ...f.strokes, [copy.id]: (f.strokes[lid] ?? []).map((x) => ({ ...x, id: uid('s') })) } })) });
+    setLayerId(copy.id);
+    setSel([]);
+  };
+  const mergeDown = (lid: string) => {
+    const b = boardRef.current;
+    if (!b) return;
+    const i = b.layers.findIndex((l) => l.id === lid);
+    if (i <= 0) { toast('There is no layer under that one.'); return; }
+    const under = b.layers[i - 1].id;
+    apply({ ...b, layers: b.layers.filter((l) => l.id !== lid), frames: b.frames.map((f) => { const st = { ...f.strokes, [under]: [...(f.strokes[under] ?? []), ...(f.strokes[lid] ?? [])] }; delete st[lid]; return { strokes: st }; }) });
+    setLayerId(under);
+    setSel([]);
+  };
+  const flipCanvas = () => {
+    const b = boardRef.current;
+    if (!b) return;
+    const st: Record<string, DStroke[]> = {};
+    for (const l of b.layers) st[l.id] = strokesOf(b, fi, l.id).map((x) => ({ ...x, pts: mapPts(x.pts, (px, py) => [b.w - px, py]) }));
+    apply({ ...b, frames: b.frames.map((f, i) => (i === fi ? { strokes: st } : f)) });
     setSel([]);
   };
   const addFrame = (copy: boolean) => {
@@ -378,11 +441,19 @@ export default function DrawBoard() {
   // Redrawn on every tick while a finger is down: the line being drawn, and its mirror images.
   const livePaths = !board || !live.current.length ? [] : mode.current === 'lasso' ? [polyPath(live.current)] : symmetric(live.current, sym, board.w, board.h).map((q) => polyPath(q));
   const box = selBox();
+  const gridPath = useMemo(() => {
+    const p = Skia.Path.Make();
+    if (!board || !grid) return p;
+    const g = Math.max(32, Math.round(Math.min(board.w, board.h) / 12));
+    for (let x = g; x < board.w; x += g) { p.moveTo(x, 0); p.lineTo(x, board.h); }
+    for (let y = g; y < board.h; y += g) { p.moveTo(0, y); p.lineTo(board.w, y); }
+    return p;
+  }, [board?.w, board?.h, grid]);   // eslint-disable-line react-hooks/exhaustive-deps
   const clip = useMemo(() => (board ? Skia.XYWHRect(0, 0, board.w, board.h) : undefined), [board?.w, board?.h]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!board || !picture) return <View style={{ flex: 1, backgroundColor: DARK }} />;
 
-  const liveWidth = brush === 'marker' ? widthPx * 3.2 : brush === 'airbrush' ? widthPx * 2.2 : brush === 'eraser' ? widthPx * 2 : widthPx;
+  const liveWidth = brush === 'neon' ? widthPx * 1.4 : brush === 'marker' ? widthPx * 3.2 : brush === 'airbrush' ? widthPx * 2.2 : brush === 'eraser' ? widthPx * 2 : widthPx;
   const liveColor = brush === 'eraser' ? board.bg : color;
   const liveAlpha = brush === 'marker' ? 0.4 * alpha : brush === 'airbrush' ? 0.3 * alpha : alpha;
   const btn = (icon: string, label: string, onPress: () => void, on = false, off = false) => (
@@ -406,6 +477,7 @@ export default function DrawBoard() {
             <Rect x={-2 / s} y={-2 / s} width={board.w + 4 / s} height={board.h + 4 / s} color="rgba(0,0,0,0.35)" />
             <Group clip={clip}>
               <Picture picture={picture} />
+              {grid ? <Path path={gridPath} style="stroke" strokeWidth={1 / s} color="rgba(10,132,255,0.35)" /> : null}
               {mode.current !== 'lasso' ? livePaths.map((p, i) => <Path key={i} path={p} style="stroke" strokeWidth={liveWidth} strokeCap="round" strokeJoin="round" color={liveColor} opacity={liveAlpha} />) : null}
             </Group>
             {mode.current === 'lasso' && livePaths[0] ? <Path path={livePaths[0]} style="stroke" strokeWidth={1.5 / s} color="#0A84FF" /> : null}
@@ -453,6 +525,9 @@ export default function DrawBoard() {
           <View style={[bar, { padding: 8, gap: 8, alignItems: 'center' }]}>
             {SWATCHES.map((c) => (
               <Pressable key={c} accessibilityLabel={`Colour ${c}`} onPress={() => setColor(c)} style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: c, borderWidth: color === c ? 3 : 1, borderColor: color === c ? '#0A84FF' : 'rgba(255,255,255,0.4)' }} />
+            ))}
+            {recent.filter((c) => !SWATCHES.includes(c)).map((c) => (
+              <Pressable key={'r' + c} accessibilityLabel={`Recent colour ${c}`} onPress={() => setColor(c)} style={{ width: 24, height: 24, borderRadius: 7, backgroundColor: c, borderWidth: color === c ? 3 : 1, borderColor: color === c ? '#0A84FF' : 'rgba(255,255,255,0.4)' }} />
             ))}
             <Pressable accessibilityLabel="Pick any colour" onPress={async () => { const c = await pickColor(color); if (c) setColor(c); }} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: color, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="eyedropper" size={13} color={color.toUpperCase() === '#FFFFFF' ? '#111' : '#fff'} />
@@ -510,6 +585,10 @@ export default function DrawBoard() {
         { group: 1, label: 'Share this picture', icon: 'photo', onPress: sharePicture },
         { group: 1, label: 'Share as an animated GIF', sub: `${board.frames.length} ${board.frames.length === 1 ? 'frame' : 'frames'}`, icon: 'film', onPress: shareGif },
         { group: 2, label: 'Background colour', icon: 'paintpalette', onPress: async () => { const c = await pickColor(board.bg); if (c) apply({ ...boardRef.current!, bg: c }); } },
+        { group: 2, label: 'Steady hand', sub: 'Smooths wobbly lines', icon: 'scribble', checked: steady, onPress: () => setSteady((v) => !v) },
+        { group: 2, label: 'Grid', sub: 'A guide; it is not part of the picture', icon: 'grid', checked: grid, onPress: () => setGrid((v) => !v) },
+        { group: 2, label: 'Flip the canvas', sub: 'Left to right, this frame', icon: 'arrow.left.and.right.righttriangle.left.righttriangle.right', onPress: flipCanvas },
+        { group: 2, label: 'Select everything on this layer', icon: 'lasso', onPress: () => { setTool('select'); setSel(strokesOf(boardRef.current!, fi, layerId).map((x) => x.id)); } },
         { group: 2, label: 'Fit the canvas to the screen', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setView({ z: 1, tx: 0, ty: 0 }) },
         { group: 3, label: board.name, sub: 'Tap to rename', icon: 'pencil', onPress: () => setSheet('rename') },
         { group: 4, label: 'Clear this layer', icon: 'trash', danger: true, onPress: () => setSheet('clear') },
@@ -528,7 +607,7 @@ export default function DrawBoard() {
               <Pressable accessibilityLabel={`${l.name} blend ${l.blend}. Tap to change.`} onPress={() => patchLayer(l.id, { blend: BLENDS[(BLENDS.indexOf(l.blend) + 1) % BLENDS.length] })} style={{ height: 30, width: 76, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECEDF1' }}><Text style={{ fontSize: 13, fontWeight: '600', color: '#15171C' }}>{l.blend[0].toUpperCase() + l.blend.slice(1)}</Text></Pressable>
               <Pressable accessibilityLabel={`Move ${l.name} up`} hitSlop={6} onPress={() => moveLayer(l.id, 1)}><Icon name="chevron.up" size={15} color="#3B4252" /></Pressable>
               <Pressable accessibilityLabel={`Move ${l.name} down`} hitSlop={6} onPress={() => moveLayer(l.id, -1)}><Icon name="chevron.down" size={15} color="#3B4252" /></Pressable>
-              <Pressable accessibilityLabel={`Delete ${l.name}`} hitSlop={6} onPress={() => removeLayer(l.id)}><Icon name="trash" size={16} color="#E5322D" /></Pressable>
+              <Pressable accessibilityLabel={`More for ${l.name}`} hitSlop={6} onPress={() => { setLayerTarget(l.id); setSheet('layerMenu'); }}><Icon name="ellipsis.circle" size={18} color="#3B4252" /></Pressable>
             </View>
           );
         })}
@@ -536,6 +615,14 @@ export default function DrawBoard() {
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Add a layer</Text>
         </Pressable>
       </Sheet>
+      <MenuSheet visible={sheet === 'layerMenu'} onClose={() => setSheet(null)} title={board.layers.find((l) => l.id === layerTarget)?.name} items={[
+        { label: 'Rename', icon: 'pencil', onPress: () => setSheet('layerName') },
+        { label: 'Duplicate', icon: 'plus.square.on.square', onPress: () => duplicateLayer(layerTarget) },
+        { label: 'Merge into the layer below', icon: 'arrow.down.to.line', onPress: () => mergeDown(layerTarget) },
+        { label: 'Delete', icon: 'trash', danger: true, onPress: () => removeLayer(layerTarget) },
+      ]} />
+      <PromptSheet visible={sheet === 'layerName'} title="Rename layer" initial={board.layers.find((l) => l.id === layerTarget)?.name ?? ''} onCancel={() => setSheet(null)}
+        onSubmit={(v) => { setSheet(null); if (v.trim()) patchLayer(layerTarget, { name: v.trim() }); }} />
       <PromptSheet visible={sheet === 'rename'} title="Rename drawing" initial={board.name} onCancel={() => setSheet(null)}
         onSubmit={(v) => { setSheet(null); if (v.trim()) apply({ ...boardRef.current!, name: v.trim() }, false); }} />
       <ConfirmSheet visible={sheet === 'clear'} title="Clear this layer?" message="Everything on this layer in this frame goes. Undo brings it back." confirm="Clear" onCancel={() => setSheet(null)}

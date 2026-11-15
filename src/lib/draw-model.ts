@@ -5,7 +5,7 @@ import { AlphaType, BlendMode, BlurStyle, ColorType, ImageFormat, PaintStyle, Sk
 import { fsx } from './fsx';
 import { uid } from './model';
 
-export type BrushId = 'pen' | 'pencil' | 'marker' | 'brush' | 'airbrush' | 'crayon' | 'eraser';
+export type BrushId = 'pen' | 'pencil' | 'marker' | 'brush' | 'airbrush' | 'crayon' | 'ink' | 'neon' | 'dots' | 'spray' | 'eraser';
 export const BRUSHES: { id: BrushId; label: string; icon: string }[] = [
   { id: 'pen', label: 'Pen', icon: 'pen' },
   { id: 'pencil', label: 'Pencil', icon: 'pencil' },
@@ -13,10 +13,14 @@ export const BRUSHES: { id: BrushId; label: string; icon: string }[] = [
   { id: 'brush', label: 'Brush', icon: 'brush' },
   { id: 'airbrush', label: 'Airbrush', icon: 'airbrush' },
   { id: 'crayon', label: 'Crayon', icon: 'crayon' },
+  { id: 'ink', label: 'Calligraphy', icon: 'ink' },
+  { id: 'neon', label: 'Neon', icon: 'neon' },
+  { id: 'dots', label: 'Dotted', icon: 'dots' },
+  { id: 'spray', label: 'Spray', icon: 'spray' },
   { id: 'eraser', label: 'Eraser', icon: 'eraser' },
 ];
 
-export type DStroke = { id: string; brush: BrushId; color: string; width: number; alpha: number; pts: number[]; closed?: boolean; fill?: boolean };
+export type DStroke = { id: string; brush: BrushId; color: string; width: number; alpha: number; pts: number[]; closed?: boolean; fill?: boolean; fillColor?: string };
 export type Blend = 'normal' | 'multiply' | 'screen' | 'overlay';
 export type LayerMeta = { id: string; name: string; visible: boolean; opacity: number; blend: Blend };
 export type Frame = { strokes: Record<string, DStroke[]> };
@@ -84,7 +88,7 @@ export function drawStroke(c: SkCanvas, s: DStroke) {
   const n = Math.floor(s.pts.length / 3);
   if (!n) return;
   const w = s.width;
-  if (s.fill && n > 2) c.drawPath(polyPath(s.pts, true), paintOf(s.color, s.alpha, PaintStyle.Fill));
+  if (s.fill && n > 2) c.drawPath(polyPath(s.pts, true), paintOf(s.fillColor ?? s.color, s.alpha, PaintStyle.Fill));
   switch (s.brush) {
     case 'pen':
     case 'brush': {
@@ -123,6 +127,49 @@ export function drawStroke(c: SkCanvas, s: DStroke) {
       const p = paintOf(s.color, s.alpha * 0.85, PaintStyle.Stroke, w * 1.5);
       p.setPathEffect(Skia.PathEffect.MakeDiscrete(1.6, 1.4, 3));
       c.drawPath(polyPath(s.pts), p);
+      return;
+    }
+    case 'ink': {
+      // A broad nib held at a slant: thick one way, a hairline the other.
+      solid(c, s.alpha, () => {
+        const p = paintOf(s.color, 1, PaintStyle.Stroke, w);
+        if (n === 1) { p.setStyle(PaintStyle.Fill); c.drawCircle(s.pts[0], s.pts[1], Math.max(0.5, w * 0.4), p); return; }
+        for (let i = 1; i < n; i++) {
+          const dx = s.pts[i * 3] - s.pts[(i - 1) * 3], dy = s.pts[i * 3 + 1] - s.pts[(i - 1) * 3 + 1];
+          const len = Math.hypot(dx, dy) || 1;
+          const across = Math.abs((dx / len) * -Math.SQRT1_2 + (dy / len) * Math.SQRT1_2);
+          p.setStrokeWidth(Math.max(0.4, w * (0.18 + 1.25 * across)));
+          c.drawLine(s.pts[(i - 1) * 3], s.pts[(i - 1) * 3 + 1], s.pts[i * 3], s.pts[i * 3 + 1], p);
+        }
+      });
+      return;
+    }
+    case 'neon': {
+      const path = polyPath(s.pts, s.closed);
+      const glow = paintOf(s.color, s.alpha * 0.55, PaintStyle.Stroke, w * 3);
+      glow.setMaskFilter(Skia.MaskFilter.MakeBlur(BlurStyle.Normal, Math.max(2, w * 1.3), true));
+      c.drawPath(path, glow);
+      c.drawPath(path, paintOf(s.color, s.alpha, PaintStyle.Stroke, w * 1.1));
+      c.drawPath(path, paintOf('#FFFFFF', s.alpha * 0.85, PaintStyle.Stroke, Math.max(0.6, w * 0.4)));
+      return;
+    }
+    case 'dots': {
+      const p = paintOf(s.color, s.alpha, PaintStyle.Stroke, w);
+      p.setPathEffect(Skia.PathEffect.MakeDash([0.01, w * 2.3], 0));
+      c.drawPath(polyPath(s.pts, s.closed), p);
+      return;
+    }
+    case 'spray': {
+      // A scatter of specks around the line; the same every time it's drawn.
+      const p = paintOf(s.color, s.alpha * 0.7, PaintStyle.Fill);
+      let seed = (Math.round(s.pts[0] * 7 + s.pts[1] * 13) | 0) || 1;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+      for (let i = 0; i < n; i++) {
+        for (let k = 0; k < 5; k++) {
+          const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * w * 2.2;
+          c.drawCircle(s.pts[i * 3] + Math.cos(a) * r, s.pts[i * 3 + 1] + Math.sin(a) * r, Math.max(0.35, w * 0.09), p);
+        }
+      }
       return;
     }
     case 'eraser': {
