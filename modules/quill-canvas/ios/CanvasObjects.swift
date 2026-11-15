@@ -370,19 +370,42 @@ extension QuillCanvasView {
 
   // MARK: - Laser pointer
 
+  /// A bright dot where the Pencil is, and a glow behind it that thins and fades: age range in seconds, line width, strength.
+  private var laserBandSpec: [(from: Double, to: Double, width: CGFloat, alpha: Float)] {
+    [(0.00, 0.14, 9, 1.0), (0.14, 0.30, 7, 0.75), (0.30, 0.50, 5, 0.5), (0.50, 0.80, 3, 0.25)]
+  }
+
   func beginLaser(_ p: CGPoint) {
     laserPts.append((pageHost.convert(p, to: self), CACurrentMediaTime()))
     if laserLink == nil {
-      laserLayer.fillColor = nil
-      laserLayer.strokeColor = laserColor.cgColor
-      laserLayer.lineWidth = 5
-      laserLayer.lineCap = .round
-      laserLayer.lineJoin = .round
-      laserLayer.shadowColor = laserColor.cgColor
-      laserLayer.shadowOpacity = 0.9
-      laserLayer.shadowRadius = 8
-      laserLayer.shadowOffset = .zero
-      if laserLayer.superlayer == nil { layer.addSublayer(laserLayer) }
+      if laserBands.isEmpty {
+        for _ in laserBandSpec {
+          let band = CAShapeLayer()
+          band.fillColor = nil
+          band.lineCap = .round
+          band.lineJoin = .round
+          band.shadowOffset = .zero
+          layer.addSublayer(band)
+          laserBands.append(band)
+        }
+        laserDot.shadowOffset = .zero
+        layer.addSublayer(laserDot)
+        layer.addSublayer(laserCore)
+      }
+      for (i, band) in laserBands.enumerated() {
+        let spec = laserBandSpec[i]
+        band.strokeColor = laserColor.cgColor
+        band.shadowColor = laserColor.cgColor
+        band.shadowOpacity = 0.9
+        band.shadowRadius = 9
+        band.lineWidth = spec.width
+        band.opacity = spec.alpha
+      }
+      laserDot.fillColor = laserColor.cgColor
+      laserDot.shadowColor = laserColor.cgColor
+      laserDot.shadowOpacity = 1
+      laserDot.shadowRadius = 14
+      laserCore.fillColor = UIColor.white.cgColor
       let l = CADisplayLink(target: self, selector: #selector(laserTick))
       l.add(to: .main, forMode: .common)
       laserLink = l
@@ -394,18 +417,39 @@ extension QuillCanvasView {
 
   @objc private func laserTick() {
     let now = CACurrentMediaTime()
-    let keep = laserPts.firstIndex { now - $0.1 < 0.9 } ?? laserPts.count
+    let keep = laserPts.firstIndex { now - $0.1 < 0.8 } ?? laserPts.count
     if keep > 0 {
       laserPts.removeFirst(keep)
       laserBreaks = laserBreaks.map { $0 - keep }.filter { $0 >= 0 }
     }
-    let path = CGMutablePath()
-    for (i, q) in laserPts.enumerated() {
-      if i == 0 || laserBreaks.contains(i) { path.move(to: q.0) } else { path.addLine(to: q.0) }
-    }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    laserLayer.path = path
+    for (i, spec) in laserBandSpec.enumerated() where i < laserBands.count {
+      let path = CGMutablePath()
+      var prev = -2
+      for (j, q) in laserPts.enumerated() {
+        let age = now - q.1
+        guard age >= spec.from && age < spec.to else { continue }
+        if j != prev + 1 || laserBreaks.contains(j) {
+          // Each band starts from the point before it, so the bands join without a gap.
+          if j > 0 && !laserBreaks.contains(j) { path.move(to: laserPts[j - 1].0); path.addLine(to: q.0) } else { path.move(to: q.0) }
+        } else {
+          path.addLine(to: q.0)
+        }
+        prev = j
+      }
+      laserBands[i].path = path
+    }
+    if let last = laserPts.last, laserDown || now - last.1 < 0.25 {
+      let c = last.0
+      laserDot.path = UIBezierPath(ovalIn: CGRect(x: c.x - 10, y: c.y - 10, width: 20, height: 20)).cgPath
+      laserCore.path = UIBezierPath(ovalIn: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8)).cgPath
+      laserDot.isHidden = false
+      laserCore.isHidden = false
+    } else {
+      laserDot.isHidden = true
+      laserCore.isHidden = true
+    }
     CATransaction.commit()
     if laserPts.isEmpty && capture == nil && !laserDown {
       laserLink?.invalidate()

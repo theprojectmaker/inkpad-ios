@@ -794,6 +794,12 @@ extension QuillCanvasView {
     selHandle.lineWidth = 1.5
     selHandle.isHidden = true
     layer.addSublayer(selHandle)
+    eraserTrail.fillColor = nil
+    eraserTrail.strokeColor = UIColor.white.cgColor
+    eraserTrail.lineCap = .round
+    eraserTrail.lineJoin = .round
+    eraserTrail.isHidden = true
+    layer.addSublayer(eraserTrail)
     eraserRing.fillColor = UIColor(white: 1, alpha: 0.35).cgColor
     eraserRing.strokeColor = UIColor(white: 0.25, alpha: 0.7).cgColor
     eraserRing.lineWidth = 1

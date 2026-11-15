@@ -294,7 +294,10 @@ extension QuillCanvasView {
     let z = canvas.zoomScale
     let seen = visibleContent()
     if let p = inkPatch, abs(p.zoom - z) < z * 0.001, p.rect.contains(seen), !document.changed(p.rect, since: p.version) { return }
-    let rect = seen.insetBy(dx: -seen.width * 0.12, dy: -seen.height * 0.12).integral
+    // Zoomed in, the screen covers a small part of the page, so a patch well beyond it is still drawn at full
+    // sharpness: moving around stays crisp instead of showing the softer page picture at the edges.
+    let margin: CGFloat = z > max(0.01, currentFit()) * 2 ? 0.5 : 0.12
+    let rect = seen.insetBy(dx: -seen.width * margin, dy: -seen.height * margin).integral
     let screen = window?.screen.scale ?? UIScreen.main.scale
     let density = min(z * screen, 4096 / max(1, max(rect.width, rect.height)))
     patchRun += 1

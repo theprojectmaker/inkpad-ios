@@ -83,6 +83,12 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var eraseRemoved: [InkStroke] = []
   var eraseAdded: [InkStroke] = []
   let eraserRing = CAShapeLayer()
+  let eraserTrail = CAShapeLayer()      // the white line left along the eraser's path until the Pencil lifts
+  var trailPath = CGMutablePath()
+  var trailLast: CGPoint?
+  let laserDot = CAShapeLayer()
+  let laserCore = CAShapeLayer()
+  var laserBands: [CAShapeLayer] = []
   var lassoPts: [CGPoint] = []
   let lassoLayer = CAShapeLayer()
   var selection: [InkStroke] = []

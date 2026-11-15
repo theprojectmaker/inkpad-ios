@@ -929,11 +929,13 @@ extension QuillCanvasView {
     ink.penDown()
     eraseStep(to: p)
     showEraser(at: p)
+    startTrail(at: p)
   }
 
   private func moveErase(_ points: [CGPoint]) {
     points.forEach { eraseStep(to: $0) }
     if let p = points.last { showEraser(at: p) }
+    extendTrail(points)
   }
 
   private func eraseStep(to p: CGPoint) {
@@ -965,6 +967,7 @@ extension QuillCanvasView {
   private func endErase() {
     ink.penUp()
     eraserRing.isHidden = true
+    fadeTrail()
     objectsChanged()
     if eraseRemoved.isEmpty && eraseAdded.isEmpty { return }
     record(InkEdit(removed: eraseRemoved, added: eraseAdded))
@@ -979,6 +982,61 @@ extension QuillCanvasView {
     CATransaction.setDisableActions(true)
     eraserRing.isHidden = false
     eraserRing.path = UIBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)).cgPath
+    CATransaction.commit()
+  }
+
+  // MARK: - The eraser's white trail
+
+  /// A white line along where the eraser has been, kept until the Pencil lifts.
+  private func startTrail(at p: CGPoint) {
+    guard eraserMode != "hl" else { return }   // erasing only the highlighter: a white line would hide ink that stays
+    let c = pageHost.convert(p, to: self)
+    trailPath = CGMutablePath()
+    trailPath.move(to: c)
+    trailPath.addLine(to: c)   // a dot where it lands
+    trailLast = c
+    eraserTrail.removeAllAnimations()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    eraserTrail.opacity = 1
+    eraserTrail.lineWidth = eraserRadius * canvas.zoomScale * 2
+    eraserTrail.path = trailPath
+    eraserTrail.isHidden = false
+    CATransaction.commit()
+  }
+
+  private func extendTrail(_ points: [CGPoint]) {
+    guard let last = trailLast else { return }
+    var at = last
+    var grew = false
+    for p in points {
+      let c = pageHost.convert(p, to: self)
+      if hypot(c.x - at.x, c.y - at.y) < 1.5 { continue }
+      trailPath.addLine(to: c)
+      at = c
+      grew = true
+    }
+    guard grew else { return }
+    trailLast = at
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    eraserTrail.path = trailPath
+    CATransaction.commit()
+  }
+
+  private func fadeTrail() {
+    guard trailLast != nil else { return }
+    trailLast = nil
+    CATransaction.begin()
+    CATransaction.setAnimationDuration(0.2)
+    CATransaction.setCompletionBlock { [weak self] in
+      // A new stroke may have started while it faded: then it stays.
+      guard let self, self.trailLast == nil else { return }
+      self.eraserTrail.isHidden = true
+      self.eraserTrail.path = nil
+      self.eraserTrail.opacity = 1
+    }
+    eraserTrail.opacity = 0
     CATransaction.commit()
   }
 
