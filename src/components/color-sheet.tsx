@@ -15,6 +15,10 @@ const SHADES: [number, number][] = [[0.85, 0.82], [0.8, 0.66], [0.78, 0.52], [0.
 const ROWS = SHADES.map(([s, l]) => HUES.map((h) => hsl(h, s, l)));
 const GREYS = ['#FFFFFF', '#E6E6E6', '#C4C4C4', '#9A9A9A', '#6E6E6E', '#4A4A4A', '#2E2E2E', '#111111', '#7B5B3A', '#C2A27A', '#3D5A80', '#2A9D8F'];
 
+const PASTELS = ['#FFD6D6', '#FFE2C7', '#FFF1B8', '#F4F7B5', '#D8F3C4', '#C3F0DC', '#C2EEF2', '#C6E2FF', '#D3D7FF', '#E6D4FF', '#F8D2F4', '#FFD1E3'];
+const NEONS = ['#FF1744', '#FF6D00', '#FFD600', '#C6FF00', '#00E676', '#1DE9B6', '#00E5FF', '#2979FF', '#651FFF', '#D500F9', '#FF4081', '#FF9100'];
+const EARTH = ['#3B2F2F', '#5C4033', '#7B4B2A', '#A0522D', '#B8860B', '#808000', '#556B2F', '#2F4F4F', '#36454F', '#4B3F72', '#722F37', '#800020'];
+
 export function ColorSheet({ visible, onClose, target }: { visible: boolean; onClose: () => void; target: 'pen' | 'hl' }) {
   const t = useTheme();
   const { s, set } = useSettings();
@@ -26,7 +30,7 @@ export function ColorSheet({ visible, onClose, target }: { visible: boolean; onC
   };
   return (
     <Sheet visible={visible} onClose={onClose} title={target === 'hl' ? 'Highlighter colour' : 'Ink colour'} width={470}>
-      {[...ROWS, GREYS].map((row, i) => (
+      {[...ROWS, GREYS, PASTELS, NEONS, EARTH].map((row, i) => (
         <View key={i} style={{ flexDirection: 'row', gap: 4, marginBottom: 4 }}>
           {row.map((c) => (
             <Pressable key={c} onPress={() => pick(c)} accessibilityLabel={`Colour ${c}`}

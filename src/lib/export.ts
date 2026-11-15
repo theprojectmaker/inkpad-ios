@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 
 import { fsx } from './fsx';
-import type { NoteDoc } from './model';
+import { isDarkPaper, type NoteDoc } from './model';
 import { notePath } from './noteio';
 import { paperOf, paperSvg } from './paper';
 import { engine } from './pdf-engine';
@@ -20,7 +20,7 @@ export async function exportNotePdf(doc: NoteDoc, title: string, onProgress?: (d
     if (p.bg.kind === 'pdf') bg = { kind: 'pdf', blob: blob(p.bg.file, { path: notePath(doc.id, p.bg.file) }), index: p.bg.index };
     else if (p.bg.kind === 'image') bg = { kind: 'image', blob: blob(p.bg.file, { path: notePath(doc.id, p.bg.file) }), fill: '#ffffff' };
     else { bg = { kind: 'paper', fill: paperOf(p.bg.color).bg }; rules = paperSvg(p.bg.style, p.bg.color, p.w, p.h); }
-    const dark = p.bg.kind === 'paper' && p.bg.color === 'dark';
+    const dark = p.bg.kind === 'paper' && isDarkPaper(p.bg.color);
     const items: any[] = [];
     for (const s of p.strokes) if (s.kind === 'hl') { const d = strokeSvg(s); if (d) items.push({ t: 'path', d, color: s.color, opacity: HL_ALPHA, multiply: !dark }); }
     for (const im of p.images) items.push({ t: 'img', blob: blob(im.file, { path: notePath(doc.id, im.file) }), x: im.x, y: im.y, w: im.w, h: im.h });

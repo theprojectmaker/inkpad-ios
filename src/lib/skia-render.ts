@@ -6,7 +6,7 @@ import { BlendMode, ClipOp, FilterMode, ImageFormat, MipmapMode, PaintStyle, Ski
 import { fsx } from './fsx';
 import { type Box, fin, textBox } from './geom';
 import { strokeSvg } from './ink';
-import type { ImageItem, Page, Stroke, TextItem } from './model';
+import { isDarkPaper, type ImageItem, type Page, type Stroke, type TextItem } from './model';
 import { notePath, pdfKey, renderDir } from './noteio';
 import { paperMarks, paperOf } from './paper';
 import { engine } from './pdf-engine';
@@ -282,7 +282,7 @@ export function inkPicture(noteId: string, page: Page, ex: Exclude, imgVer: numb
   const rec = Skia.PictureRecorder();
   const c = rec.beginRecording(Skia.XYWHRect(-page.w, -page.h, page.w * 3, page.h * 3));
   c.clipRect(Skia.XYWHRect(0, 0, page.w, page.h), ClipOp.Intersect, true);
-  drawInk(c, noteId, page, ex, page.bg.kind === 'paper' && page.bg.color === 'dark', r);
+  drawInk(c, noteId, page, ex, page.bg.kind === 'paper' && isDarkPaper(page.bg.color), r);
   const pic = rec.finishRecordingAsPicture();
   inkCache.set(page, { key, pic });
   return pic;
@@ -298,7 +298,7 @@ export function selectionPicture(noteId: string, page: Page, sel: { strokes: Set
   };
   const rec = Skia.PictureRecorder();
   const c = rec.beginRecording(Skia.XYWHRect(-page.w, -page.h, page.w * 3, page.h * 3));
-  drawInk(c, noteId, sub, null, page.bg.kind === 'paper' && page.bg.color === 'dark');
+  drawInk(c, noteId, sub, null, page.bg.kind === 'paper' && isDarkPaper(page.bg.color));
   return rec.finishRecordingAsPicture();
 }
 
@@ -318,7 +318,7 @@ export function renderPageImage(noteId: string, page: Page, width: number, bg: S
   c.scale(k, k);
   c.drawPicture(paperPicture(page));
   if (bg) c.drawImageRectOptions(bg, Skia.XYWHRect(0, 0, bg.width(), bg.height()), Skia.XYWHRect(0, 0, page.w, page.h), FilterMode.Linear, MipmapMode.Linear, null);
-  drawInk(c, noteId, page, null, page.bg.kind === 'paper' && page.bg.color === 'dark');
+  drawInk(c, noteId, page, null, page.bg.kind === 'paper' && isDarkPaper(page.bg.color));
   s.flush();
   const img = s.makeImageSnapshot();
   return img.encodeToBase64(ImageFormat.JPEG, 82);

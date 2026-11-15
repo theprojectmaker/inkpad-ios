@@ -1,6 +1,7 @@
 // Paper templates: colours and the ruling marks, as plain rectangles/dots so
 // the same marks are drawn on screen and written into the exported PDF.
 import type { PaperColor, PaperStyle } from './model';
+import { MORE_STYLES, moreMarks } from './paper-more';
 
 export const PAPERS: { id: PaperColor; name: string; bg: string; line: string; margin: string }[] = [
   { id: 'white', name: 'White', bg: '#FFFFFF', line: '#C7D3E6', margin: '#F1A9A9' },
@@ -9,9 +10,23 @@ export const PAPERS: { id: PaperColor; name: string; bg: string; line: string; m
   { id: 'gray', name: 'Gray', bg: '#F1F2F4', line: '#CDD1D8', margin: '#E3AFAF' },
   { id: 'blue', name: 'Blue', bg: '#EEF5FF', line: '#BBD0EE', margin: '#EFAFB8' },
   { id: 'dark', name: 'Dark', bg: '#202227', line: '#3A3F4A', margin: '#6B3B44' },
+  { id: 'cream', name: 'Cream', bg: '#FFFBF0', line: '#DCD3BD', margin: '#E8B0A2' },
+  { id: 'mint', name: 'Mint', bg: '#EEFAF3', line: '#B9DCC8', margin: '#E9AFAF' },
+  { id: 'sage', name: 'Sage', bg: '#E9F0E6', line: '#BECDB8', margin: '#DDA9A0' },
+  { id: 'sky', name: 'Sky', bg: '#E8F6FD', line: '#B4D6E8', margin: '#EFAFB8' },
+  { id: 'lavender', name: 'Lavender', bg: '#F3EFFD', line: '#CDC4EA', margin: '#EBAFC2' },
+  { id: 'pink', name: 'Pink', bg: '#FFF0F4', line: '#EBC3CF', margin: '#E79AAE' },
+  { id: 'peach', name: 'Peach', bg: '#FFF2E8', line: '#EBCDB6', margin: '#E8A28F' },
+  { id: 'sand', name: 'Sand', bg: '#F5EFE2', line: '#D6CBB2', margin: '#DBA795' },
+  { id: 'kraft', name: 'Kraft', bg: '#E2CFAE', line: '#C2AB83', margin: '#B9806B' },
+  { id: 'sepia', name: 'Sepia', bg: '#F1E4CC', line: '#D2C0A0', margin: '#CF9A85' },
+  { id: 'slate', name: 'Slate', bg: '#2E3440', line: '#465062', margin: '#7A4651' },
+  { id: 'midnight', name: 'Midnight', bg: '#111A2E', line: '#27365A', margin: '#5E3550' },
+  { id: 'forest', name: 'Chalkboard', bg: '#1F3A2E', line: '#36584A', margin: '#6E5140' },
+  { id: 'black', name: 'Black', bg: '#000000', line: '#2A2A2E', margin: '#55303A' },
 ];
 
-export const PAPER_STYLES: { id: PaperStyle; name: string }[] = [
+export const PAPER_STYLES: { id: PaperStyle; name: string; group?: string }[] = [
   { id: 'blank', name: 'Blank' },
   { id: 'lined', name: 'Lined' },
   { id: 'narrow', name: 'Narrow' },
@@ -21,7 +36,11 @@ export const PAPER_STYLES: { id: PaperStyle; name: string }[] = [
   { id: 'todo', name: 'Checklist' },
   { id: 'music', name: 'Music' },
   { id: 'iso', name: 'Isometric' },
+  ...MORE_STYLES.map((m) => ({ id: m.id as PaperStyle, name: m.name as string, group: m.group as string })),
 ];
+/** The templates in one group ('Basic' is the original nine). */
+export const stylesIn = (group: string) => PAPER_STYLES.filter((p) => (p.group ?? 'Basic') === group);
+export const STYLE_GROUPS = ['Basic', 'Writing', 'Grids', 'Study', 'Planning', 'Maths and science', 'Music', 'Design', 'Games'];
 
 export const paperOf = (c: PaperColor) => PAPERS.find((p) => p.id === c) ?? PAPERS[0];
 
@@ -29,6 +48,8 @@ export type Mark = { x: number; y: number; w: number; h: number; color: string }
 
 export function paperMarks(style: PaperStyle, color: PaperColor, w: number, h: number): Mark[] {
   const P = paperOf(color);
+  const more = moreMarks(style, P, w, h);
+  if (more) return more;
   const out: Mark[] = [];
   const t = 0.6;
   if (style === 'lined' || style === 'narrow') {

@@ -99,12 +99,23 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
     else if (filter.kind === 'folder') list = list.filter((n) => n.folderId === filter.id);
     const needle = q.trim().toLowerCase();
     if (needle) list = list.filter((n) => hay(n).includes(needle));
+    const names = new Map(lib.lib.folders.map((f) => [f.id, f.name]));
+    const subjectName = (n: NoteMeta) => (n.folderId ? names.get(n.folderId) ?? '' : '￿');   // no subject goes last
     const by: Record<Sort, (a: NoteMeta, b: NoteMeta) => number> = {
       updated: (a, b) => b.updated - a.updated,
       created: (a, b) => b.created - a.created,
       title: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }),
+      titleDesc: (a, b) => b.title.localeCompare(a.title, undefined, { numeric: true }),
+      updatedAsc: (a, b) => a.updated - b.updated,
+      createdAsc: (a, b) => a.created - b.created,
+      opened: (a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated),
+      pages: (a, b) => (b.pages ?? 0) - (a.pages ?? 0) || b.updated - a.updated,
+      pagesAsc: (a, b) => (a.pages ?? 0) - (b.pages ?? 0) || b.updated - a.updated,
+      subject: (a, b) => subjectName(a).localeCompare(subjectName(b), undefined, { numeric: true }) || b.updated - a.updated,
     };
-    return list.sort(by[s.sort] ?? by.updated);
+    const order = by[s.sort] ?? by.updated;
+    // Pinned notes stay at the top, in the chosen order among themselves.
+    return list.sort((a, b) => Number(!!b.pin) - Number(!!a.pin) || order(a, b));
   }, [lib.lib, filter, q, s.sort]);
   const needle = q.trim().toLowerCase();
   // Where the words were found, when it isn't the title.
@@ -604,6 +615,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
       <MenuSheet visible={sheet === 'note'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [
         { label: 'Rename', icon: 'pencil', onPress: () => setSheet('rename') },
         { label: target2.fav ? 'Remove from Favorites' : 'Add to Favorites', icon: target2.fav ? 'star.fill' : 'star', onPress: () => lib.updateNote(target2.id, { fav: !target2.fav }) },
+        { label: target2.pin ? 'Unpin from the top' : 'Pin to the top', icon: target2.pin ? 'pin.slash' : 'pin', onPress: () => lib.updateNote(target2.id, { pin: !target2.pin }) },
         { label: 'Move to subject…', icon: 'folder', onPress: () => setSheet('move') },
         { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { try { toast((await lib.duplicateNote(target2.id)) ? 'Duplicated' : "Couldn't duplicate that note."); } catch { toast("Couldn't duplicate that note."); } } },
         { label: 'Delete', icon: 'trash', danger: true, onPress: () => {
@@ -617,6 +629,13 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         { label: 'Date edited', icon: 'clock', checked: s.sort === 'updated', onPress: () => set({ sort: 'updated' }) },
         { label: 'Date created', icon: 'calendar', checked: s.sort === 'created', onPress: () => set({ sort: 'created' }) },
         { label: 'Title', icon: 'textformat', checked: s.sort === 'title', onPress: () => set({ sort: 'title' }) },
+        { label: 'Title, Z to A', icon: 'textformat', checked: s.sort === 'titleDesc', onPress: () => set({ sort: 'titleDesc' }) },
+        { label: 'Recently opened', icon: 'eye', checked: s.sort === 'opened', onPress: () => set({ sort: 'opened' }) },
+        { label: 'Oldest edit first', icon: 'clock.arrow.circlepath', checked: s.sort === 'updatedAsc', onPress: () => set({ sort: 'updatedAsc' }) },
+        { label: 'Oldest created first', icon: 'calendar', checked: s.sort === 'createdAsc', onPress: () => set({ sort: 'createdAsc' }) },
+        { label: 'Most pages', icon: 'doc.on.doc', checked: s.sort === 'pages', onPress: () => set({ sort: 'pages' }) },
+        { label: 'Fewest pages', icon: 'doc', checked: s.sort === 'pagesAsc', onPress: () => set({ sort: 'pagesAsc' }) },
+        { label: 'Subject', icon: 'folder', checked: s.sort === 'subject', onPress: () => set({ sort: 'subject' }) },
       ]} />
       <MenuSheet visible={sheet === 'trashNote'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [
         { label: 'Restore', icon: 'arrow.uturn.backward', onPress: () => { lib.restoreNote(target2.id); toast('Restored'); } },

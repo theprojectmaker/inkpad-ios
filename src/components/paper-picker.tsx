@@ -1,9 +1,10 @@
 // Paper style + colour chooser, with live mini previews.
 import { Canvas, Group, Picture } from '@shopify/react-native-skia';
-import { Pressable, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { LETTER, PAGE_SIZES, type PageSizeId, type PaperColor, type PaperStyle, paperPage } from '@/lib/model';
-import { PAPER_STYLES, PAPERS } from '@/lib/paper';
+import { PAPER_STYLES, PAPERS, STYLE_GROUPS, stylesIn } from '@/lib/paper';
 import { useTheme } from '@/lib/settings';
 import { paperPicture } from '@/lib/skia-render';
 
@@ -24,6 +25,7 @@ export function PaperPicker({ style, color, onChange, size, onSize }: {
   size?: PageSizeId; onSize?: (s: PageSizeId) => void;
 }) {
   const t = useTheme();
+  const [group, setGroup] = useState(PAPER_STYLES.find((p) => p.id === style)?.group ?? 'Basic');
   return (
     <View style={{ gap: 14 }}>
       {onSize ? (
@@ -39,13 +41,20 @@ export function PaperPicker({ style, color, onChange, size, onSize }: {
           })}
         </View>
       ) : null}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        {STYLE_GROUPS.map((g) => (
+          <Pressable key={g} accessibilityLabel={`${g} templates`} onPress={() => setGroup(g)} style={{ height: 30, paddingHorizontal: 12, borderRadius: 15, justifyContent: 'center', backgroundColor: g === group ? t.accent : t.chip }}>
+            <Text style={{ color: g === group ? '#fff' : t.text, fontSize: 13, fontWeight: '600' }}>{g}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-        {PAPER_STYLES.map((p) => (
+        {stylesIn(group).map((p) => (
           <Pressable key={p.id} onPress={() => onChange(p.id, color)} style={{ alignItems: 'center', gap: 5 }}>
             <View style={{ borderWidth: 2, borderColor: p.id === style ? t.accent : t.line, borderRadius: 6, padding: 2 }}>
               <Mini style={p.id} color={color} />
             </View>
-            <Text style={{ color: p.id === style ? t.accent : t.sub, fontSize: 12, fontWeight: '600' }}>{p.name}</Text>
+            <Text numberOfLines={2} style={{ color: p.id === style ? t.accent : t.sub, fontSize: 12, fontWeight: '600', maxWidth: PW + 8, textAlign: 'center' }}>{p.name}</Text>
           </Pressable>
         ))}
       </View>

@@ -22,7 +22,7 @@ import {
 } from '@/lib/geom';
 import { clampView, fitZoom, GAP, layoutDoc, MAX_ZOOM, MIN_ZOOM, pageAt, softClampView, TOP, type View as ViewT, visiblePages } from '@/lib/layout';
 import { useLibrary } from '@/lib/library';
-import { docText, LETTER, pageSizeOf, type PageSizeId, type ImageItem, type NoteDoc, type Page, paperPage, type Recording, type Stroke, type TextItem, uid } from '@/lib/model';
+import { docText, isDarkPaper, LETTER, pageSizeOf, type PageSizeId, type ImageItem, type NoteDoc, type Page, paperPage, type Recording, type Stroke, type TextItem, uid } from '@/lib/model';
 import { imagePages, loadDoc, notePath, pdfKey, pdfPages, saveDoc, saveImage } from '@/lib/noteio';
 import { engine } from '@/lib/pdf-engine';
 import { useSettings, useTheme } from '@/lib/settings';
@@ -619,7 +619,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
       const S0 = SRef.current;
       const v = viewRef.current;
       const pg = docRef.current!.pages[page];
-      const dark = pg.bg.kind === 'paper' && pg.bg.color === 'dark';
+      const dark = pg.bg.kind === 'paper' && isDarkPaper(pg.bg.color);
       const pts: Pt[] = [];
       const live: LiveStroke = {
         pts, base: hl ? S0.hlWidth : laser ? 3 : S0.penWidth, kind: kindFor(hl, laser), pressure: !laser && pressureFor(t.pencil), smoothing: S0.smoothing,
@@ -1483,7 +1483,7 @@ export function NoteView({ noteId, tool, active, onActivate, onState, onRequestT
   const selPic = sel && selPage ? selectionPicture(noteId, selPage, sel) : null;
   const exclude = sel ? { strokes: sel.strokes, texts: sel.texts, images: sel.images } : editing ? { texts: new Set([editing.item.id]) } : null;
   const z = view.z;
-  const darkPaperOf = (p: Page) => p.bg.kind === 'paper' && p.bg.color === 'dark';
+  const darkPaperOf = (p: Page) => p.bg.kind === 'paper' && isDarkPaper(p.bg.color);
 
   // Selection box on screen (for the floating menu).
   let selScreen: { x: number; y: number; w: number; h: number } | null = null;

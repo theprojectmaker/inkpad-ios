@@ -6,15 +6,15 @@ import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui';
-import { type PageSizeId, type PaperColor, type PaperStyle, paperPage } from '@/lib/model';
-import { PAPERS } from '@/lib/paper';
+import { PAGE_SIZES, type PageSizeId, type PaperColor, type PaperStyle, paperPage } from '@/lib/model';
+import { PAPER_STYLES, PAPERS, STYLE_GROUPS, stylesIn } from '@/lib/paper';
 import { useSettings } from '@/lib/settings';
 import { paperPicture } from '@/lib/skia-render';
 
 const BLUE = '#3F6AF2';
 const BASIC: [PaperStyle, string][] = [['blank', 'Blank'], ['lined', 'Lined'], ['grid', 'Grid'], ['dotted', 'Dotted']];
 const MORE: [PaperStyle, string][] = [['narrow', 'Narrow lined'], ['cornell', 'Cornell notes'], ['todo', 'Checklist'], ['music', 'Music'], ['iso', 'Isometric']];
-const SIZES: [PageSizeId, string][] = [['letter', 'Letter'], ['a4', 'A4'], ['tall', 'Tall']];
+const SIZES: [PageSizeId, string][] = PAGE_SIZES.filter((p) => p.id !== 'landscape').map((p) => [p.id, p.name]);
 
 function Preview({ style, color, w, landscape }: { style: PaperStyle; color: PaperColor; w: number; landscape: boolean }) {
   const page = paperPage(style, color, landscape ? { w: 792, h: 612 } : { w: 612, h: 792 });
@@ -37,12 +37,15 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
   const [sz, setSz] = useState<PageSizeId>(size ?? 'letter');
   const [menu, setMenu] = useState(false);
   const [tab, setTab] = useState<'all' | 'mine'>('all');
+  // Only one group's previews are drawn at a time: there are a lot of templates.
+  const [group, setGroup] = useState('Basic');
   useEffect(() => {
     if (!visible) return;
     setSt(style ?? 'blank');
     setCo(color ?? 'white');
     setSz(size ?? 'letter');
     setTab('all');
+    setGroup(PAPER_STYLES.find((p) => p.id === (style ?? 'blank'))?.group ?? 'Basic');
   }, [visible, style, color, size]);
   const landscape = sz === 'landscape';
   const mine = s.myTemplates ?? [];
@@ -64,7 +67,7 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
       </Pressable>
     );
   };
-  const all = [...BASIC, ...MORE];
+  const all: [PaperStyle, string][] = [...BASIC, ...MORE, ...PAPER_STYLES.filter((p) => p.group).map((p): [PaperStyle, string] => [p.id, p.name])];
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: ins.top }}>
@@ -105,10 +108,15 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
                 </View>
               </View>
             ) : null}
-            <Text style={{ fontSize: 19, fontWeight: '700', color: '#15171C', marginTop: 26, marginBottom: 16 }}>Basic Templates</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 24 }}>{BASIC.map((p) => tile(p, 170))}</View>
-            <Text style={{ fontSize: 19, fontWeight: '700', color: '#15171C', marginTop: 30, marginBottom: 16 }}>More Templates</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 24 }}>{MORE.map((p) => tile(p, 170))}</View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 24, marginHorizontal: -24 }} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
+              {STYLE_GROUPS.map((g) => (
+                <Pressable key={g} accessibilityLabel={`${g} templates`} onPress={() => setGroup(g)} style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, justifyContent: 'center', backgroundColor: g === group ? BLUE : '#ECEDF1' }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: g === group ? '#fff' : '#15171C' }}>{g}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Text style={{ fontSize: 19, fontWeight: '700', color: '#15171C', marginTop: 22, marginBottom: 16 }}>{group === 'Basic' ? 'Basic Templates' : group}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 24 }}>{(group === 'Basic' ? [...BASIC, ...MORE] : stylesIn(group).map((p): [PaperStyle, string] => [p.id, p.name])).map((p) => tile(p, 170))}</View>
             <Text style={{ fontSize: 19, fontWeight: '700', color: '#15171C', marginTop: 30, marginBottom: 14 }}>Paper colour</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
               {PAPERS.map((p) => (

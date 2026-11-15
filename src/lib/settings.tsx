@@ -5,7 +5,7 @@ import { useColorScheme } from 'react-native';
 
 import type { FavPen, PageSizeId, PaperColor, PaperStyle, PenType, ShapeKind } from './model';
 
-export type Sort = 'updated' | 'created' | 'title';
+export type Sort = 'updated' | 'created' | 'title' | 'titleDesc' | 'updatedAsc' | 'createdAsc' | 'opened' | 'pages' | 'pagesAsc' | 'subject';
 export type Settings = {
   theme: 'system' | 'light' | 'dark';
   view: 'grid' | 'list';

@@ -3,8 +3,11 @@
 // so ink lines up 1:1 with the PDF page when it is exported.
 
 export type PenType = 'fountain' | 'ball' | 'brush' | 'marker' | 'pencil' | 'fine';
-export type PaperStyle = 'blank' | 'lined' | 'narrow' | 'grid' | 'dotted' | 'cornell' | 'todo' | 'music' | 'iso';
-export type PaperColor = 'white' | 'ivory' | 'yellow' | 'gray' | 'blue' | 'dark';
+export type PaperStyle = 'blank' | 'lined' | 'narrow' | 'grid' | 'dotted' | 'cornell' | 'todo' | 'music' | 'iso' | import('./paper-more').MoreStyle;
+export type PaperColor = 'white' | 'ivory' | 'yellow' | 'gray' | 'blue' | 'dark'
+  | 'cream' | 'mint' | 'sage' | 'sky' | 'lavender' | 'pink' | 'peach' | 'sand' | 'kraft' | 'sepia' | 'slate' | 'midnight' | 'forest' | 'black';
+/** Papers dark enough that black ink is shown light on them. */
+export const isDarkPaper = (c: PaperColor) => c === 'dark' || c === 'slate' || c === 'midnight' || c === 'forest' || c === 'black';
 
 export type Stroke = {
   id: string;
@@ -94,6 +97,7 @@ export type NoteMeta = {
   updated: number;
   opened?: number;
   fav?: boolean;
+  pin?: boolean;         // kept at the top of its list
   pages: number;
   kind: NoteKind;
   link?: { id: string; secret: string; url: string; expires: number };   // shared link, if there is one
@@ -119,12 +123,24 @@ export type Library = { v: 1; folders: Folder[]; notes: NoteMeta[]; gone?: Recor
 
 export const LETTER = { w: 612, h: 792 };
 
-export type PageSizeId = 'letter' | 'a4' | 'landscape' | 'tall';
+export type PageSizeId = 'letter' | 'a4' | 'landscape' | 'tall' | 'legal' | 'tabloid' | 'a3' | 'a5' | 'b5' | 'half' | 'square' | 'wide' | 'slide' | 'card' | 'a4land' | 'scroll';
 export const PAGE_SIZES: { id: PageSizeId; name: string; w: number; h: number }[] = [
   { id: 'letter', name: 'Letter', w: 612, h: 792 },
   { id: 'a4', name: 'A4', w: 595, h: 842 },
   { id: 'landscape', name: 'Landscape', w: 792, h: 612 },
   { id: 'tall', name: 'Tall', w: 612, h: 1584 },   // two pages long, for long notes
+  { id: 'legal', name: 'Legal', w: 612, h: 1008 },
+  { id: 'tabloid', name: 'Tabloid', w: 792, h: 1224 },
+  { id: 'a3', name: 'A3', w: 842, h: 1191 },
+  { id: 'a5', name: 'A5', w: 420, h: 595 },
+  { id: 'b5', name: 'B5', w: 499, h: 709 },
+  { id: 'half', name: 'Half letter', w: 396, h: 612 },
+  { id: 'square', name: 'Square', w: 700, h: 700 },
+  { id: 'a4land', name: 'A4 landscape', w: 842, h: 595 },
+  { id: 'wide', name: 'Widescreen', w: 960, h: 540 },
+  { id: 'slide', name: 'Slide 4:3', w: 800, h: 600 },
+  { id: 'card', name: 'Index card', w: 432, h: 288 },
+  { id: 'scroll', name: 'Long scroll', w: 612, h: 3168 },   // four pages long
 ];
 export const pageSizeOf = (id?: PageSizeId) => PAGE_SIZES.find((p) => p.id === id) ?? PAGE_SIZES[0];
 
@@ -143,7 +159,8 @@ export function emptyNote(id: string, style: PaperStyle, color: PaperColor, size
   return { v: 1, id, paper: { style, color, size }, pages: [paperPage(style, color, { w: sz.w, h: sz.h })] };
 }
 
-export const FOLDER_COLORS = ['#E5484D', '#F76B15', '#FFC53D', '#30A46C', '#12A594', '#0090FF', '#6E56CF', '#D6409F', '#8D8D86'];
+export const FOLDER_COLORS = ['#E5484D', '#F76B15', '#FFC53D', '#30A46C', '#12A594', '#0090FF', '#6E56CF', '#D6409F', '#8D8D86',
+  '#B42318', '#B54708', '#A16207', '#3F7D20', '#0E7490', '#1D4ED8', '#4C1D95', '#9D174D', '#1F2937'];
 
 export const INK_COLORS = ['#111111', '#5A5F6B', '#1E5EFF', '#0AA35B', '#E5322D', '#F28C18', '#8E44EC', '#E0408A', '#0BB5C9', '#FFFFFF'];
 export const HL_COLORS = ['#FFE14D', '#7CF27C', '#6FD3FF', '#FF8FD0', '#FFB45C', '#B9A1FF'];
