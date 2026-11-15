@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PaperSheet } from '@/components/paper-sheet';
 import { TodayStrip } from '@/components/today-strip';
+import { HomeStrip } from '@/components/home-strip';
+import { dailyTitle, parseTags, tagLine } from '@/lib/extras';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
@@ -79,7 +81,7 @@ export default function LibraryScreen() {
 
   const [filter, setFilter] = useState<Filter>({ kind: 'home' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'trashNote' | 'purge' | 'purgeAll'>(null);
+  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'tags' | 'trashNote' | 'purge' | 'purgeAll'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
 
@@ -91,7 +93,8 @@ export default function LibraryScreen() {
 ${n.text ?? ''}
 ${n.pdfText ?? ''}
 ${n.hand ?? ''}
-${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
+${n.said ?? ''}
+${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.notes]);
   const hay = (n: NoteMeta) => hays.get(n.id) ?? '';
   const notes = useMemo(() => {
     let list = filter.kind === 'trash' ? lib.lib.notes.filter((n) => n.trashed) : lib.lib.notes.filter((n) => !n.trashed);
@@ -133,6 +136,17 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
       const id = await lib.createNote({ folderId: currentFolderId, kind: 'paper', paper: { style, color, size }, title: defaultTitle() });
       open(id, record);
     } catch (e) { toast("Couldn't make the note: " + String((e as Error)?.message ?? e)); }
+  };
+
+  // One note per day: tapping again the same day goes back to it.
+  const openToday = async () => {
+    const title = dailyTitle();
+    const have = lib.lib.notes.find((n) => !n.trashed && n.title === title);
+    if (have) { open(have.id); return; }
+    try {
+      const id = await lib.createNote({ folderId: null, kind: 'paper', paper: { style: 'lined', color: 'white', size: 'letter' }, title });
+      open(id);
+    } catch (e) { toast("Couldn't make today's note: " + String((e as Error)?.message ?? e)); }
   };
 
   const importPdfUri = async (uri: string, name: string, stay = false) => {
@@ -406,7 +420,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{n.title}</Text>
-          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 13, marginTop: 2 }}>{found ? `…${found}…` : [fmtDate(n.updated), `${n.pages} page${n.pages === 1 ? '' : 's'}`, f?.name].filter(Boolean).join(' · ')}</Text>
+          <Text numberOfLines={1} style={{ color: t.faint, fontSize: 13, marginTop: 2 }}>{found ? `…${found}…` : [fmtDate(n.updated), `${n.pages} page${n.pages === 1 ? '' : 's'}`, f?.name, tagLine(n.tags)].filter(Boolean).join(' · ')}</Text>
         </View>
         {n.audio ? <Icon name="waveform" size={15} color={t.faint} /> : null}
         {n.fav ? <Icon name="star.fill" size={14} color="#F5B400" /> : null}
@@ -437,7 +451,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
             <Text numberOfLines={1} style={{ color: t.text, fontSize: 15, fontWeight: '500' }}>{n.title}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
               {f ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: f.color }} /> : null}
-              <Text numberOfLines={1} style={{ flex: 1, color: t.sub, fontSize: 13 }}>{found ? `…${found}…` : fmtDate(n.updated)}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, color: t.sub, fontSize: 13 }}>{found ? `…${found}…` : [fmtDate(n.updated), tagLine(n.tags)].filter(Boolean).join('  ')}</Text>
               {n.audio ? <Icon name="waveform" size={13} color={t.faint} /> : null}
             </View>
           </View>
@@ -540,6 +554,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
               <Text style={{ color: t.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6, marginTop: 14 }}>{new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
             </View>
             <TodayStrip />
+            <HomeStrip onToday={openToday} />
             <View style={{ flexDirection: 'row', gap: 16, marginTop: 32 }}>
               {[
                 { label: 'Import Flashcards', icon: 'rectangle.on.rectangle', bg: t.card, line: '#C3D3F7', go: () => router.push('/flashcards') },
@@ -595,6 +610,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
       ) : null}
 
       <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
+        { group: 1, label: "Today's note", icon: 'calendar', onPress: openToday },
         { group: 1, label: 'Import a PDF or zip', icon: 'square.and.arrow.down', onPress: importPdf },
         { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
         { group: 1, label: 'Import Flashcards', icon: 'rectangle.on.rectangle', onPress: () => router.push('/flashcards') },
@@ -615,6 +631,7 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
       <MenuSheet visible={sheet === 'note'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [
         { label: 'Rename', icon: 'pencil', onPress: () => setSheet('rename') },
         { label: target2.fav ? 'Remove from Favorites' : 'Add to Favorites', icon: target2.fav ? 'star.fill' : 'star', onPress: () => lib.updateNote(target2.id, { fav: !target2.fav }) },
+        { label: 'Tags…', sub: tagLine(target2.tags) || undefined, icon: 'tag', onPress: () => setSheet('tags') },
         { label: target2.pin ? 'Unpin from the top' : 'Pin to the top', icon: target2.pin ? 'pin.slash' : 'pin', onPress: () => lib.updateNote(target2.id, { pin: !target2.pin }) },
         { label: 'Move to subject…', icon: 'folder', onPress: () => setSheet('move') },
         { label: 'Duplicate', icon: 'doc.on.doc', onPress: async () => { try { toast((await lib.duplicateNote(target2.id)) ? 'Duplicated' : "Couldn't duplicate that note."); } catch { toast("Couldn't duplicate that note."); } } },
@@ -645,6 +662,8 @@ ${n.said ?? ''}`.toLowerCase()])), [lib.lib.notes]);
         onConfirm={async () => { setSheet(null); if (target2) await lib.removeNote(target2.id); }} />
       <ConfirmSheet visible={sheet === 'purgeAll'} title="Delete everything here for good?" message="This can't be undone." onCancel={() => setSheet(null)}
         onConfirm={async () => { setSheet(null); for (const n of lib.lib.notes.filter((x) => x.trashed)) await lib.removeNote(n.id); }} />
+      <PromptSheet visible={sheet === 'tags'} title="Tags" placeholder="biology, exam, week 3" initial={(target2?.tags ?? []).join(', ')} onCancel={() => setSheet(null)}
+        onSubmit={(v) => { if (target2) lib.updateNote(target2.id, { tags: parseTags(v) }); setSheet(null); }} />
       <PromptSheet visible={sheet === 'rename'} title="Rename note" initial={target2?.title ?? ''} onCancel={() => setSheet(null)}
         onSubmit={(v) => { if (target2 && v.trim()) lib.updateNote(target2.id, { title: v.trim() }); setSheet(null); }} />
       <MenuSheet visible={sheet === 'move'} onClose={() => setSheet(null)} title="Move to" items={[

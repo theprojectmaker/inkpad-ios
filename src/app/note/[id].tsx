@@ -30,6 +30,7 @@ import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Glass, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
 import { askStudy } from '@/lib/ai';
+import { advanceReview, REVIEW_DAYS, startReview } from '@/lib/extras';
 import { copyText, readText } from '@/lib/ondevice';
 import { loadPageText, pageTextToSearch, readPages, snapPages } from '@/lib/handindex';
 import { dueLabel, handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
@@ -38,7 +39,7 @@ import { shareImage, sharePdf } from '@/lib/export';
 import { fsx } from '@/lib/fsx';
 import { unpack } from '@/lib/geom';
 import { useLibrary } from '@/lib/library';
-import { type NoteDoc, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid, clockAt, soundAt } from '@/lib/model';
+import { type NoteDoc, type NoteMeta, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid, clockAt, soundAt } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
 import { imagePages, listVersions, loadDoc, notePath, renderDir, restoreVersion, saveDoc, saveImage, saveVersion, scanPages } from '@/lib/noteio';
 import { setOpenNote } from '@/lib/icloud';
@@ -148,6 +149,17 @@ export default function Editor() {
   const [pageMenu, setPageMenu] = useState<number | null>(null);
   const [paperFor, setPaperFor] = useState<number | null>(null);
   const [jump, setJump] = useState(false);
+  const [flagsOpen, setFlagsOpen] = useState(false);
+  const [actions, setActions] = useState<{ busy: boolean; text: string } | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [scratch, setScratch] = useState(false);
+  const [scratchText, setScratchText] = useState('');
+  const scratchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [present, setPresent] = useState(false);
+  const [timerOpen, setTimerOpen] = useState(false);
+  const [timerMin, setTimerMin] = useState(25);
+  const [timerLeft, setTimerLeft] = useState(25 * 60);
+  const [timerRun, setTimerRun] = useState(false);
   const [explain, setExplain] = useState<{ busy: boolean; text: string } | null>(null);
   const [selStyle, setSelStyle] = useState<{ color: string; width: number } | null>(null);
   const [comment, setComment] = useState<{ id: string; text: string } | null>(null);
@@ -181,7 +193,16 @@ export default function Editor() {
       if (!d) { toast("This note couldn't be opened."); router.back(); return; }
       if (!fsx.exists(notePath(id, DRAWING))) setLegacy(legacyInk(d));
       setDoc(d);
-      lib.updateNote(id, { opened: Date.now() });
+      // Opening a note that's due counts as reviewing it; the next review is further out.
+      const m = lib.meta(id);
+      const patch: Partial<NoteMeta> = { opened: Date.now() };
+      if (m?.review && m.review.next <= Date.now()) {
+        const a = advanceReview(m.review);
+        patch.review = a.review;
+        toast(a.days ? `Review done. The next one is in ${a.days} ${a.days === 1 ? 'day' : 'days'}.` : 'Review done. That was the last one.');
+      }
+      setScratchText(m?.scratch ?? '');
+      lib.updateNote(id, patch);
     })();
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -657,6 +678,43 @@ export default function Editor() {
     if (record === '1' && doc && !autoRecord.current) { autoRecord.current = true; setAudioOpen(true); startRecording(true); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record, doc]);
+  useEffect(() => { if (!focus) setPresent(false); }, [focus]);
+  const curPageId = doc?.pages[page.page]?.id;
+  const flagged = !!(curPageId && meta?.flags?.includes(curPageId));
+  const flaggedPages = (doc?.pages ?? []).map((p, i) => ({ p, i })).filter(({ p }) => meta?.flags?.includes(p.id));
+  useEffect(() => {
+    if (!timerRun) return;
+    const i = setInterval(() => setTimerLeft((l) => (l <= 1 ? 0 : l - 1)), 1000);
+    return () => clearInterval(i);
+  }, [timerRun]);
+  useEffect(() => { if (timerRun && timerLeft === 0) { setTimerRun(false); toast('Time is up. Nice focus.'); } }, [timerLeft, timerRun]);
+  const nextLength = () => { const lens = [15, 25, 45, 60]; const n = lens[(lens.indexOf(timerMin) + 1) % lens.length]; setTimerMin(n); setTimerLeft(n * 60); setTimerRun(false); };
+  const toggleFlag = () => {
+    if (!curPageId) return;
+    const cur = meta?.flags ?? [];
+    lib.updateNote(id, { flags: flagged ? cur.filter((x) => x !== curPageId) : [...cur, curPageId] });
+    toast(flagged ? `Flag removed from page ${page.page + 1}` : `Page ${page.page + 1} flagged`);
+  };
+  const saveScratch = (v: string) => {
+    setScratchText(v);
+    if (scratchTimer.current) clearTimeout(scratchTimer.current);
+    scratchTimer.current = setTimeout(() => lib.updateNote(id, { scratch: v }), 600);
+  };
+  // Reads this page and lists what has to be done, as a checklist.
+  const findActions = async () => {
+    setActions({ busy: true, text: '' });
+    try {
+      const rel = `${renderDir(id)}/actions.jpg`;
+      const ok = await canvas.current?.pageThumb(page.page, absPath(rel), 1100);
+      if (!ok) throw new Error("Couldn't read the page.");
+      const r = await askStudy('ask', [fsx.uri(rel)], { question: "List every to-do, task, deadline or follow-up written on this page as a checklist, one per line, each starting with '- [ ] '. Keep the writer's own words. If there are none, reply exactly: No action items on this page." });
+      setActions({ busy: false, text: (r.text ?? '').trim() });
+    } catch (e) { setActions({ busy: false, text: String((e as Error)?.message ?? e) }); }
+  };
+  const toggleReview = () => {
+    if (meta?.review) { lib.updateNote(id, { review: undefined }); toast('Review reminders are off for this note.'); }
+    else { lib.updateNote(id, { review: startReview() }); toast('You will be reminded on Home in 1 day, then 3, 7, 14 and 30.'); }
+  };
   const closePanels = () => { setCalc(false); setStudy(false); setFind(false); setTranscriptOpen(false); };
   const paperPageNow = paperFor != null ? doc?.pages[paperFor] : null;
 
@@ -683,6 +741,7 @@ export default function Editor() {
           {page.count > 1 || doc?.pages.length ? (
             <View pointerEvents="box-none" style={{ position: 'absolute', right: 12, bottom: audioOpen ? 80 : 16 }}>
               <View style={{ width: 30, borderRadius: 11, backgroundColor: '#fff', alignItems: 'center', paddingVertical: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
+                {flagged ? <Icon name="flag.fill" size={11} color="#F59E0B" /> : null}
                 <Pressable accessibilityLabel="Previous page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} style={{ padding: 5 }}><ToolIcon name="up" size={13} /></Pressable>
                 <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ paddingVertical: 2, alignItems: 'center' }}>
                   <Text style={{ color: '#3B4252', fontSize: 11, fontWeight: '600' }}>{page.page + 1}</Text>
@@ -768,6 +827,13 @@ export default function Editor() {
           { group: 7, label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
           { group: 7, label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
+        { group: 8, label: 'Scratchpad', sub: 'Jot without touching the page', icon: 'note.text', checked: scratch, onPress: () => setScratch((v) => !v) },
+        { group: 8, label: flagged ? 'Remove flag from this page' : 'Flag this page', icon: flagged ? 'flag.slash' : 'flag', onPress: toggleFlag },
+        ...(flaggedPages.length ? [{ group: 8, label: 'Flagged pages', sub: String(flaggedPages.length), icon: 'flag.fill', onPress: () => setFlagsOpen(true) }] : []),
+        { group: 8, label: 'Find action items', sub: 'On this page', icon: 'checklist', onPress: findActions },
+        { group: 8, label: meta?.review ? 'Stop review reminders' : 'Review this note later', sub: meta?.review ? `Next: ${new Date(meta.review.next).toLocaleDateString()}` : REVIEW_DAYS.join(', ') + ' days', icon: 'bell', onPress: toggleReview },
+        { group: 8, label: 'Focus timer', sub: 'Counts down while you work', icon: 'hourglass', checked: timerOpen, onPress: () => setTimerOpen((v) => !v) },
+        { group: 8, label: 'Note stats', icon: 'chart.bar', onPress: () => setStatsOpen(true) },
         { group: 8, label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
         { group: 8, label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
         { group: 8, label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
@@ -779,6 +845,7 @@ export default function Editor() {
         { group: 1, label: 'Picture', sub: 'This page', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
       ]} />
       <MenuSheet topRight visible={viewMenu} onClose={() => setViewMenu(false)} items={[
+        { group: 1, label: 'Present', sub: 'Full screen, one page at a time', icon: 'play.rectangle', onPress: () => { setPresent(true); setFocus(true); canvas.current?.fitWidth(); } },
         { group: 1, label: 'Focus mode', sub: 'Hides the toolbars', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
         { group: 1, label: 'Fit page to width', icon: 'arrow.left.and.right', onPress: () => canvas.current?.fitWidth() },
       ]} />
@@ -858,6 +925,66 @@ export default function Editor() {
         ...(commentsList ?? []).map((c) => ({ label: firstLine(c.text) || 'Comment', sub: `Page ${c.page + 1}`, icon: 'bubble.left', onPress: () => { canvas.current?.scrollToPage(c.page); setComment({ id: c.id, text: c.text }); } })),
       ]} />
       {tabsOpen ? <NoteTabs current={id} onClose={() => setTabsOpen(false)} onPick={(n) => { setTabsOpen(false); leave(n); }} /> : null}
+      {scratch && !focus ? (
+        <Glass radius={18} style={{ position: 'absolute', top: 70, right: 12, width: 250, padding: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>Scratchpad</Text>
+            <Pressable accessibilityLabel="Close scratchpad" hitSlop={10} onPress={() => setScratch(false)}><Icon name="xmark" size={13} color="#6B7385" /></Pressable>
+          </View>
+          <TextInput multiline value={scratchText} onChangeText={saveScratch} placeholder="Jot anything. It stays with this note, not on the page." placeholderTextColor="#8A92A3" style={{ height: 150, marginTop: 8, fontSize: 15, color: '#15171C', textAlignVertical: 'top' }} />
+        </Glass>
+      ) : null}
+      {timerOpen && !present ? (
+        <Glass radius={26} style={{ position: 'absolute', bottom: 28, left: 14, flexDirection: 'row', alignItems: 'center', padding: 6, gap: 4 }}>
+          <Text accessibilityLabel="Focus timer" style={{ color: timerLeft === 0 ? '#E8590C' : '#15171C', fontSize: 18, fontWeight: '700', minWidth: 62, textAlign: 'center', fontVariant: ['tabular-nums'] }}>{String(Math.floor(timerLeft / 60)).padStart(2, '0')}:{String(timerLeft % 60).padStart(2, '0')}</Text>
+          <IconButton name={timerRun ? 'pause.fill' : 'play.fill'} label={timerRun ? 'Pause the timer' : 'Start the timer'} onPress={() => { if (timerLeft === 0) setTimerLeft(timerMin * 60); setTimerRun((r) => !r); }} />
+          <Pressable accessibilityLabel={`Timer length ${timerMin} minutes. Tap to change.`} onPress={nextLength} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(60,60,67,0.1)' }}><Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>{timerMin} min</Text></Pressable>
+          <IconButton name="xmark" label="Close the timer" onPress={() => { setTimerOpen(false); setTimerRun(false); setTimerLeft(timerMin * 60); }} />
+        </Glass>
+      ) : null}
+      {focus && present ? (
+        <Glass radius={28} style={{ position: 'absolute', bottom: 28, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', padding: 6, gap: 6 }}>
+          <IconButton name="chevron.left" label="Previous page" disabled={page.page <= 0} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} />
+          <Text style={{ color: '#15171C', fontSize: 15, fontWeight: '600', minWidth: 64, textAlign: 'center' }}>{page.page + 1} / {page.count}</Text>
+          <IconButton name="chevron.right" label="Next page" disabled={page.page >= page.count - 1} onPress={() => canvas.current?.scrollToPage(Math.min(page.count - 1, page.page + 1))} />
+          <IconButton name="xmark" label="Stop presenting" onPress={() => { setPresent(false); setFocus(false); }} />
+        </Glass>
+      ) : null}
+      <MenuSheet visible={flagsOpen} onClose={() => setFlagsOpen(false)} title="Flagged pages" items={[
+        ...flaggedPages.map(({ i }) => ({ label: `Page ${i + 1}`, icon: 'flag.fill', onPress: () => canvas.current?.scrollToPage(i) })),
+        { label: 'Clear all flags', icon: 'flag.slash', danger: true, onPress: () => lib.updateNote(id, { flags: [] }) },
+      ]} />
+      <Sheet visible={!!actions} onClose={() => setActions(null)} title="Action items" width={440}>
+        {actions?.busy ? <View style={{ padding: 30, alignItems: 'center' }}><ActivityIndicator color={t.accent} /></View> : (
+          <>
+            <Text selectable style={{ color: '#15171C', fontSize: 16, lineHeight: 24 }}>{actions?.text}</Text>
+            {actions?.text.startsWith('- [') ? (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                <Pressable accessibilityLabel="Add the checklist to the page" onPress={() => { canvas.current?.addPageText(page.page, actions.text.replace(/^- \[ \] /gm, '☐ ')); setActions(null); toast('Checklist added to the page'); }} style={{ flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Add to page</Text></Pressable>
+                <Pressable accessibilityLabel="Copy the checklist" onPress={() => { copyText(actions.text); toast('Copied'); }} style={{ height: 44, paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: t.chip }}><Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>Copy</Text></Pressable>
+              </View>
+            ) : null}
+          </>
+        )}
+      </Sheet>
+      <Sheet visible={statsOpen} onClose={() => setStatsOpen(false)} title="Note stats" width={380}>
+        {([
+          ['Pages', String(doc?.pages.length ?? 0)],
+          ['Strokes', String(st.strokes)],
+          ['Typed words', String((meta?.text ?? '').split(/\s+/).filter(Boolean).length)],
+          ['Recordings', String(recordings.length)],
+          ['Flagged pages', String(flaggedPages.length)],
+          ['Tags', meta?.tags?.length ? meta.tags.map((x) => '#' + x).join(' ') : 'None'],
+          ['Review', meta?.review ? `Next ${new Date(meta.review.next).toLocaleDateString()}` : 'Not scheduled'],
+          ['Created', meta ? new Date(meta.created).toLocaleDateString() : ''],
+          ['Last edited', meta ? new Date(meta.updated).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''],
+        ] as [string, string][]).map(([k, v]) => (
+          <View key={k} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#EEF0F4' }}>
+            <Text style={{ color: '#6B7385', fontSize: 15 }}>{k}</Text>
+            <Text style={{ color: '#15171C', fontSize: 15, fontWeight: '600' }}>{v}</Text>
+          </View>
+        ))}
+      </Sheet>
       <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />
       <ConfirmSheet visible={delRec != null} title="Delete this recording?" message="Your writing stays. The audio and its transcript are removed." onCancel={() => setDelRec(null)}
