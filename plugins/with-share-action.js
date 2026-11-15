@@ -13,8 +13,8 @@ const { withXcodeProject } = require('expo/config-plugins');
 
 const TARGET = 'QuillAction';
 const FILES = {
-  source: 'ShareViewController.swift',
-  storyboard: 'MainInterface.storyboard',
+  source: 'QuillActionViewController.swift',
+  storyboard: 'ActionInterface.storyboard',
   privacy: 'PrivacyInfo.xcprivacy',
   assets: 'Assets.xcassets',
   info: 'QuillAction-Info.plist',
@@ -120,7 +120,7 @@ function writeFiles(root, scheme, appId, group, activationRules) {
     CFBundlePackageType: '$(PRODUCT_BUNDLE_PACKAGE_TYPE)',
     NSExtension: {
       NSExtensionAttributes: { NSExtensionActivationRule: activationRules },
-      NSExtensionMainStoryboard: 'MainInterface',
+      NSExtensionMainStoryboard: 'ActionInterface',
       NSExtensionPointIdentifier: 'com.apple.ui-services',
     },
   }));
