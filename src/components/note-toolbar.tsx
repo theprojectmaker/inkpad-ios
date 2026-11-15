@@ -95,6 +95,8 @@ const INK = '#3B4252';
 const BLUE = '#007AFF';
 /** How many tools sit on the first row; the rest are one tap away. */
 const FIRST_ROW = 6;
+/** How far the tools slide when the toolbar changes page. */
+const SLIDE = 26;
 const FIRST_MIN = 4;
 const FIRST_MAX = 14;
 
@@ -379,13 +381,13 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const upright = dock === 'left' || dock === 'right';
   cardPlace = dock;
   const [set2, setSet2] = useState(false);
-  // Between the two pages of tools: the row slides right off the bar and the other slides in from the far side.
+  // Between the two pages of tools: a short, quiet slide. The row eases a little to one side as it fades, and the other eases in.
   const slide = useSharedValue(0);
-  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slide.value }], opacity: 1 - Math.min(1, Math.abs(slide.value) / 230) * 0.85 }));
-  const land = (to: boolean, from: number) => { setSet2(to); slide.value = -from; slide.value = withSpring(0, { damping: 19, stiffness: 190 }); };
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slide.value }], opacity: 1 - Math.min(1, Math.abs(slide.value) / SLIDE) }));
+  const land = (to: boolean, from: number) => { setSet2(to); slide.value = -from; slide.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) }); };
   const flip = (to: boolean) => {
-    const out = (to ? -1 : 1) * 230;
-    slide.value = withTiming(out, { duration: 190, easing: Easing.in(Easing.cubic) }, (done) => { if (done) runOnJS(land)(to, out); });
+    const out = (to ? -1 : 1) * SLIDE;
+    slide.value = withTiming(out, { duration: 110, easing: Easing.in(Easing.quad) }, (done) => { if (done) runOnJS(land)(to, out); });
   };
   const [pop, setPop] = useState<null | 'colors' | 'addColor' | 'size' | 'line' | 'nib' | 'brush' | 'shapes'>(null);
   const [toolbox, setToolbox] = useState(false);

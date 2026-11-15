@@ -81,6 +81,7 @@
       }
     },
     "owner": "solomonsasson",
+    "runtimeVersion": { "policy": "appVersion" },
     "updates": {
       "url": "https://u.expo.dev/fa46b175-bd32-4365-ab6c-dfc3354db0e5"
     },
