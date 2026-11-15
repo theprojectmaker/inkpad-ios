@@ -1,0 +1,51 @@
+# Checks the "Share to Quill" action extension (plugins/with-share-action.js) without signing anything:
+# makes the iOS project with the extension switched on and compiles just that target for the simulator.
+name: Share action check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      QUILL_ACTION: '1'
+      EXPO_PUBLIC_QUILL_TOKEN: check
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Make the iOS project (no pods needed for the extension)
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: What was made
+        run: |
+          ls -R ios/QuillAction
+          plutil -p ios/QuillAction/QuillAction-Info.plist
+          PROJ=$(ls -d ios/*.xcodeproj | head -1)
+          echo "targets:"; xcodebuild -list -project "$PROJ" | sed -n '/Targets:/,/^$/p'
+          grep -c "QuillAction.appex" "$PROJ/project.pbxproj"
+          grep -n "Embed" "$PROJ/project.pbxproj" | head
+
+      - name: Compile the extension for the simulator
+        run: |
+          PROJ=$(ls -d ios/*.xcodeproj | head -1)
+          xcodebuild -project "$PROJ" -target QuillAction -configuration Release -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO SYMROOT="$PWD/build" build > build.log 2>&1 || { grep -E "error" build.log | sort -u | head -40; tail -30 build.log; exit 1; }
+          tail -3 build.log
+          APPEX=$(find build -name "QuillAction.appex" | head -1)
+          echo "built: $APPEX"; ls "$APPEX"
+          plutil -p "$APPEX/Info.plist" | grep -E "NSExtensionPointIdentifier|CFBundleDisplayName|CFBundleIdentifier|CFBundleIcon"
+          ls "$APPEX" | grep -i -E "Assets.car|AppIcon" || echo "no compiled icon found"

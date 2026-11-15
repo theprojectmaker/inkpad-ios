@@ -4,6 +4,10 @@
 module.exports = ({ config }) => ({
   ...config,
   runtimeVersion: process.env.INKPAD_EXPO_GO === '1' ? 'exposdk:57.0.0' : { policy: 'appVersion' },
+  // "Share to Quill" in the share sheet's bottom row: a second extension with its own App ID and profile
+  // (com.solyapps.notes.action). Builds only add it once QUILL_ACTION=1 (repo variable), after that
+  // profile has been made once with: npx eas-cli credentials -p ios
+  plugins: [...(config.plugins ?? []), ...(process.env.QUILL_ACTION === '1' ? ['./plugins/with-share-action'] : [])],
   // iCloud sync: needs the iCloud capability (container iCloud.com.solyapps.notes) on the App ID and
   // in the provisioning profile. Builds only ask for it once QUILL_ICLOUD=1 (repo variable), so they
   // keep signing until that's set up.
