@@ -4,6 +4,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
+import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
@@ -249,6 +250,11 @@ export default function Editor() {
 
   const leaving = useRef(false);
   const back = () => leave();
+  // Opening: the note grows into place. Closing or switching tab: it settles back the moment you tap,
+  // while the saving goes on behind it, then hands over to the next screen.
+  const shown = useSharedValue(0);
+  useEffect(() => { shown.value = withSpring(1, { damping: 22, stiffness: 240, mass: 0.9 }); }, [shown]);
+  const openStyle = useAnimatedStyle(() => ({ opacity: 0.25 + 0.75 * Math.min(1, shown.value), transform: [{ scale: 0.95 + 0.05 * shown.value }] }));
   useEffect(() => { setOpenNote(id); return () => setOpenNote(null); }, [id]);
   // Settings > keep the screen on while a note is open.
   useEffect(() => {
@@ -260,6 +266,7 @@ export default function Editor() {
   const leave = async (to?: string) => {
     if (leaving.current) return;
     leaving.current = true;
+    shown.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
     // Recording, or just stopped: its notes and pages have to land before the note closes.
     try { if (audio.rec) await stopRecording(); else if (stopRun.current) await stopRun.current; } catch {}
     try { await canvas.current?.save(); } catch {}
@@ -656,7 +663,7 @@ export default function Editor() {
   const narrow = width < 1000;   // labels hide, so the three parts of the bar never touch
   const subjectName = lib.lib.folders.find((f) => f.id === meta?.folderId)?.name;
   return (
-    <View style={{ flex: 1, backgroundColor: '#F4F5F8' }}>
+    <Reanimated.View style={[{ flex: 1, backgroundColor: '#F4F5F8' }, openStyle]}>
       <StatusBar hidden />
       <Stack.Screen options={{ gestureEnabled: false, statusBarHidden: true }} />
       <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -889,6 +896,6 @@ export default function Editor() {
         onConfirm={() => { const i = delPage; setDelPage(null); if (i != null) removePage(i); }} />
       <PromptSheet visible={renaming} title="Rename note" initial={meta?.title ?? ''} onCancel={() => setRenaming(false)}
         onSubmit={(v) => { if (v.trim()) lib.updateNote(id, { title: v.trim() }); setRenaming(false); }} />
-    </View>
+    </Reanimated.View>
   );
 }

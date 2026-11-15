@@ -457,7 +457,17 @@ extension QuillCanvasView {
   }
 
   /// The page under a point, if there is one: there's nowhere to write beside or between pages.
-  private func pageRect(at p: CGPoint) -> CGRect? { frames.first { $0.contains(p) } }
+  /// Where a stroke starting at `p` may go: its page, the pages either side and the seams between them,
+  /// so writing can run straight across from one page to the next. nil: off the paper altogether.
+  private func pageRect(at p: CGPoint) -> CGRect? {
+    guard let i = frames.indices.first(where: { frames[$0].insetBy(dx: 0, dy: -pageGap).contains(p) }) else { return nil }
+    // The seam above the first page and below the last isn't paper.
+    if p.y < frames[0].minY || p.y > frames[frames.count - 1].maxY { return nil }
+    var area = frames[i]
+    if i > 0 { area = area.union(frames[i - 1]) }
+    if i + 1 < frames.count { area = area.union(frames[i + 1]) }
+    return area
+  }
 
   /// Not right after a zoom (fingers rarely lift together), and writing has to start on a page.
   /// A big touch has appeared: it's a hand, and hands don't scroll or zoom.

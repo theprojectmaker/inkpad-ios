@@ -295,6 +295,9 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   private var fingerDraws = false
   private var contentH: CGFloat = 792
   private let gap: CGFloat = 28
+  var pageGap: CGFloat { gap }
+  /// A page and half of the seam above and below it: the ink that travels with that page.
+  func inkArea(_ i: Int) -> CGRect { frames[i].insetBy(dx: 0, dy: -gap / 2) }
   private var lastWidth: CGFloat = 0
   private var fitted = false
 

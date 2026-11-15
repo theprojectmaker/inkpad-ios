@@ -246,7 +246,7 @@ extension QuillCanvasView {
 
   private func pictureIsCurrent(_ i: Int) -> Bool {
     guard let pic = inkPictures[specs[i].id] else { return false }
-    return !document.changed(frames[i], since: pic.version)
+    return !document.changed(inkArea(i), since: pic.version)
   }
 
   /// Keeps the pictures ready, so a pinch starts without a pause: after each save, on opening a note
@@ -254,12 +254,12 @@ extension QuillCanvasView {
   func refreshInkPictures() {
     guard let near = nearPages(), !zoomPreviewing else { return }
     trimInkPictures()
-    ink.prepare(document.strokes.filter { s in near.contains { frames[$0].intersects(s.bounds) } })
+    ink.prepare(document.strokes.filter { s in near.contains { inkArea($0).intersects(s.bounds) } })
     pictureRun += 1
     let run = pictureRun
     let version = document.version
     let strokes = document.strokes.filter { !$0.lifted }
-    let jobs = near.filter { $0 < specs.count && !pictureIsCurrent($0) }.map { (specs[$0].id, frames[$0]) }
+    let jobs = near.filter { $0 < specs.count && !pictureIsCurrent($0) }.map { (specs[$0].id, inkArea($0)) }
     if jobs.isEmpty { return }
     let k = pictureScale()
     DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -428,13 +428,13 @@ extension QuillCanvasView {
       let id = specs[i].id
       if !pictureIsCurrent(i) {
         if wait && frames[i].intersects(visibleArea) {
-          inkPictures[id] = (version, inkPicture(all(), page: frames[i], scale: k))
+          inkPictures[id] = (version, inkPicture(all(), page: inkArea(i), scale: k))
         } else if !picturesInFlight.contains(id) {
           picturesInFlight.insert(id)
-          later.append((i, id, frames[i]))
+          later.append((i, id, inkArea(i)))
         }
       }
-      pageViewList[i].showInk(inkPictures[id]?.image, in: inkLowView)
+      pageViewList[i].showInk(inkPictures[id]?.image, in: inkLowView, grow: pageGap / 2)
     }
     for i in pageViewList.indices where i < near.lowerBound - 1 || i > near.upperBound + 1 { pageViewList[i].showInk(nil, in: inkLowView) }
     if later.isEmpty { return }
@@ -447,7 +447,7 @@ extension QuillCanvasView {
           self.picturesInFlight.remove(id)
           guard i < self.specs.count, self.specs[i].id == id, !self.document.changed(f, since: version) else { return }
           self.inkPictures[id] = (version, image)
-          if self.zoomPreviewing, i < self.pageViewList.count { self.pageViewList[i].showInk(image, in: self.inkLowView) }
+          if self.zoomPreviewing, i < self.pageViewList.count { self.pageViewList[i].showInk(image, in: self.inkLowView, grow: self.pageGap / 2) }
         }
       }
     }

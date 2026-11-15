@@ -160,7 +160,7 @@ final class PageTileView: UIView {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   /// In a layer above the photos on the page, as the ink always is.
-  func showInk(_ image: CGImage?, in host: UIView) {
+  func showInk(_ image: CGImage?, in host: UIView, grow: CGFloat = 0) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     if image == nil {
@@ -168,7 +168,7 @@ final class PageTileView: UIView {
       inkShot.contents = nil
     } else {
       if inkShot.superlayer !== host.layer { host.layer.addSublayer(inkShot) }
-      inkShot.frame = frame
+      inkShot.frame = frame.insetBy(dx: 0, dy: -grow)   // the picture takes in half the seam above and below
       inkShot.contents = image
     }
     CATransaction.commit()
