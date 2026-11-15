@@ -186,6 +186,9 @@ public final class QuillCanvasModule: Module {
       Prop("zoomReach") { (view: QuillCanvasView, reach: Double) in
         view.zoomReach = CGFloat(max(5, min(15, reach)))
       }
+      Prop("tapUndo") { (view: QuillCanvasView, on: Bool) in
+        view.tapUndo = on
+      }
       Prop("tethered") { (view: QuillCanvasView, on: Bool) in
         view.tethered = on
       }

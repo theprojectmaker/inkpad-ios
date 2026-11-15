@@ -49,12 +49,16 @@ export type Settings = {
   inkSize: number;           // 0 | 1 | 2
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
+  tapUndo?: boolean;         // two-finger tap undoes, three-finger tap redoes (off unless turned on)
+  bubble?: boolean;          // the movable quick button on the note (off unless turned on)
+  bubbleAt?: { x: number; y: number };
   zoomOverclock?: boolean;   // pinch in to 1500% instead of 500% (off unless turned on)
   smoothMove: boolean;       // the tethered style: ink stays locked to the page while it scrolls and zooms
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
   inkStats?: boolean;        // numbers on the page: how fast the ink is
   icloud?: boolean;          // sync notes with iCloud (on unless turned off)
   driveSync?: boolean;       // on: a note is saved to the Quill folder in Google Drive when you leave it
+  penNib?: PenNib;           // the Pen tool's nib (ballpoint unless changed)
   toolOn?: string[];         // quick tools (flag, scratchpad, timer, present, find) put on the toolbar; they start off
   toolFirstPage?: number;    // how many tools sit on the toolbar's first page (6 unless changed, 4 to 14)
   toolDock?: 'top' | 'bottom' | 'left' | 'right';   // which edge of the screen the toolbar sits on
@@ -79,6 +83,8 @@ export type PenLine = 'even' | 'pressure' | 'dash' | 'dot';
 export type ToolKit = { colors: string[]; color: number; sizes: number[]; size: number; line: PenLine };
 export type FavTool = { kind: 'pen' | 'marker'; style: PenStyle; color: string; size: number };
 export type PenStyle = 'pen' | 'felt' | 'fountain' | 'pencil';
+/** What the Pen tool writes with. */
+export type PenNib = 'ball' | 'gel' | 'fineliner' | 'sketch' | 'felt';
 
 export const DEFAULTS: Settings = {
   theme: 'system', view: 'grid', sort: 'updated',

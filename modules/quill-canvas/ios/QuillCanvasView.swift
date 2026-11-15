@@ -118,6 +118,30 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     g.isEnabled = false
     return g
   }()
+  /// Two fingers tapping together undo; three redo. Off unless the setting is on.
+  var tapUndo = false { didSet { undoTap.isEnabled = tapUndo; redoTap.isEnabled = tapUndo } }
+  private func fingerTap(_ fingers: Int, _ action: Selector) -> UITapGestureRecognizer {
+    let g = UITapGestureRecognizer(target: self, action: action)
+    g.numberOfTouchesRequired = fingers
+    g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+    g.cancelsTouchesInView = false
+    g.isEnabled = false
+    return g
+  }
+  lazy var undoTap: UITapGestureRecognizer = fingerTap(2, #selector(onUndoTap))
+  lazy var redoTap: UITapGestureRecognizer = fingerTap(3, #selector(onRedoTap))
+  /// Not while writing, and not as the tail end of a pinch.
+  private var tapAllowed: Bool { capture == nil && !canvas.pencilDown && !canvas.isZooming && !canvas.isDragging && CACurrentMediaTime() - lastZoomEnd > 0.35 }
+  @objc func onUndoTap() {
+    guard tapAllowed, !undoStack.isEmpty else { return }
+    undo()
+    selectionMessage("Undo")
+  }
+  @objc func onRedoTap() {
+    guard tapAllowed, !redoStack.isEmpty else { return }
+    redo()
+    selectionMessage("Redo")
+  }
   lazy var selTap: UITapGestureRecognizer = {
     let g = UITapGestureRecognizer(target: self, action: #selector(onSelTap(_:)))
     g.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -407,6 +431,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     addGestureRecognizer(inkGesture)
     addGestureRecognizer(selPan)
     addGestureRecognizer(selTap)
+    addGestureRecognizer(undoTap)
+    addGestureRecognizer(redoTap)
     addGestureRecognizer(tapeTap)
     addGestureRecognizer(inkTapGR)
     addGestureRecognizer(zoomPan)
