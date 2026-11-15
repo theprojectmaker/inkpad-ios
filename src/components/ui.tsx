@@ -274,12 +274,12 @@ function GuardCard({ label, error, retry }: { label?: string; error: Error; retr
   );
 }
 
-/** A floating surface: Liquid Glass where the iPad has it (iPadOS 26), a white card with a soft shadow where it doesn't. */
+/** A floating surface: clear Liquid Glass where the iPad has it (iPadOS 26), a see-through white card where it doesn't. */
 const HAS_GLASS = (() => { try { return Platform.OS === 'ios' && isLiquidGlassAvailable(); } catch { return false; } })();
 export function Glass({ radius = 22, style, children, ...rest }: ViewProps & { radius?: number }) {
   return (
-    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, HAS_GLASS ? null : { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
-      {HAS_GLASS ? <GlassView glassEffectStyle="regular" style={[StyleSheet.absoluteFill, { borderRadius: radius, borderCurve: 'continuous' }]} /> : null}
+    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, HAS_GLASS ? null : { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(60,60,67,0.18)', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
+      {HAS_GLASS ? <GlassView glassEffectStyle="clear" style={[StyleSheet.absoluteFill, { borderRadius: radius, borderCurve: 'continuous' }]} /> : null}
       {children}
     </View>
   );
