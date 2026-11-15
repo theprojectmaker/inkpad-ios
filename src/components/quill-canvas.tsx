@@ -59,6 +59,7 @@ type Props = ViewProps & {
   straightMarker?: boolean;  // a nearly straight highlighter swipe comes out straight
   ruler?: boolean;
   inkStats?: boolean;        // the on-screen readout of how fast the ink is
+  zoomReach?: number;        // how far in a pinch goes, in page widths (5, or 15 with Zoom overclock)
   tethered?: boolean;        // the ink rides on the pages while they move (smooth scrolling and zooming)
   shapeSnap?: boolean;       // hold the Pencil at the end of a stroke: it snaps to a line or shape
   drawingPath: string;

@@ -278,9 +278,13 @@ function GuardCard({ label, error, retry }: { label?: string; error: Error; retr
 const HAS_GLASS = (() => { try { return Platform.OS === 'ios' && isLiquidGlassAvailable(); } catch { return false; } })();
 export function Glass({ radius = 22, style, children, ...rest }: ViewProps & { radius?: number }) {
   return (
-    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, HAS_GLASS ? null : { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(60,60,67,0.18)', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
-      {HAS_GLASS ? <GlassView glassEffectStyle="clear" style={[StyleSheet.absoluteFill, { borderRadius: radius, borderCurve: 'continuous' }]} /> : null}
+    HAS_GLASS ? (
+      // The buttons sit inside the glass, so it lights up and flexes under a touch like the system's bars.
+      <GlassView {...rest} glassEffectStyle="clear" isInteractive style={[{ borderRadius: radius, borderCurve: 'continuous' }, style]}>{children}</GlassView>
+    ) : (
+    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(60,60,67,0.18)', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
       {children}
     </View>
+    )
   );
 }

@@ -135,6 +135,14 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var picturesInFlight = Set<String>()
   /// The tethered style: while the page moves the ink rides on the pages (see moveBegan).
   var tethered = true
+  /// How far in a pinch can go, in page widths: 5 (500%), or 15 with Zoom overclock on.
+  var zoomReach: CGFloat = 5 {
+    didSet {
+      guard oldValue != zoomReach, fitted, lastFit > 0 else { return }
+      canvas.maximumZoomScale = lastFit * (zoomReach + 1)
+      if canvas.zoomScale > lastFit * zoomReach { canvas.setZoomScale(lastFit * zoomReach, animated: false); applyZoom() }
+    }
+  }
   var inkPatch: (rect: CGRect, zoom: CGFloat, version: Int, image: CGImage?)?
   var patchRun = 0
   var patchSoon: DispatchWorkItem?
@@ -446,8 +454,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     let topY = (canvas.contentOffset.y + canvas.contentInset.top) / oldZ   // content point at the top of the screen
     lastFit = f
     canvas.minimumZoomScale = f * 0.5
-    canvas.maximumZoomScale = f * 6
-    canvas.setZoomScale(min(f * 6, max(f * 0.5, f * ratio)), animated: false)
+    canvas.maximumZoomScale = f * (zoomReach + 1)
+    canvas.setZoomScale(min(f * (zoomReach + 1), max(f * 0.5, f * ratio)), animated: false)
     applyZoom()
     let z = canvas.zoomScale
     if !fitted {
@@ -776,7 +784,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     lastPage = -1
     DispatchQueue.main.async { [weak self] in self?.reportPage() }
     if bounds.width > 1 {
-      if fitted { canvas.minimumZoomScale = fitScale() * 0.5; canvas.maximumZoomScale = fitScale() * 6; applyZoom() } else { fitWidth() }
+      if fitted { canvas.minimumZoomScale = fitScale() * 0.5; canvas.maximumZoomScale = fitScale() * (zoomReach + 1); applyZoom() } else { fitWidth() }
     }
   }
 

@@ -219,7 +219,8 @@ extension QuillCanvasView {
   /// As sharp as the screen at the page width (the pictures are what you see while the page moves), within reason.
   private func pictureScale() -> CGFloat {
     let screen = window?.screen.scale ?? UIScreen.main.scale
-    return min(4, max(3, currentFit() * screen))
+    // Exactly screen-sharp at the page width. Bigger pictures took long enough to draw to stall a scroll.
+    return min(3, max(2, currentFit() * screen))
   }
 
   private func inkPicture(_ strokes: [InkStroke], page f: CGRect, scale k: CGFloat) -> CGImage? {
@@ -325,7 +326,7 @@ extension QuillCanvasView {
       self.refreshInkPatch()
     }
     writingIdle = w
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: w)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
   }
 
   func refreshInkPatchSoon() {
@@ -373,7 +374,7 @@ extension QuillCanvasView {
     let f = currentFit(), z = canvas.zoomScale
     let target: CGFloat
     if z < f * 1.08 && abs(z - f) > f * 0.003 { target = f }
-    else if z > f * 5 { target = f * 5 }
+    else if z > f * zoomReach { target = f * zoomReach }
     else { return false }
     let mid = CGPoint(x: canvas.bounds.width / 2, y: canvas.bounds.height / 2)
     let off0 = canvas.contentOffset
@@ -410,7 +411,8 @@ extension QuillCanvasView {
 
   /// Puts each nearby page's ink on the page as a picture. What's on screen is made this instant; the
   /// rest follow without holding anything up. Pages that have gone far away give theirs back.
-  private func showPagePictures(_ near: ClosedRange<Int>) {
+  /// `wait`: false while the page is already moving, when nothing may hold a frame up.
+  private func showPagePictures(_ near: ClosedRange<Int>, wait: Bool = true) {
     let version = document.version
     let k = pictureScale()
     var strokes: [InkStroke]?
@@ -425,7 +427,7 @@ extension QuillCanvasView {
     for i in near where i < pageViewList.count && i < specs.count {
       let id = specs[i].id
       if !pictureIsCurrent(i) {
-        if frames[i].intersects(visibleArea) {
+        if wait && frames[i].intersects(visibleArea) {
           inkPictures[id] = (version, inkPicture(all(), page: frames[i], scale: k))
         } else if !picturesInFlight.contains(id) {
           picturesInFlight.insert(id)
@@ -456,7 +458,7 @@ extension QuillCanvasView {
   func extendPagePictures() {
     guard zoomPreviewing, let near = nearPages() else { return }
     trimInkPictures()
-    showPagePictures(near)
+    showPagePictures(near, wait: false)
   }
 
   /// The page is about to move (a drag, or a jump to another page). In the tethered style the ink rides
@@ -464,7 +466,10 @@ extension QuillCanvasView {
   /// Returns false when that can't be used (writing is going on): the caller falls back to the moving picture.
   func moveBegan() -> Bool {
     guard tethered, capture == nil, !canvas.pencilDown else { return false }
-    if !zoomPreviewing { pinchBegan() }
+    if !zoomPreviewing {
+      pinchBegan()
+      if zoomPreviewing { GestureLog.add("scroll start"); GestureLog.watching = true }
+    }
     return zoomPreviewing
   }
 
@@ -492,6 +497,7 @@ extension QuillCanvasView {
       return
     }
     zoomPreviewing = false
+    GestureLog.watching = false
     GestureLog.add("at rest, ink back")
     refreshZoomInset()     // places the ink for where the pinch ended
     // The pictures go once the sharp ink is on the screen (with a limit, in case that's never reported).

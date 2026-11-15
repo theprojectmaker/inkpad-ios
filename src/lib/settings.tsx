@@ -49,6 +49,7 @@ export type Settings = {
   inkSize: number;           // 0 | 1 | 2
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
+  zoomOverclock?: boolean;   // pinch in to 1500% instead of 500% (off unless turned on)
   smoothMove: boolean;       // the tethered style: ink stays locked to the page while it scrolls and zooms
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes
   inkStats?: boolean;        // numbers on the page: how fast the ink is

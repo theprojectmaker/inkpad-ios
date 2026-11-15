@@ -694,7 +694,9 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
             {grip}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false} style={{ flexGrow: 0 }} contentContainerStyle={{ height: 48, alignItems: 'center', paddingHorizontal: 8 }}>{tools}</ScrollView>
           </Glass>
-          <Glass radius={22} style={{ maxWidth: '100%' }}>{options}</Glass>
+          <Glass radius={24} style={{ maxWidth: '100%' }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ flexGrow: 0 }}>{options}</ScrollView>
+          </Glass>
         </Reanimated.View>
       )}
     </View>
