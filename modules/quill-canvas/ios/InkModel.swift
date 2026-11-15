@@ -83,7 +83,7 @@ final class InkStroke {
     return hypot(p.x - a.x - t * dx, p.y - a.y - t * dy)
   }
 
-  private static func resampled(_ pts: [InkPoint], spacing: Float) -> [InkPoint] {
+  static func resampled(_ pts: [InkPoint], spacing: Float) -> [InkPoint] {
     guard pts.count > 1 else { return pts }
     var out: [InkPoint] = [pts[0]]
     out.reserveCapacity(pts.count * 2)

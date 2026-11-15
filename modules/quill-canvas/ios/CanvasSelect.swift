@@ -1086,7 +1086,7 @@ extension QuillCanvasView {
   }
 
   func morphMenu() -> UIMenu {
-    let make = { [weak self] (name: String) in { (_: UIAction) in self?.morphSelection(name) } }
+    let make = { [weak self] (name: String) -> UIActionHandler in { _ in self?.morphSelection(name) } }
     let shapes = UIMenu(title: "Make it a clean…", image: UIImage(systemName: "square.on.circle"), children: [
       UIAction(title: "Line", image: UIImage(systemName: "line.diagonal"), handler: make("line")),
       UIAction(title: "Rectangle", image: UIImage(systemName: "rectangle"), handler: make("rect")),
