@@ -15,7 +15,9 @@ const TARGET = 'QuillAction';
 const FILES = {
   source: 'QuillActionViewController.swift',
   storyboard: 'ActionInterface.storyboard',
-  privacy: 'PrivacyInfo.xcprivacy',
+  // In a folder of its own: the share extension has a file of the same name, and one reference shared by two
+  // targets makes CocoaPods refuse the project ("no parent for object PrivacyInfo.xcprivacy").
+  privacy: 'ActionPrivacy/PrivacyInfo.xcprivacy',
   assets: 'Assets.xcassets',
   info: 'QuillAction-Info.plist',
   entitlements: 'QuillAction.entitlements',
@@ -104,6 +106,7 @@ function writeFiles(root, scheme, appId, group, activationRules) {
     </scenes>
 </document>
 `);
+  fs.mkdirSync(path.join(dir, 'ActionPrivacy'), { recursive: true });
   fs.writeFileSync(path.join(dir, FILES.privacy), plist.build({
     NSPrivacyAccessedAPITypes: [{ NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategoryUserDefaults', NSPrivacyAccessedAPITypeReasons: ['CA92.1'] }],
     NSPrivacyCollectedDataTypes: [],

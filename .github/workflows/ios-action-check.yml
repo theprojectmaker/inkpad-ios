@@ -39,6 +39,11 @@ jobs:
           grep -c "QuillAction.appex" "$PROJ/project.pbxproj"
           grep -n "Embed" "$PROJ/project.pbxproj" | head
 
+      - name: The project is one CocoaPods will accept
+        run: |
+          PROJ=$(ls -d ios/*.xcodeproj | head -1)
+          ruby -e 'require "xcodeproj"; p = Xcodeproj::Project.open(ARGV[0]); p.save; puts "project saves cleanly"' "$PROJ"
+
       - name: Compile the extension for the simulator
         run: |
           PROJ=$(ls -d ios/*.xcodeproj | head -1)
