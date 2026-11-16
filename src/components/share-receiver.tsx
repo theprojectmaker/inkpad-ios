@@ -4,14 +4,14 @@
 // Mounted once for the whole app.
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { AppState, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Reanimated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type Page, uid } from '@/lib/model';
 import { imagePages, loadDoc, pdfPages, saveDoc } from '@/lib/noteio';
-import { pdfCover } from '@/lib/ondevice';
+import { pdfCover, setShareLibrary, takePendingImports } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
 import { useIncomingShare } from '@/lib/share';
 import { importZip } from '@/lib/zipimport';
@@ -75,11 +75,9 @@ export function ShareReceiver() {
     setFiles(usable);
   }, [hasShareIntent, shareIntent, resetShareIntent, lib, toast, busy]);
 
-  const run = async () => {
-    const list = files;
-    if (!list || working.current) return;
-    setFiles(null);
-    working.current = true;
+  /** Makes the notes. Used by the pop-up here and for imports asked for from the Share to Quill screen in another app. */
+  const importFiles = async (list: Shared[], o: { existing: boolean; into: string | null; name: string; folder: string | null }) => {
+    const { existing, into, name, folder } = o;
     let result: { id: string; title: string; added: number } | null = null;
     try {
       const pdfs = list.filter(isPdf);
@@ -123,9 +121,60 @@ export function ShareReceiver() {
         }
       }
     } catch (e) { toast("Couldn't import that: " + String((e as Error)?.message ?? e)); }
-    finally { busy(null); working.current = false; }
+    finally { busy(null); }
+    return result;
+  };
+  const run = async () => {
+    const list = files;
+    if (!list || working.current) return;
+    setFiles(null);
+    working.current = true;
+    const result = await importFiles(list, { existing, into, name, folder });
+    working.current = false;
     if (result) setDone(result);
   };
+
+  // Imports asked for from the Share to Quill screen in another app: done when Quill is next open.
+  const checkPending = async () => {
+    if (!lib.ready || working.current) return;
+    const waiting = takePendingImports();
+    if (!waiting.length) return;
+    working.current = true;
+    let open: string | null = null, made = 0;
+    for (const p of waiting) {
+      const usable = (p.files ?? []).filter((f) => /^image\//i.test(f.mimeType) || isPdf(f));
+      if (!usable.length) continue;
+      // The note or folder it named may have gone since: then it becomes a new note with no subject.
+      const target = p.mode === 'existing' && p.into && lib.meta(p.into) ? p.into : null;
+      const folderOk = p.folderId && lib.lib.folders.some((f) => f.id === p.folderId) ? p.folderId : null;
+      const done1 = await importFiles(usable, { existing: !!target, into: target, name: p.title ?? '', folder: folderOk });
+      if (done1) { made++; if (p.open) open = done1.id; }
+      for (const f of usable) fsx.removeUri(f.path);
+    }
+    working.current = false;
+    if (open) router.push(`/note/${open}`);
+    else if (made) toast(made === 1 ? 'The file you shared is now in Quill.' : `${made} things you shared are now in Quill.`);
+  };
+  const check = useRef(checkPending);
+  check.current = checkPending;
+  useEffect(() => {
+    if (!lib.ready) return;
+    check.current();
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') check.current(); });
+    return () => sub.remove();
+  }, [lib.ready]);
+
+  // The Share to Quill screen lists folders and recent notes: it reads them from here.
+  useEffect(() => {
+    if (!lib.ready) return;
+    const timer = setTimeout(() => {
+      const names = new Map(lib.lib.folders.map((f) => [f.id, f.name]));
+      const notes = lib.lib.notes.filter((n) => !n.trashed).slice().sort((a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated)).slice(0, 40)
+        .map((n) => ({ id: n.id, title: n.title, detail: [`${n.pages} ${n.pages === 1 ? 'page' : 'pages'}`, n.folderId ? names.get(n.folderId) : null].filter(Boolean).join(' · ') }));
+      setShareLibrary(JSON.stringify({ folders: lib.lib.folders.map((f) => ({ id: f.id, name: f.name, color: f.color })), notes }));
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [lib.ready, lib.lib]);
 
   const recent = lib.lib.notes.filter((n) => !n.trashed).slice().sort((a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated)).slice(0, 12);
   const last = recent[0];

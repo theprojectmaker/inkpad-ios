@@ -108,6 +108,20 @@ public final class QuillCanvasModule: Module {
       ColorPick.show(start: start, from: vc) { promise.resolve($0) }
     }.runOnQueue(.main)
 
+    // What the "Share to Quill" screen needs to know about the library (folders, recent notes), as JSON.
+    Function("setShareLibrary") { (json: String) in
+      UserDefaults(suiteName: "group.\(Bundle.main.bundleIdentifier ?? "com.solyapps.notes")")?.set(json, forKey: "quillShareLibrary")
+    }
+
+    // The imports that screen asked for while Quill wasn't looking, as JSON; taking them clears the list.
+    Function("takePendingImports") { () -> String in
+      let store = UserDefaults(suiteName: "group.\(Bundle.main.bundleIdentifier ?? "com.solyapps.notes")")
+      let list = store?.array(forKey: "quillPendingImports") ?? []
+      store?.removeObject(forKey: "quillPendingImports")
+      guard JSONSerialization.isValidJSONObject(list), let data = try? JSONSerialization.data(withJSONObject: list) else { return "[]" }
+      return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
     // Puts text on the clipboard.
     AsyncFunction("copyText") { (text: String) in
       UIPasteboard.general.string = text

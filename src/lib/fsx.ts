@@ -83,6 +83,10 @@ export const fsx = {
     if (dst.exists) dst.delete();
     file(from).copySync(dst);
   },
+  /** Deletes a file anywhere the app can reach, given as a file:// uri or a full path. */
+  removeUri(uri: string) {
+    try { const f = new File(uri); if (f.exists) f.delete(); } catch {}
+  },
   uri(path: string) {
     return file(path).uri;
   },

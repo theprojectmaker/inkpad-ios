@@ -62,6 +62,7 @@ export const fsx = {
     const b = bin.get(from);
     if (b) bin.set(to, { ...b });
   },
+  removeUri(_uri: string) {},
   uri(path: string) {
     const b = bin.get(path);
     return b ? `data:${b.mime};base64,${b.b64}` : '';

@@ -18,6 +18,8 @@ type NativeOnDevice = {
   defineWord(word: string): Promise<void>;
   imageShrink(src: string, dst: string, maxSide: number, quality: number, wantBase64: boolean): Promise<{ w: number; h: number; base64?: string }>;
   enhanceImage(src: string, dst: string, mode: string): Promise<boolean>;
+  setShareLibrary?(json: string): void;
+  takePendingImports?(): string;
   localAIStatus(): LocalAIStatus;
   localAI(instructions: string, prompt: string): Promise<string>;
 };
@@ -105,4 +107,15 @@ export async function askLocal(instructions: string, prompt: string): Promise<st
 /** Stops the screen dimming and locking while true (Settings > keep the screen on). */
 export function keepAwake(on: boolean) {
   try { requireNativeModule<{ keepAwake(on: boolean): void }>('QuillCanvas').keepAwake(on); } catch {}
+}
+
+/** An import asked for from the "Share to Quill" screen in another app. */
+export type PendingImport = { id: string; mode: 'new' | 'existing'; title?: string; folderId?: string; into?: string; open?: boolean; files: { path: string; fileName?: string; mimeType: string }[] };
+
+/** Tells the "Share to Quill" screen which folders and recent notes there are. Does nothing in builds without it. */
+export function setShareLibrary(json: string) { try { Native?.setShareLibrary?.(json); } catch {} }
+
+/** The imports waiting from the "Share to Quill" screen; taking them clears the list. */
+export function takePendingImports(): PendingImport[] {
+  try { const raw = Native?.takePendingImports?.(); return raw ? (JSON.parse(raw) as PendingImport[]) : []; } catch { return []; }
 }

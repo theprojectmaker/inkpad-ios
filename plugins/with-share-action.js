@@ -89,9 +89,9 @@ const ICONS = [
 function writeFiles(root, scheme, appId, group, activationRules) {
   const dir = path.join(root, TARGET);
   fs.mkdirSync(dir, { recursive: true });
-  // The same view controller the share extension uses: it copies what was shared into the app group and opens the app.
-  const template = fs.readFileSync(require.resolve('expo-share-intent/plugin/build/ios/ShareExtensionViewController.swift'), 'utf8');
-  fs.writeFileSync(path.join(dir, FILES.source), template.replaceAll('<SCHEME>', scheme).replaceAll('<GROUPIDENTIFIER>', group).replaceAll('<HIDEVIEW>', 'true'));
+  // Quill's own screen: it asks where the file should go, right there in the share sheet.
+  const template = fs.readFileSync(path.join(__dirname, 'share-action', 'QuillActionViewController.swift'), 'utf8');
+  fs.writeFileSync(path.join(dir, FILES.source), template.replaceAll('<SCHEME>', scheme).replaceAll('<GROUPIDENTIFIER>', group));
   fs.writeFileSync(path.join(dir, FILES.storyboard), `<?xml version="1.0" encoding="UTF-8"?>
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="13122.16" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="j1y-V4-xli">
     <dependencies>
@@ -102,11 +102,11 @@ function writeFiles(root, scheme, appId, group, activationRules) {
     <scenes>
         <scene sceneID="ceB-am-kn3">
             <objects>
-                <viewController id="j1y-V4-xli" customClass="ShareViewController" customModuleProvider="target" sceneMemberID="viewController">
+                <viewController id="j1y-V4-xli" customClass="QuillActionViewController" customModuleProvider="target" sceneMemberID="viewController">
                     <view key="view" opaque="NO" contentMode="scaleToFill" id="wbc-yd-nQP">
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <color key="backgroundColor" red="0.0" green="0.0" blue="0.0" alpha="0.0" colorSpace="custom" customColorSpace="sRGB"/>
+                        <color key="backgroundColor" systemColor="systemGroupedBackgroundColor"/>
                         <viewLayoutGuide key="safeArea" id="1Xd-am-t49"/>
                     </view>
                 </viewController>
