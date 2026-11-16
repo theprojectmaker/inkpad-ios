@@ -203,6 +203,9 @@ public final class QuillCanvasModule: Module {
       Prop("tapUndo") { (view: QuillCanvasView, on: Bool) in
         view.tapUndo = on
       }
+      Prop("tidyOnLift") { (view: QuillCanvasView, on: Bool) in
+        view.tidyOnLift = on
+      }
       Prop("tethered") { (view: QuillCanvasView, on: Bool) in
         view.tethered = on
       }

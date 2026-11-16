@@ -269,6 +269,8 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
         <Section title="Apple Pencil and fingers">
           <Row icon="hand.point.up.left" label="Smooth scrolling and zoom" note="New: the ink stays locked to the page while it moves. Turn off for the old way."
             onPress={() => set({ smoothMove: s.smoothMove === false })} right={<Toggle label="Smooth scrolling and zoom" value={s.smoothMove !== false} onChange={(v) => set({ smoothMove: v })} />} />
+          <Row icon="wand.and.rays" label="Smooth ink when you lift" note="Off: your ink stays exactly as you drew it. On: each stroke is tidied a little as the Pencil lifts, which can make it shift slightly."
+            onPress={() => set({ tidyOnLift: !s.tidyOnLift })} right={<Toggle label="Smooth ink when you lift" value={!!s.tidyOnLift} onChange={(v) => set({ tidyOnLift: v })} />} />
           <Row icon="hand.tap" label="Tap to undo" note="Tap with two fingers to undo, three to redo."
             onPress={() => set({ tapUndo: !s.tapUndo })} right={<Toggle label="Tap to undo" value={!!s.tapUndo} onChange={(v) => set({ tapUndo: v })} />} />
           <Row icon="circle.dashed" label="Quick button" note="A button you can drag anywhere on a note. Tap it to flip between the eraser and your pen; hold it for more."

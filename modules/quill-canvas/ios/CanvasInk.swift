@@ -748,7 +748,9 @@ extension QuillCanvasView {
     capture = nil
     var points = c.finishedPoints()
     // Last bit of wobble out (under a point on screen, corners kept), so finger writing looks as clean as the Pencil's.
-    if c.snap == nil && c.pen.kind != .spray { points = InkTidy.smoothFinished(points, zoom: c.zoom) }
+    // Off unless the setting is on: the pass nudges points and evens the thickness, which shows as the
+    // line shrinking a touch when the Pencil lifts.
+    if tidyOnLift && c.snap == nil && c.pen.kind != .spray { points = InkTidy.smoothFinished(points, zoom: c.zoom) }
     // Highlighting a line of text: a nearly straight swipe comes out ruler-straight.
     if straightMarker && c.pen.kind == .marker, let line = InkStraight.line(points) { points = line }
     if points.isEmpty {

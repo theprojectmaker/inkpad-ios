@@ -177,6 +177,8 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   var picturesInFlight = Set<String>()
   /// The tethered style: while the page moves the ink rides on the pages (see moveBegan).
   var tethered = true
+  /// Smooth a stroke a little when the Pencil lifts. Off: the ink stays exactly as it was drawn.
+  var tidyOnLift = false
   /// How far in a pinch can go, in page widths: 5 (500%), or 15 with Zoom overclock on.
   var zoomReach: CGFloat = 5 {
     didSet {
