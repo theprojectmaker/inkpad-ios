@@ -2,7 +2,7 @@
 // a white pill at the top of the page. Top row: the tools, on two swipeable sets.
 // Bottom row: the picked tool's colours, three sizes and its line style. Every tool
 // remembers its own colours and sizes.
-import { Canvas, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
+import { Canvas, Group, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import Reanimated, { Easing, FadeIn, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -11,7 +11,7 @@ import type { CanvasTool } from '@/components/quill-canvas';
 import { ToolIcon } from '@/components/tool-icons';
 import { Glass, Icon, useToast } from '@/components/ui';
 import { pickColor } from '@/lib/ondevice';
-import { type InkTool, type PenLine, type PenNib, type Settings, type ToolKit, useSettings } from '@/lib/settings';
+import { type InkTool, type PenLine, type Settings, type ToolKit, useSettings } from '@/lib/settings';
 
 export const KITS: Record<string, ToolKit> = {
   pen: { colors: ['#000000', '#0A66F0', '#E01E26', '#FFFFFF', '#F28C0F'], color: 0, sizes: [2, 3, 5], size: 1, line: 'even' },
@@ -65,17 +65,6 @@ export function widthOf(id: string, n: number): number {
 /** How big a size's preview dot is, inside its 24 pt circle. */
 const dotOf = (n: number) => Math.round(3 + (Math.max(1, Math.min(12, n)) - 1) * 1.6);
 
-/** The Pen tool's nibs. Ballpoint is the plain pen; the others have their own feel. */
-const NIBS: { id: PenNib; label: string }[] = [
-  { id: 'ball', label: 'Ballpoint' },
-  { id: 'gel', label: 'Gel' },
-  { id: 'fineliner', label: 'Fineliner' },
-  { id: 'felt', label: 'Felt tip' },
-  { id: 'sketch', label: 'Sketch' },
-];
-const nibKind = (nib: PenNib | undefined, pressure: boolean): CanvasTool['kind'] =>
-  nib === 'gel' ? 'gel' : nib === 'fineliner' ? 'fineliner' : nib === 'felt' ? 'feltTip' : nib === 'sketch' ? 'sketch' : pressure ? 'pen' : 'monoline';
-
 /** What the canvas should use for the current settings. */
 export function currentTool(s: Settings): CanvasTool {
   const id = s.inkKind ?? 'pen';
@@ -84,7 +73,7 @@ export function currentTool(s: Settings): CanvasTool {
   const n = k.sizes[k.size] ?? k.sizes[0];
   const broken = k.line === 'dash' || k.line === 'dot' ? k.line : '';
   switch (id) {
-    case 'pen': return { kind: nibKind(s.penNib, k.line === 'pressure'), color, width: widthOf('pen', n), mode: broken, streamline: s.streamline };
+    case 'pen': return { kind: k.line === 'pressure' ? 'pen' : 'monoline', color, width: widthOf('pen', n), mode: broken, streamline: s.streamline };
     case 'pencil': return { kind: 'pencil', color, width: widthOf('pencil', n), mode: broken, streamline: s.streamline };
     case 'marker': return { kind: 'marker', color, width: widthOf('marker', n), mode: broken, streamline: s.streamline };
     case 'brush': return { kind: s.brushType ?? 'brushpen', color, width: widthOf('brush', n), streamline: s.streamline };
@@ -287,9 +276,11 @@ function LineGlyph({ line, color = INK, width = 40 }: { line: PenLine; color?: s
   if (!path) return null;
   return (
     <Canvas style={{ width, height: 20 }} pointerEvents="none">
-      <Path path={path} style="stroke" strokeCap="round" strokeWidth={line === 'pressure' ? 2.8 : line === 'even' ? 2 : 2} color={color}>
-        {line === 'dash' ? <DashPathEffect intervals={[5, 4]} /> : line === 'dot' ? <DashPathEffect intervals={[0.1, 4.4]} /> : null}
-      </Path>
+      <Group transform={[{ scaleX: width / 40 }]}>
+        <Path path={path} style="stroke" strokeCap="round" strokeWidth={line === 'pressure' ? 2.8 : line === 'even' ? 2 : 2} color={color}>
+          {line === 'dash' ? <DashPathEffect intervals={[5, 4]} /> : line === 'dot' ? <DashPathEffect intervals={[0.1, 4.4]} /> : null}
+        </Path>
+      </Group>
     </Canvas>
   );
 }
@@ -482,8 +473,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     );
   });
   const lineChip = (
-    <Pressable accessibilityLabel="Line style" onPress={() => setPop(pop === 'line' ? null : 'line')} style={{ height: 34, paddingHorizontal: 4, justifyContent: 'center' }}>
-      <LineGlyph line={k.line} width={32} />
+    <Pressable accessibilityLabel="Line style" onPress={() => setPop(pop === 'line' ? null : 'line')} style={{ height: 34, paddingHorizontal: 6, justifyContent: 'center' }}>
+      <LineGlyph line={k.line} width={40} />
     </Pressable>
   );
 
@@ -566,7 +557,6 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         <Bar />
         {sizes}
         {kind !== 'calligraphy' ? <><Bar />{lineChip}</> : null}
-        {kind === 'pen' ? <><Bar />{chip(NIBS.find((x) => x.id === (s.penNib ?? 'ball'))?.label ?? 'Ballpoint', (s.penNib ?? 'ball') !== 'ball', () => { const i = NIBS.findIndex((x) => x.id === (s.penNib ?? 'ball')); const next = NIBS[(i + 1) % NIBS.length]; set({ penNib: next.id }); toast(next.label + ' nib'); })}</> : null}
       </View>
     );
   }
