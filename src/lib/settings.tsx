@@ -53,6 +53,7 @@ export type Settings = {
   tapUndo?: boolean;         // two-finger tap undoes, three-finger tap redoes (off unless turned on)
   bubble?: boolean;          // the movable quick button on the note (off unless turned on)
   bubbleAt?: { x: number; y: number };
+  bubbleTools?: string[];    // what the quick button's strip holds, in order
   zoomOverclock?: boolean;   // pinch in to 1500% instead of 500% (off unless turned on)
   smoothMove: boolean;       // the tethered style: ink stays locked to the page while it scrolls and zooms
   fingerDraws: boolean;      // off: fingers scroll and zoom, only Apple Pencil writes

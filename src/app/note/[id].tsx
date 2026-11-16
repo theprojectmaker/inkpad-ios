@@ -799,6 +799,23 @@ export default function Editor() {
     setOutline(first);
     setPageTools('outline');
   };
+  /** What the quick button's strip can do on this note. */
+  const quickAction = (what: string) => {
+    switch (what) {
+      case 'undo': canvas.current?.undo(); break;
+      case 'redo': canvas.current?.redo(); break;
+      case 'flag': toggleFlag(); break;
+      case 'prev': canvas.current?.scrollToPage(Math.max(0, page.page - 1)); break;
+      case 'next': canvas.current?.scrollToPage(Math.min(page.count - 1, page.page + 1)); break;
+      case 'addPage': addPage(page.page); break;
+      case 'scratch': setScratch((v) => !v); break;
+      case 'timer': setTimerOpen((v) => !v); break;
+      case 'find': { const was = find; closePanels(); setFind(!was); break; }
+      case 'zoom': setZoomWin((v) => !v); break;
+      case 'ai': { const was = study; closePanels(); setStudy(!was); break; }
+      case 'present': setPresent(true); setFocus(true); canvas.current?.fitWidth(); break;
+    }
+  };
   const toggleReview = () => {
     if (meta?.review) { lib.updateNote(id, { review: undefined }); toast('Review reminders are off for this note.'); }
     else { lib.updateNote(id, { review: startReview() }); toast('You will be reminded on Home in 1 day, then 3, 7, 14 and 30.'); }
@@ -1015,7 +1032,7 @@ export default function Editor() {
         ...(commentsList ?? []).map((c) => ({ label: firstLine(c.text) || 'Comment', sub: `Page ${c.page + 1}`, icon: 'bubble.left', onPress: () => { canvas.current?.scrollToPage(c.page); setComment({ id: c.id, text: c.text }); } })),
       ]} />
       {tabsOpen ? <NoteTabs current={id} onClose={() => setTabsOpen(false)} onPick={(n) => { setTabsOpen(false); leave(n); }} /> : null}
-      {s.bubble && !present ? <QuickBubble onUndo={() => canvas.current?.undo()} onRedo={() => canvas.current?.redo()} onFlag={toggleFlag} /> : null}
+      {s.bubble && !present ? <QuickBubble onAction={quickAction} /> : null}
       {scratch && !focus ? (
         <Glass radius={18} style={{ position: 'absolute', top: 70, right: 12, width: 250, padding: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

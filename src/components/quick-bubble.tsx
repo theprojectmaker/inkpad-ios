@@ -1,19 +1,53 @@
 // The quick button: a round glass button that can be dragged anywhere on a note. A tap flips between
 // the eraser and whatever was in hand before; holding it opens a few more things to reach for.
 import { useEffect, useRef, useState } from 'react';
-import { PanResponder, Pressable, useWindowDimensions, View } from 'react-native';
+import { PanResponder, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Reanimated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { ToolIcon } from '@/components/tool-icons';
-import { Glass } from '@/components/ui';
+import { Glass, Icon, Sheet } from '@/components/ui';
 import { type InkTool, useSettings } from '@/lib/settings';
 
 const SIZE = 58;
 
-export function QuickBubble({ onUndo, onRedo, onFlag }: { onUndo: () => void; onRedo: () => void; onFlag: () => void }) {
+/** Everything the strip can hold. `tool` ones pick a tool; the rest do something on the note. */
+export const BUBBLE_ITEMS: { id: string; label: string; icon: string; tool?: InkTool; group: string }[] = [
+  { id: 'undo', label: 'Undo', icon: 'undo', group: 'Actions' },
+  { id: 'redo', label: 'Redo', icon: 'redo', group: 'Actions' },
+  { id: 'pen', label: 'Pen', icon: 'pen', tool: 'pen', group: 'Tools' },
+  { id: 'pencil', label: 'Pencil', icon: 'pencil', tool: 'pencil', group: 'Tools' },
+  { id: 'marker', label: 'Highlighter', icon: 'highlighter', tool: 'marker', group: 'Tools' },
+  { id: 'eraser', label: 'Eraser', icon: 'eraser', tool: 'eraser', group: 'Tools' },
+  { id: 'lasso', label: 'Lasso', icon: 'lasso', tool: 'lasso', group: 'Tools' },
+  { id: 'shape', label: 'Shapes', icon: 'shape', tool: 'shape', group: 'Tools' },
+  { id: 'brush', label: 'Brushes', icon: 'brush', tool: 'brush', group: 'Tools' },
+  { id: 'calligraphy', label: 'Calligraphy', icon: 'calligraphy', tool: 'calligraphy', group: 'Tools' },
+  { id: 'tape', label: 'Tape', icon: 'tape', tool: 'tape', group: 'Tools' },
+  { id: 'laser', label: 'Laser pointer', icon: 'laser', tool: 'laser', group: 'Tools' },
+  { id: 'hand', label: 'Navigate', icon: 'hand', tool: 'hand', group: 'Tools' },
+  { id: 'measure', label: 'Measure', icon: 'measure', tool: 'measure', group: 'Tools' },
+  { id: 'compass', label: 'Compass', icon: 'compass', tool: 'compass', group: 'Tools' },
+  { id: 'flag', label: 'Flag this page', icon: 'flag', group: 'Actions' },
+  { id: 'prev', label: 'Previous page', icon: 'up', group: 'Actions' },
+  { id: 'next', label: 'Next page', icon: 'down', group: 'Actions' },
+  { id: 'addPage', label: 'Add a page', icon: 'media', group: 'Actions' },
+  { id: 'scratch', label: 'Scratchpad', icon: 'scratch', group: 'Actions' },
+  { id: 'timer', label: 'Focus timer', icon: 'timer', group: 'Actions' },
+  { id: 'find', label: 'Find in note', icon: 'find', group: 'Actions' },
+  { id: 'zoom', label: 'Zoom window', icon: 'zoom', group: 'Actions' },
+  { id: 'ai', label: 'Study with AI', icon: 'ai', group: 'Actions' },
+  { id: 'present', label: 'Present', icon: 'present', group: 'Actions' },
+];
+const DEFAULT_ITEMS = ['undo', 'redo', 'pen', 'marker', 'lasso', 'flag'];
+const SHOWN = 7;   // how many fit before the strip scrolls
+
+export function QuickBubble({ onAction }: { onAction: (id: string) => void }) {
   const { s, set } = useSettings();
   const { width, height } = useWindowDimensions();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const chosen = (s.bubbleTools ?? DEFAULT_ITEMS).filter((id) => BUBBLE_ITEMS.some((x) => x.id === id));
+  const stripW = Math.min(chosen.length + 1, SHOWN) * 42 + 8;
   const start = s.bubbleAt ?? { x: width - SIZE - 18, y: Math.round(height * 0.62) };
   const x = useSharedValue(start.x), y = useSharedValue(start.y), press = useSharedValue(0);
   const at = useRef({ ...start });
@@ -79,8 +113,8 @@ export function QuickBubble({ onUndo, onRedo, onFlag }: { onUndo: () => void; on
   );
   const onLeft = at.current.x < width / 2;
 
-  return (
-    <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', left: 0, top: 0, flexDirection: onLeft ? 'row' : 'row-reverse', alignItems: 'center', gap: 8 }, place, onLeft ? null : { marginLeft: -(open ? 6 * 42 + 16 : 0) }]}>
+  const body = (
+    <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', left: 0, top: 0, flexDirection: onLeft ? 'row' : 'row-reverse', alignItems: 'center', gap: 8 }, place, onLeft ? null : { marginLeft: -(open ? stripW + 8 : 0) }]}>
       <View {...pan.panHandlers} accessibilityRole="button" accessibilityLabel={erasing ? 'Quick button: back to the pen. Hold for more.' : 'Quick button: eraser. Hold for more.'}>
         <Glass radius={SIZE / 2} style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
           <View pointerEvents="none"><ToolIcon name={erasing ? 'pen' : 'eraser'} size={24} color={erasing ? '#007AFF' : '#3B4252'} /></View>
@@ -88,16 +122,44 @@ export function QuickBubble({ onUndo, onRedo, onFlag }: { onUndo: () => void; on
       </View>
       {open ? (
         <Reanimated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(100)}>
-          <Glass radius={25} style={{ flexDirection: 'row', padding: 4 }}>
-            {item('undo', 'Undo', onUndo)}
-            {item('redo', 'Redo', onRedo)}
-            {item('pen', 'Pen', () => pick('pen'), s.inkKind === 'pen')}
-            {item('highlighter', 'Highlighter', () => pick('marker'), s.inkKind === 'marker')}
-            {item('lasso', 'Lasso', () => pick('lasso'), s.inkKind === 'lasso')}
-            {item('flag', 'Flag this page', () => { onFlag(); setOpen(false); })}
+          <Glass radius={25} style={{ width: stripW, padding: 4 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+              {chosen.map((id) => {
+                const x = BUBBLE_ITEMS.find((i) => i.id === id)!;
+                return x.tool ? item(x.icon, x.label, () => pick(x.tool!), s.inkKind === x.tool) : item(x.icon, x.label, () => { onAction(x.id); if (x.id !== 'undo' && x.id !== 'redo' && x.id !== 'prev' && x.id !== 'next') setOpen(false); });
+              })}
+              {item('settings', 'Choose what is on this strip', () => { setOpen(false); setEditing(true); })}
+            </ScrollView>
           </Glass>
         </Reanimated.View>
       ) : null}
     </Reanimated.View>
+  );
+  const toggle = (id: string) => set({ bubbleTools: chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id] });
+  return (
+    <>
+      {body}
+      <Sheet visible={editing} onClose={() => setEditing(false)} title="Quick button" width={420}>
+        <Text style={{ color: '#6B7385', fontSize: 14, marginBottom: 6 }}>Hold the quick button to open its strip. Tick what you want on it; things appear in the order you tick them.</Text>
+        {['Tools', 'Actions'].map((g) => (
+          <View key={g}>
+            <Text style={{ color: '#6B7385', fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 14, marginBottom: 4 }}>{g}</Text>
+            {BUBBLE_ITEMS.filter((x) => x.group === g).map((x) => {
+              const on = chosen.includes(x.id);
+              return (
+                <Pressable key={x.id} accessibilityLabel={x.label} accessibilityState={{ selected: on }} onPress={() => toggle(x.id)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 44, paddingHorizontal: 8, borderRadius: 10, backgroundColor: pressed ? 'rgba(60,60,67,0.1)' : 'transparent' })}>
+                  <ToolIcon name={x.icon} size={20} color={on ? '#007AFF' : '#3B4252'} />
+                  <Text style={{ flex: 1, fontSize: 16, color: '#15171C' }}>{x.label}</Text>
+                  <Icon name={on ? 'checkmark.circle.fill' : 'circle'} size={20} color={on ? '#007AFF' : '#B8BFCC'} />
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+        <Pressable accessibilityLabel="Put the strip back to how it started" onPress={() => set({ bubbleTools: undefined })} style={{ height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}>
+          <Text style={{ color: '#007AFF', fontSize: 16 }}>Back to the starting set</Text>
+        </Pressable>
+      </Sheet>
+    </>
   );
 }
