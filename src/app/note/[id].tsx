@@ -15,6 +15,7 @@ import { AudioBar, ClassPanel, transcribe, useNoteAudio } from '@/components/aud
 import { CommentSheet, firstLine } from '@/components/comment-sheet';
 import { NoteTabs } from '@/components/note-tabs';
 import { QuickBubble } from '@/components/quick-bubble';
+import { Shield } from '@/components/shield';
 import { ShareLinkSheet } from '@/components/share-link';
 import { graphLines } from '@/lib/graph';
 import { ToolIcon } from '@/components/tool-icons';
@@ -878,6 +879,8 @@ export default function Editor() {
         {study && doc ? <StudyPanel noteId={id} page={page.page} pageCount={doc.pages.length} canvas={canvas} absPath={absPath} onClose={() => setStudy(false)} /> : null}
       </View>
 
+      {/* The tools: on the iPad, but left out of anything that shares or records the screen. */}
+      <Shield on={s.shareClean !== false}>
       {!focus ? (
         <>
           <NoteToolbar recording={!!audio.rec} hasAudio={recordings.length > 0} ruler={ruler} zoom={zoomWin} onInsert={() => setInsert(true)} onAudio={() => setAudioOpen((v) => !v || !!audio.rec)}
@@ -910,6 +913,7 @@ export default function Editor() {
           <IconButton name="arrow.down.right.and.arrow.up.left" label="Leave focus mode" onPress={() => setFocus(false)} />
         </View>
       )}
+      </Shield>
       {selStyle ? <StylePopover color={selStyle.color} width={selStyle.width} onClose={() => setSelStyle(null)}
         onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')}
         onFill={async (c) => { const n = await canvas.current?.fillSelection(c); if (c && !n) toast("That shape isn't closed. Join its ends, then fill it."); }} /> : null}
@@ -1032,6 +1036,7 @@ export default function Editor() {
         ...(commentsList ?? []).map((c) => ({ label: firstLine(c.text) || 'Comment', sub: `Page ${c.page + 1}`, icon: 'bubble.left', onPress: () => { canvas.current?.scrollToPage(c.page); setComment({ id: c.id, text: c.text }); } })),
       ]} />
       {tabsOpen ? <NoteTabs current={id} onClose={() => setTabsOpen(false)} onPick={(n) => { setTabsOpen(false); leave(n); }} /> : null}
+      <Shield on={s.shareClean !== false}>
       {s.bubble && !present ? <QuickBubble onAction={quickAction} /> : null}
       {scratch && !focus ? (
         <Glass radius={18} style={{ position: 'absolute', top: 70, right: 12, width: 250, padding: 12 }}>
@@ -1058,6 +1063,7 @@ export default function Editor() {
           <IconButton name="xmark" label="Stop presenting" onPress={() => { setPresent(false); setFocus(false); }} />
         </Glass>
       ) : null}
+      </Shield>
       <MenuSheet visible={flagsOpen} onClose={() => setFlagsOpen(false)} title="Flagged pages" items={[
         ...flaggedPages.map(({ i }) => ({ label: `Page ${i + 1}`, icon: 'flag.fill', onPress: () => canvas.current?.scrollToPage(i) })),
         { label: 'Clear all flags', icon: 'flag.slash', danger: true, onPress: () => lib.updateNote(id, { flags: [] }) },

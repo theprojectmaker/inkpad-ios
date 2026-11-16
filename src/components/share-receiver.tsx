@@ -272,9 +272,9 @@ export function ShareReceiver() {
                   </View>
                   <Text style={footnote}>Tap the title to rename it.</Text>
 
-                  <Text style={caption}>Folder</Text>
+                  <Text style={caption}>Subject</Text>
                   <View style={group}>
-                    <Pressable accessibilityLabel={`Folder: ${fo?.name ?? 'No subject'}. Tap to change.`} onPress={() => setFolderOpen((v) => !v)} style={rowStyle}>
+                    <Pressable accessibilityLabel={`Subject: ${fo?.name ?? 'No subject'}. Tap to change.`} onPress={() => setFolderOpen((v) => !v)} style={rowStyle}>
                       <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: fo?.color ?? t.faint, marginRight: 12 }} />
                       <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 17 }}>{fo?.name ?? 'No subject'}</Text>
                       <Icon name={folderOpen ? 'chevron.down' : 'chevron.right'} size={14} color={t.sub} />

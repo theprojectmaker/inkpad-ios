@@ -50,6 +50,9 @@ export type Settings = {
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
   days?: string[];           // the days a note was opened on (for the streak on Home), newest last
+  shareClean?: boolean;      // toolbars are left out of screen sharing, mirroring and recordings (on unless turned off)
+  showDraw?: boolean;        // the Drawing Board appears on Home and in the sidebar (off unless turned on)
+  showClassroom?: boolean;   // Classroom appears in the sidebar (off unless turned on)
   tidyOnLift?: boolean;      // smooth each stroke a little when the Pencil lifts (off unless turned on)
   tapUndo?: boolean;         // two-finger tap undoes, three-finger tap redoes (off unless turned on)
   bubble?: boolean;          // the movable quick button on the note (off unless turned on)

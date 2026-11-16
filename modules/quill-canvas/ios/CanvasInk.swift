@@ -130,15 +130,30 @@ final class PalmWatch: UIGestureRecognizer {
   private var hands = Set<ObjectIdentifier>()
   private static let afterWriting: CGFloat = 41
   private static let alone: CGFloat = 52
+  /// For this long after the Pencil lifts, any touch at all is the hand coming down. After it, only a big one is.
+  private static let handLands: TimeInterval = 0.4
 
   private func look(_ began: Set<UITouch>?, _ event: UIEvent) {
     guard let scroll = view as? InkScrollView else { return }
     let writing = scroll.pencilDown || (owner?.pencilRecently ?? false)
-    if let began, writing {
+    let sincePencil = CACurrentMediaTime() - scroll.pencilUpAt
+    // A touch counts as a hand for as long as it stays down only if it landed while the Pencil was on the
+    // page or in the moment after. It used to be any touch in the second and a half after writing, which
+    // is why moving or zooming the page straight after a stroke did nothing.
+    if let began, scroll.pencilDown || sincePencil < Self.handLands {
       for t in began where t.type == .direct { hands.insert(ObjectIdentifier(t)) }
     }
     let down = event.allTouches?.filter { $0.type == .direct && $0.phase != .ended && $0.phase != .cancelled } ?? []
     let biggest = down.map(\.majorRadius).max() ?? 0
+    // Two fingertips with the Pencil off the page are a pinch or a two-finger scroll, never a hand.
+    if !scroll.pencilDown && sincePencil >= 0.25 && down.count >= 2 && biggest < Self.afterWriting {
+      for t in down { hands.remove(ObjectIdentifier(t)) }
+      if scroll.palmOn {
+        scroll.palmOn = false
+        GestureLog.add("two fingertips: not a hand after all")
+      }
+      return
+    }
     let resting = down.contains { hands.contains(ObjectIdentifier($0)) }
     let hand = resting || (writing ? biggest >= Self.afterWriting : (down.count == 1 && biggest >= Self.alone))
     if hand {
@@ -147,7 +162,7 @@ final class PalmWatch: UIGestureRecognizer {
         GestureLog.add("hand: \(down.count) touches, radius \(Int(biggest)), writing \(writing)")
         owner?.palmDown()
       }
-    } else if scroll.palmOn && !writing && down.count >= 2 {
+    } else if scroll.palmOn && !scroll.pencilDown && down.count >= 2 {
       scroll.palmOn = false    // a second finger, away from any hand: a pinch or a scroll after all
     }
   }

@@ -23,7 +23,7 @@ import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { importZip } from '@/lib/zipimport';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
-type Filter = { kind: 'home' } | { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'folder'; id: string };
+type Filter = { kind: 'home' } | { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'unfiled' } | { kind: 'folder'; id: string };
 
 const fmtDate = (t: number) => {
   const d = new Date(t), now = new Date();
@@ -101,6 +101,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
     let list = filter.kind === 'trash' ? lib.lib.notes.filter((n) => n.trashed) : lib.lib.notes.filter((n) => !n.trashed);
     if (filter.kind === 'fav') list = list.filter((n) => n.fav);
     else if (filter.kind === 'folder') list = list.filter((n) => n.folderId === filter.id);
+    else if (filter.kind === 'unfiled') list = list.filter((n) => !n.folderId);
     const needle = q.trim().toLowerCase();
     if (needle) list = list.filter((n) => hay(n).includes(needle));
     const names = new Map(lib.lib.folders.map((f) => [f.id, f.name]));
@@ -269,7 +270,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
   const gapX = 24;
   const cols = Math.max(2, Math.floor((mainW - pad * 2 + gapX) / (160 + gapX)));
   const cardW = (mainW - pad * 2 - (cols - 1) * gapX) / cols;
-  const title = filter.kind === 'all' || filter.kind === 'home' ? 'Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : folderOf(filter.id)?.name ?? 'Subject';
+  const title = filter.kind === 'all' || filter.kind === 'home' ? 'Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : filter.kind === 'unfiled' ? 'No subject' : folderOf(filter.id)?.name ?? 'Subject';
   const live = lib.lib.notes.filter((n) => !n.trashed);
   const trashed = lib.lib.notes.filter((n) => n.trashed).length;
   const list = s.view === 'list';
@@ -501,15 +502,17 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length, drop: NONE })}
             {sideRow('Templates', false, () => setSheet('paper'), { icon: 'doc.plaintext' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
-            {sideRow('Drawing Board', false, () => router.push('/draw' as never), { icon: 'paintbrush.pointed' })}
             {sideRow('Study', false, () => router.push('/study'), { icon: 'book' })}
-            {sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' })}
+            {s.showDraw ? sideRow('Drawing Board', false, () => router.push('/draw' as never), { icon: 'paintbrush.pointed' }) : null}
+            {s.showClassroom ? sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' }) : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 4, paddingLeft: 12 }}>
-              <Text style={{ flex: 1, color: t.sub, fontSize: 14, fontWeight: '500' }}>Folders</Text>
-              <IconButton name="plus" label="New folder" onPress={() => setSheet('newFolder')} />
+              <Text style={{ flex: 1, color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' }}>Subjects</Text>
+              <IconButton name="plus" label="New subject" onPress={() => setSheet('newFolder')} />
             </View>
-            {lib.lib.folders.map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
+            {lib.lib.folders.length === 0 ? <Text style={{ color: t.faint, fontSize: 13.5, paddingHorizontal: 12, paddingVertical: 6 }}>Tap + to make a subject, then drag notes onto it.</Text> : null}
+            {lib.lib.folders.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), drop: f.id, onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
+            {lib.lib.folders.length && live.some((x) => !x.folderId) ? sideRow('No subject', filter.kind === 'unfiled', () => setFilter({ kind: 'unfiled' }), { icon: 'tray', count: live.filter((x) => !x.folderId).length }) : null}
           </ScrollView>
           <View style={{ paddingHorizontal: 12 }}>
             {sideRow('Recently Deleted', filter.kind === 'trash', () => setFilter({ kind: 'trash' }), { icon: 'trash', count: trashed })}
@@ -576,7 +579,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
                 { label: 'New note', icon: 'square.and.pencil', tint: t.accent, go: () => newNote(s.defaultPaper?.style ?? 'lined', s.defaultPaper?.color ?? 'white', s.defaultPaper?.size ?? 'letter') },
                 { label: 'Record a lecture', icon: 'mic', tint: '#E8590C', go: () => newNote('blank', 'white', 'letter', true) },
                 { label: 'Import a file', icon: 'square.and.arrow.down', tint: '#30A46C', go: importPdf },
-                { label: 'Drawing Board', icon: 'paintbrush.pointed', tint: '#6E56CF', go: () => router.push('/draw' as never) },
+                ...(s.showDraw ? [{ label: 'Drawing Board', icon: 'paintbrush.pointed', tint: '#6E56CF', go: () => router.push('/draw' as never) }] : []),
                 { label: 'Flashcards', icon: 'rectangle.on.rectangle', tint: '#D6409F', go: () => router.push('/flashcards') },
                 { label: 'Templates', icon: 'doc.plaintext', tint: '#0E7490', go: () => setSheet('paper') },
               ].map((c) => (
@@ -640,7 +643,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
 
       <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
         { group: 1, label: "Today's note", icon: 'calendar', onPress: openToday },
-        { group: 1, label: 'Drawing Board', icon: 'paintbrush.pointed', onPress: () => router.push('/draw' as never) },
+        ...(s.showDraw ? [{ group: 1, label: 'Drawing Board', icon: 'paintbrush.pointed', onPress: () => router.push('/draw' as never) }] : []),
         { group: 1, label: 'Import a PDF or zip', icon: 'square.and.arrow.down', onPress: importPdf },
         { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
         { group: 1, label: 'Import Flashcards', icon: 'rectangle.on.rectangle', onPress: () => router.push('/flashcards') },

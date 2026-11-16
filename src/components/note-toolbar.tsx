@@ -73,10 +73,10 @@ export function currentTool(s: Settings): CanvasTool {
   const n = k.sizes[k.size] ?? k.sizes[0];
   const broken = k.line === 'dash' || k.line === 'dot' ? k.line : '';
   switch (id) {
-    case 'pen': return { kind: k.line === 'pressure' ? 'pen' : 'monoline', color, width: widthOf('pen', n), mode: broken, streamline: s.streamline };
-    case 'pencil': return { kind: 'pencil', color, width: widthOf('pencil', n), mode: broken, streamline: s.streamline };
-    case 'marker': return { kind: 'marker', color, width: widthOf('marker', n), mode: broken, streamline: s.streamline };
-    case 'brush': return { kind: s.brushType ?? 'brushpen', color, width: widthOf('brush', n), streamline: s.streamline };
+    case 'pen': return { kind: k.line === 'pressure' ? 'pen' : 'monoline', color, width: widthOf('pen', n), mode: broken, streamline: s.streamline ?? SMOOTH };
+    case 'pencil': return { kind: 'pencil', color, width: widthOf('pencil', n), mode: broken, streamline: s.streamline ?? SMOOTH };
+    case 'marker': return { kind: 'marker', color, width: widthOf('marker', n), mode: broken, streamline: s.streamline ?? SMOOTH };
+    case 'brush': return { kind: s.brushType ?? 'brushpen', color, width: widthOf('brush', n), streamline: s.streamline ?? SMOOTH };
     case 'shape': return { kind: 'shape', color, width: widthOf('pen', n), mode: [s.shapeType ?? 'line', s.shapeLock ? 'lock' : '', s.shapeFill ? 'fill' : ''].filter(Boolean).join(',') };
     case 'calligraphy': return { kind: 'fountain', color, width: widthOf('calligraphy', n), mode: broken, angle: s.nibAngle ?? 40, stabilize: !!s.nibSteady };
     case 'eraser': return { kind: 'eraser', color: '#000000', width: widthOf('eraser', n), mode: s.eraser ?? 'partial' };
@@ -95,6 +95,8 @@ const INK = '#3B4252';
 const BLUE = '#007AFF';
 /** How many tools sit on the first row; the rest are one tap away. */
 const FIRST_ROW = 6;
+/** Pen smoothing when the setting has never been touched: enough to steady a line, not enough to feel late. */
+export const SMOOTH = 0.2;
 /** How far the tools slide when the toolbar changes page. */
 const SLIDE = 26;
 const FIRST_MIN = 4;
@@ -648,14 +650,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
               ))}
               </ScrollView>
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#15171C', marginTop: 8 }}>Streamline</Text>
-              <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
+              <ThicknessSlider value={Math.round((s.streamline ?? SMOOTH) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
             </View>
           </Card>
         ) : pop === 'line' ? (
           <Card width={Math.min(screen - 40, 300)}>
             <Text style={{ fontSize: 15, fontWeight: '700', color: '#15171C', marginBottom: 2 }}>Streamline</Text>
             <Text style={{ fontSize: 12, color: '#5A6478', marginBottom: 2 }}>Higher smooths out a shaky hand.</Text>
-            <ThicknessSlider value={Math.round((s.streamline ?? 0) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
+            <ThicknessSlider value={Math.round((s.streamline ?? SMOOTH) * 10) + 1} max={11} preview={false} onChange={(v) => set({ streamline: (v - 1) / 10 })} />
             <View style={{ gap: 8, alignItems: 'center', marginTop: 8 }}>
               {LINES.map((l) => (
                 <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { patch({ line: l }); setPop(null); }}

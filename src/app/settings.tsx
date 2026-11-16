@@ -216,6 +216,12 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
             right={<Choice value={s.theme === 'dark' ? 'dark' : 'light'} onPick={(v) => set({ theme: v })} options={[{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />} />
           <Row icon="square.grid.2x2" label="Library view"
             right={<Choice value={s.view} onPick={(v) => set({ view: v })} options={[{ id: 'grid', label: 'Grid' }, { id: 'list', label: 'List' }]} />} />
+          <Row icon="paintbrush.pointed" label="Drawing Board" note="Shows the Drawing Board on Home and in the sidebar."
+            onPress={() => set({ showDraw: !s.showDraw })} right={<Toggle label="Drawing Board" value={!!s.showDraw} onChange={(v) => set({ showDraw: v })} />} />
+          <Row icon="graduationcap" label="Classroom" note="Shows Classroom in the sidebar."
+            onPress={() => set({ showClassroom: !s.showClassroom })} right={<Toggle label="Classroom" value={!!s.showClassroom} onChange={(v) => set({ showClassroom: v })} />} />
+          <Row icon="rectangle.on.rectangle.slash" label="Hide tools when sharing the screen" note="People watching a shared, mirrored or recorded screen see only the page. The tools stay on your iPad."
+            onPress={() => set({ shareClean: s.shareClean === false })} right={<Toggle label="Hide tools when sharing the screen" value={s.shareClean !== false} onChange={(v) => set({ shareClean: v })} />} />
           <Row icon="arrow.up.arrow.down" label="Sort notes by" last
             right={<Choice value={s.sort} onPick={(v) => set({ sort: v })} options={[{ id: 'updated', label: 'Edited' }, { id: 'created', label: 'Created' }, { id: 'title', label: 'Title' }]} />} />
         </Section>
@@ -232,7 +238,7 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
       </>
     );
     case 'writing': {
-      const sv = s.streamline ?? 0;
+      const sv = s.streamline ?? 0.2;   // the same light default the pens use
       const near = STREAM.reduce((a, b) => (Math.abs(b.v - sv) < Math.abs(a.v - sv) ? b : a));
       return (
         <>
