@@ -82,7 +82,7 @@ export default function LibraryScreen() {
 
   const [filter, setFilter] = useState<Filter>({ kind: 'home' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'tags' | 'trashNote' | 'purge' | 'purgeAll'>(null);
+  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'tags' | 'label' | 'trashNote' | 'purge' | 'purgeAll'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
 
@@ -449,6 +449,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
                 </View>
               ) : paperMock()}
           </View>
+          {n.label ? <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: n.label }} /> : null}
           {n.fav ? <View style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="star.fill" size={14} color="#F5B400" /></View> : null}
           <View style={{ paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.line }}>
             <Text numberOfLines={1} style={{ color: t.text, fontSize: 15, fontWeight: '500' }}>{n.title}</Text>
@@ -558,6 +559,17 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
             <Text style={{ color: t.text, fontSize: 34, fontWeight: '800', letterSpacing: -0.8, marginTop: 2 }}>{greeting()}</Text>
             <TodayStrip />
             <HomeStrip onToday={openToday} />
+            {recent[0] ? (
+              <Pressable accessibilityLabel={`Jump back in to ${recent[0].title}`} onPress={() => open(recent[0].id)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 22, padding: 16, borderRadius: 18, borderCurve: 'continuous', backgroundColor: t.accent, transform: [{ scale: pressed ? 0.985 : 1 }] })}>
+                <View style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.22)' }}><Icon name="arrow.uturn.forward" size={19} color="#fff" /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' }}>Jump back in</Text>
+                  <Text numberOfLines={1} style={{ color: '#fff', fontSize: 19, fontWeight: '700', letterSpacing: -0.3 }}>{recent[0].title}</Text>
+                  <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{[`${recent[0].pages} ${recent[0].pages === 1 ? 'page' : 'pages'}`, folderOf(recent[0].folderId)?.name, fmtDate(recent[0].opened ?? recent[0].updated)].filter(Boolean).join(' · ')}</Text>
+                </View>
+                <Icon name="chevron.right" size={15} color="#fff" />
+              </Pressable>
+            ) : null}
             <Text style={sectionTitle}>Start</Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               {[
@@ -649,6 +661,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
       <MenuSheet visible={sheet === 'note'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [
         { label: 'Rename', icon: 'pencil', onPress: () => setSheet('rename') },
         { label: target2.fav ? 'Remove from Favorites' : 'Add to Favorites', icon: target2.fav ? 'star.fill' : 'star', onPress: () => lib.updateNote(target2.id, { fav: !target2.fav }) },
+        { label: 'Colour label', icon: 'circle.fill', onPress: () => setSheet('label') },
         { label: 'Tags…', sub: tagLine(target2.tags) || undefined, icon: 'tag', onPress: () => setSheet('tags') },
         { label: target2.pin ? 'Unpin from the top' : 'Pin to the top', icon: target2.pin ? 'pin.slash' : 'pin', onPress: () => lib.updateNote(target2.id, { pin: !target2.pin }) },
         { label: 'Move to subject…', icon: 'folder', onPress: () => setSheet('move') },
@@ -680,6 +693,11 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
         onConfirm={async () => { setSheet(null); if (target2) await lib.removeNote(target2.id); }} />
       <ConfirmSheet visible={sheet === 'purgeAll'} title="Delete everything here for good?" message="This can't be undone." onCancel={() => setSheet(null)}
         onConfirm={async () => { setSheet(null); for (const n of lib.lib.notes.filter((x) => x.trashed)) await lib.removeNote(n.id); }} />
+      <MenuSheet visible={sheet === 'label'} onClose={() => setSheet(null)} title="Colour label" items={[
+        { label: 'None', icon: 'circle', checked: !target2?.label, onPress: () => target2 && lib.updateNote(target2.id, { label: undefined }) },
+        ...([['Red', '#E5484D'], ['Orange', '#F76B15'], ['Yellow', '#FFC53D'], ['Green', '#30A46C'], ['Blue', '#0090FF'], ['Purple', '#6E56CF'], ['Pink', '#D6409F']] as const).map(([name, hex]) => (
+          { label: name, icon: 'circle.fill', checked: target2?.label === hex, onPress: () => target2 && lib.updateNote(target2.id, { label: hex }) })),
+      ]} />
       <PromptSheet visible={sheet === 'tags'} title="Tags" placeholder="biology, exam, week 3" initial={(target2?.tags ?? []).join(', ')} onCancel={() => setSheet(null)}
         onSubmit={(v) => { if (target2) lib.updateNote(target2.id, { tags: parseTags(v) }); setSheet(null); }} />
       <PromptSheet visible={sheet === 'rename'} title="Rename note" initial={target2?.title ?? ''} onCancel={() => setSheet(null)}

@@ -32,7 +32,7 @@ import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Glass, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
 import { askStudy } from '@/lib/ai';
 import { advanceReview, REVIEW_DAYS, startReview } from '@/lib/extras';
-import { copyText, readText } from '@/lib/ondevice';
+import { copyText, readText, speak, stopSpeaking } from '@/lib/ondevice';
 import { loadPageText, pageTextToSearch, readPages, snapPages } from '@/lib/handindex';
 import { dueLabel, handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
 import { ensureGoogle, saveToDrive } from '@/lib/drive';
@@ -158,6 +158,10 @@ export default function Editor() {
   const scratchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [present, setPresent] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
+  const [pageTools, setPageTools] = useState<null | 'menu' | 'stamps' | 'languages' | 'outline'>(null);
+  const [toolOut, setToolOut] = useState<{ title: string; busy: boolean; text: string } | null>(null);
+  const [reading, setReading] = useState(false);
+  const [outline, setOutline] = useState<Record<string, string>>({});
   const [timerMin, setTimerMin] = useState(25);
   const [timerLeft, setTimerLeft] = useState(25 * 60);
   const [timerRun, setTimerRun] = useState(false);
@@ -203,6 +207,8 @@ export default function Editor() {
         toast(a.days ? `Review done. The next one is in ${a.days} ${a.days === 1 ? 'day' : 'days'}.` : 'Review done. That was the last one.');
       }
       setScratchText(m?.scratch ?? '');
+      const day = new Date().toISOString().slice(0, 10);
+      if (!(s.days ?? []).includes(day)) set({ days: [...(s.days ?? []), day].slice(-400) });
       lib.updateNote(id, patch);
     })();
     return () => { live = false; };
@@ -716,6 +722,83 @@ export default function Editor() {
       setActions({ busy: false, text: (r.text ?? '').trim() });
     } catch (e) { setActions({ busy: false, text: String((e as Error)?.message ?? e) }); }
   };
+  // ---- Page tools: things done with what is written on the page in view.
+  const pagePicture = async () => {
+    const rel = `${renderDir(id)}/tool.jpg`;
+    const ok = await canvas.current?.pageThumb(page.page, absPath(rel), 1400);
+    if (!ok) throw new Error("Couldn't read the page.");
+    return fsx.uri(rel);
+  };
+  const pageWords = async () => (await readText(await pagePicture())).map((l) => l.text).join('\n').trim();
+  const copyPageText = async () => {
+    try {
+      const text = await pageWords();
+      if (!text) { toast("Couldn't find any writing on this page."); return; }
+      copyText(text);
+      toast(`Copied ${text.split('\n').length} lines as text`);
+    } catch (e) { toast(String((e as Error)?.message ?? e)); }
+  };
+  const readAloud = async () => {
+    if (reading) { stopSpeaking(); setReading(false); return; }
+    try {
+      const text = await pageWords();
+      if (!text) { toast("Couldn't find any writing on this page."); return; }
+      setReading(true);
+      speak(text);
+    } catch (e) { toast(String((e as Error)?.message ?? e)); }
+  };
+  useEffect(() => () => { stopSpeaking(); }, []);
+  const askPage = async (title: string, question: string) => {
+    setToolOut({ title, busy: true, text: '' });
+    try {
+      const r = await askStudy('ask', [await pagePicture()], { question });
+      setToolOut({ title, busy: false, text: (r.text ?? '').trim() });
+    } catch (e) { setToolOut({ title, busy: false, text: String((e as Error)?.message ?? e) }); }
+  };
+  const nameWithAI = async () => {
+    toast('Reading the page for a title…');
+    try {
+      const r = await askStudy('ask', [await pagePicture()], { question: 'Suggest a title for these notes: at most six words, no quotation marks and no full stop. Reply with only the title.' });
+      const title = (r.text ?? '').split('\n')[0].replace(/^["“'#*\s]+|["”'*.\s]+$/g, '').slice(0, 60);
+      if (!title) { toast("Couldn't think of a title for this page."); return; }
+      lib.updateNote(id, { title });
+      toast(`Named “${title}”`);
+    } catch (e) { toast(String((e as Error)?.message ?? e)); }
+  };
+  const summariseToScratch = async () => {
+    toast('Summarising this page…');
+    try {
+      const r = await askStudy('summary', [await pagePicture()]);
+      const text = (r.text ?? '').trim();
+      if (!text) { toast("Couldn't summarise this page."); return; }
+      saveScratch((scratchText ? scratchText + '\n\n' : '') + `Page ${page.page + 1}: ${text}`);
+      setScratch(true);
+    } catch (e) { toast(String((e as Error)?.message ?? e)); }
+  };
+  const stamp = (text: string) => { canvas.current?.addPageText(page.page, text); toast('Added to the page. Drag it where you want it.'); };
+  const today = () => new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const clock = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const addPages = async (count: number) => {
+    if (!doc) return;
+    const last = doc.pages[doc.pages.length - 1];
+    const size = last && last.bg.kind === 'paper' ? { w: last.w, h: last.h } : pageSizeOf(doc.paper.size);
+    const style = last?.bg.kind === 'paper' ? last.bg.style : doc.paper.style;
+    const color = last?.bg.kind === 'paper' ? last.bg.color : doc.paper.color;
+    const next = { ...doc, pages: [...doc.pages, ...Array.from({ length: count }, () => paperPage(style, color, { w: size.w, h: size.h }))] };
+    setDoc(next);
+    await saveDoc(next);
+    lib.updateNote(id, { pages: next.pages.length, updated: Date.now() });
+    setVer((v) => v + 1);
+    toast(`${count} pages added at the end`);
+  };
+  const openOutline = async () => {
+    // What the iPad has already read on each page (it reads pages after a note is closed).
+    const read = await loadPageText(id);
+    const first: Record<string, string> = {};
+    for (const k of Object.keys(read)) first[k] = (read[k]?.lines ?? []).map((l) => l.text).join('\n');
+    setOutline(first);
+    setPageTools('outline');
+  };
   const toggleReview = () => {
     if (meta?.review) { lib.updateNote(id, { review: undefined }); toast('Review reminders are off for this note.'); }
     else { lib.updateNote(id, { review: startReview() }); toast('You will be reminded on Home in 1 day, then 3, 7, 14 and 30.'); }
@@ -838,6 +921,7 @@ export default function Editor() {
         { group: 8, label: 'Find action items', sub: 'On this page', icon: 'checklist', onPress: findActions },
         { group: 8, label: meta?.review ? 'Stop review reminders' : 'Review this note later', sub: meta?.review ? `Next: ${new Date(meta.review.next).toLocaleDateString()}` : REVIEW_DAYS.join(', ') + ' days', icon: 'bell', onPress: toggleReview },
         { group: 8, label: 'Focus timer', sub: 'Counts down while you work', icon: 'hourglass', checked: timerOpen, onPress: () => setTimerOpen((v) => !v) },
+        { group: 8, label: 'Page tools', sub: 'Stamps, read aloud, translate, outline', icon: 'wand.and.stars', onPress: () => setPageTools('menu') },
         { group: 8, label: 'Note stats', icon: 'chart.bar', onPress: () => setStatsOpen(true) },
         { group: 8, label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
         { group: 8, label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
@@ -991,6 +1075,51 @@ export default function Editor() {
             <Text style={{ color: '#15171C', fontSize: 15, fontWeight: '600' }}>{v}</Text>
           </View>
         ))}
+      </Sheet>
+      <MenuSheet topRight visible={pageTools === 'menu'} onClose={() => setPageTools(null)} title="Page tools" items={[
+        { group: 1, label: 'Stamps and starters', sub: 'Date, labels, ready-made outlines', icon: 'seal', onPress: () => setPageTools('stamps') },
+        { group: 1, label: 'Outline', sub: 'Every page and how it starts', icon: 'list.bullet.indent', onPress: openOutline },
+        { group: 2, label: 'Copy this page as text', icon: 'doc.on.clipboard', onPress: copyPageText },
+        { group: 2, label: reading ? 'Stop reading' : 'Read this page aloud', icon: reading ? 'speaker.slash' : 'speaker.wave.2', onPress: readAloud },
+        { group: 2, label: 'Translate this page', icon: 'globe', onPress: () => setPageTools('languages') },
+        { group: 3, label: 'Name this note from the page', sub: 'Quill reads it and picks a title', icon: 'sparkles', onPress: nameWithAI },
+        { group: 3, label: 'Summarise into the scratchpad', icon: 'text.append', onPress: summariseToScratch },
+        { group: 3, label: 'Key terms on this page', icon: 'character.book.closed', onPress: () => askPage('Key terms', 'List the key terms on this page with a one-line meaning for each, as a short list. Only use what is on the page.') },
+        { group: 4, label: 'Go to the first page', icon: 'arrow.up.to.line', onPress: () => canvas.current?.scrollToPage(0) },
+        { group: 4, label: 'Go to the last page', icon: 'arrow.down.to.line', onPress: () => canvas.current?.scrollToPage(page.count - 1) },
+        { group: 4, label: 'Add five pages at the end', icon: 'plus.rectangle.on.rectangle', onPress: () => addPages(5) },
+      ]} />
+      <MenuSheet visible={pageTools === 'stamps'} onClose={() => setPageTools(null)} title="Stamps and starters" items={[
+        { group: 1, label: 'Today’s date', sub: today(), icon: 'calendar', onPress: () => stamp(today()) },
+        { group: 1, label: 'The time', sub: clock(), icon: 'clock', onPress: () => stamp(clock()) },
+        { group: 1, label: 'Date and time', icon: 'calendar.badge.clock', onPress: () => stamp(`${today()}, ${clock()}`) },
+        { group: 2, label: '★ Important', icon: 'star', onPress: () => stamp('★ Important') },
+        { group: 2, label: '? Ask about this', icon: 'questionmark.circle', onPress: () => stamp('? Ask about this') },
+        { group: 2, label: '! Review before the test', icon: 'exclamationmark.circle', onPress: () => stamp('! Review before the test') },
+        { group: 2, label: '✓ Done', icon: 'checkmark.circle', onPress: () => stamp('✓ Done') },
+        { group: 3, label: 'To-do list', sub: 'Five empty boxes', icon: 'checklist', onPress: () => stamp('To do\n☐ \n☐ \n☐ \n☐ \n☐ ') },
+        { group: 3, label: 'Lecture outline', icon: 'list.number', onPress: () => stamp(`Topic:\nDate: ${today()}\n\nMain ideas\n1.\n2.\n3.\n\nQuestions\n•\n\nSummary\n`) },
+        { group: 3, label: 'Meeting notes', icon: 'person.2', onPress: () => stamp(`Meeting: \nDate: ${today()}\nWho: \n\nNotes\n•\n•\n\nActions\n☐ \n☐ `) },
+        { group: 3, label: 'Lab report', icon: 'flask', onPress: () => stamp('Title:\nAim:\nHypothesis:\nMethod:\nResults:\nConclusion:') },
+        { group: 3, label: 'Problem and working', icon: 'function', onPress: () => stamp('Problem:\n\nGiven:\nFind:\n\nWorking:\n\nAnswer:') },
+      ]} />
+      <MenuSheet visible={pageTools === 'languages'} onClose={() => setPageTools(null)} title="Translate this page into" items={['English', 'Spanish', 'French', 'Hebrew', 'Chinese', 'Arabic', 'Russian', 'German'].map((lang) => ({
+        label: lang, icon: 'globe', onPress: () => askPage(`In ${lang}`, `Translate everything written on this page into ${lang}. Reply with only the translation and keep the line breaks.`),
+      }))} />
+      <MenuSheet visible={pageTools === 'outline'} onClose={() => setPageTools(null)} title="Outline" items={(doc?.pages ?? []).map((p, i) => {
+        const first = (outline[p.id] ?? '').split('\n').map((x) => x.trim()).find(Boolean);
+        return { label: `Page ${i + 1}`, sub: first ? first.slice(0, 70) : p.bg.kind === 'paper' ? undefined : p.bg.kind === 'pdf' ? 'PDF page' : 'Photo', icon: meta?.flags?.includes(p.id) ? 'flag.fill' : 'doc.text', checked: i === page.page, onPress: () => canvas.current?.scrollToPage(i) };
+      })} />
+      <Sheet visible={!!toolOut} onClose={() => setToolOut(null)} title={toolOut?.title ?? ''} width={500}>
+        {toolOut?.busy ? <View style={{ padding: 30, alignItems: 'center' }}><ActivityIndicator color={t.accent} /></View> : (
+          <>
+            <Text selectable style={{ color: t.text, fontSize: 16, lineHeight: 24 }}>{toolOut?.text}</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+              <Pressable accessibilityLabel="Add this to the page" onPress={() => { if (toolOut) canvas.current?.addPageText(page.page, toolOut.text); setToolOut(null); toast('Added to the page'); }} style={{ flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Add to page</Text></Pressable>
+              <Pressable accessibilityLabel="Copy this" onPress={() => { if (toolOut) copyText(toolOut.text); toast('Copied'); }} style={{ height: 44, paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: t.chip }}><Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>Copy</Text></Pressable>
+            </View>
+          </>
+        )}
       </Sheet>
       <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />

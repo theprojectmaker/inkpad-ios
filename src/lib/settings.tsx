@@ -49,6 +49,7 @@ export type Settings = {
   inkSize: number;           // 0 | 1 | 2
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
+  days?: string[];           // the days a note was opened on (for the streak on Home), newest last
   tapUndo?: boolean;         // two-finger tap undoes, three-finger tap redoes (off unless turned on)
   bubble?: boolean;          // the movable quick button on the note (off unless turned on)
   bubbleAt?: { x: number; y: number };

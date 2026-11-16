@@ -98,6 +98,7 @@ export type NoteMeta = {
   opened?: number;
   fav?: boolean;
   pin?: boolean;         // kept at the top of its list
+  label?: string;        // a colour label shown on its card
   tags?: string[];       // words to find it by (search them as #tag)
   review?: { step: number; next: number };   // review reminders: which one, and when it is due
   flags?: string[];      // ids of the pages that carry a flag
