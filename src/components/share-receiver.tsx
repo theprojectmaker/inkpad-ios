@@ -4,12 +4,14 @@
 // Mounted once for the whole app.
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Reanimated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 
+import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type Page, uid } from '@/lib/model';
 import { imagePages, loadDoc, pdfPages, saveDoc } from '@/lib/noteio';
+import { pdfCover } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
 import { useIncomingShare } from '@/lib/share';
 import { importZip } from '@/lib/zipimport';
@@ -30,6 +32,9 @@ export function ShareReceiver() {
   const [folder, setFolder] = useState<string | null>(null);
   const [into, setInto] = useState<string | null>(null);     // an existing note to add the pages to
   const [existing, setExisting] = useState(false);
+  const [pick, setPick] = useState<'last' | 'new' | 'existing'>('new');
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [cover, setCover] = useState<string | null>(null);
   const [done, setDone] = useState<{ id: string; title: string; added: number } | null>(null);
 
   useEffect(() => {
@@ -57,6 +62,16 @@ export function ShareReceiver() {
     setFolder(null);
     setInto(null);
     setExisting(false);
+    setPick('new');
+    setFolderOpen(false);
+    setCover(null);
+    // A small picture of what is coming in: the PDF's first page, or the first photo.
+    if (isPdf(first)) {
+      const to = fsx.uri('inkpad/out/share-cover.jpg');
+      pdfCover(first.path, to, 240).then((ok) => { if (ok) setCover(`${to}?v=${Date.now()}`); }).catch(() => {});
+    } else {
+      setCover(/^file:|^\//.test(first.path) ? (first.path.startsWith('/') ? 'file://' + first.path : first.path) : first.path);
+    }
     setFiles(usable);
   }, [hasShareIntent, shareIntent, resetShareIntent, lib, toast, busy]);
 
@@ -113,123 +128,144 @@ export function ShareReceiver() {
   };
 
   const recent = lib.lib.notes.filter((n) => !n.trashed).slice().sort((a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated)).slice(0, 12);
+  const last = recent[0];
   const count = files?.length ?? 0;
   const pdfCount = files?.filter(isPdf).length ?? 0;
-  const kindLine = !files ? '' : pdfCount === count ? (count === 1 ? 'PDF' : `${count} PDFs`) : pdfCount === 0 ? (count === 1 ? 'Photo' : `${count} photos`) : `${count} files`;
+  const fileLine = !files ? '' : count === 1 ? (files[0].fileName ?? (pdfCount ? 'Shared PDF' : 'Shared photo')) : `${files[0].fileName ?? 'Shared files'} and ${count - 1} more`;
   const folderOf = (id: string | null) => lib.lib.folders.find((x) => x.id === id);
   const ago = (ms: number) => { const d = Math.floor((Date.now() - ms) / 86400000); return d <= 0 ? 'Today' : d === 1 ? 'Yesterday' : d < 7 ? `${d} days ago` : new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' }); };
-  const group = { borderRadius: 14, borderCurve: 'continuous', backgroundColor: t.dark ? t.elev : '#F2F2F7', overflow: 'hidden' } as const;
-  const caption = { color: t.sub, fontSize: 12.5, fontWeight: '600', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 20, marginBottom: 8, marginLeft: 4 } as const;
-  const hair = { height: 1, marginLeft: 52, backgroundColor: t.dark ? '#3A3A3C' : '#E1E1E6' } as const;
-  const card = { width: '100%', maxWidth: 480, borderRadius: 28, borderCurve: 'continuous', backgroundColor: t.dark ? t.card : '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 40, shadowOffset: { width: 0, height: 18 } } as const;
-  const tile = (icon: string, tint: string, size = 34) => (
-    <View style={{ width: size, height: size, borderRadius: size * 0.28, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', backgroundColor: tint + '22' }}>
-      <Icon name={icon} size={size * 0.5} color={tint} />
+  const choose = (p: 'last' | 'new' | 'existing') => {
+    setPick(p);
+    setExisting(p !== 'new');
+    if (p === 'last') setInto(last?.id ?? null);
+    if (p === 'existing') setInto((v) => v ?? last?.id ?? null);
+  };
+
+  // The look: a grey sheet with white groups, like a form in Settings.
+  const sheetBg = t.dark ? '#1C1C1E' : '#F2F2F7';
+  const groupBg = t.dark ? '#2C2C2E' : '#FFFFFF';
+  const line = t.dark ? '#3A3A3C' : '#E3E3E8';
+  const group = { borderRadius: 14, borderCurve: 'continuous', backgroundColor: groupBg, overflow: 'hidden' } as const;
+  const caption = { color: t.text, fontSize: 13.5, fontWeight: '600', marginTop: 20, marginBottom: 8, marginLeft: 8 } as const;
+  const footnote = { color: t.sub, fontSize: 12.5, marginTop: 7, marginLeft: 8 } as const;
+  const rowStyle = ({ pressed }: { pressed: boolean }) => ({ flexDirection: 'row' as const, alignItems: 'center' as const, minHeight: 54, paddingHorizontal: 16, backgroundColor: pressed ? (t.dark ? '#3A3A3C' : '#ECECF0') : 'transparent' });
+  const option = (label: string, on: boolean, onPress: () => void, first = false) => (
+    <View key={label}>
+      {first ? null : <View style={{ height: 1, marginLeft: 16, backgroundColor: line }} />}
+      <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: on }} onPress={onPress} style={rowStyle}>
+        <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 17 }}>{label}</Text>
+        {on ? <Icon name="checkmark" size={17} color={t.text} /> : null}
+      </Pressable>
     </View>
   );
-  const seg = (label: string, on: boolean, onPress: () => void) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: on }} onPress={onPress} style={{ flex: 1, height: 34, borderRadius: 9, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', backgroundColor: on ? (t.dark ? '#636366' : '#FFFFFF') : 'transparent', shadowColor: '#000', shadowOpacity: on ? 0.12 : 0, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }}>
-      <Text style={{ color: t.text, fontSize: 14.5, fontWeight: on ? '600' : '500' }}>{label}</Text>
-    </Pressable>
-  );
+  const fo = folderOf(folder);
 
   return (
     <>
       <Modal visible={!!files} transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={() => setFiles(null)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.38)' }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.42)' }}>
           <Pressable accessibilityLabel="Cancel the import" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} onPress={() => setFiles(null)} />
-          <Reanimated.View entering={FadeInDown.duration(260)} style={card}>
-            {/* What is coming in. */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 20, paddingBottom: 6 }}>
-              {tile(pdfCount ? 'doc.richtext.fill' : 'photo.fill', pdfCount ? '#E5484D' : '#30A46C', 52)}
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: t.sub, fontSize: 13, fontWeight: '600' }}>Import to Quill</Text>
-                <Text numberOfLines={1} style={{ color: t.text, fontSize: 19, fontWeight: '700', letterSpacing: -0.3, marginTop: 1 }}>{files?.[0]?.fileName ?? (pdfCount ? 'Shared PDF' : 'Shared photos')}</Text>
-                <Text style={{ color: t.faint, fontSize: 13, marginTop: 1 }}>{kindLine}{count > 1 ? ' in all' : ''}</Text>
-              </View>
-              <Pressable accessibilityLabel="Close" hitSlop={10} onPress={() => setFiles(null)} style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: t.dark ? t.elev : '#EEEEF2', alignSelf: 'flex-start' }}>
-                <Icon name="xmark" size={12} color={t.sub} />
+          <Reanimated.View entering={FadeInDown.duration(260)} style={{ width: '100%', maxWidth: 560, maxHeight: '88%', borderRadius: 34, borderCurve: 'continuous', backgroundColor: sheetBg, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 40, shadowOffset: { width: 0, height: 18 } }}>
+            {/* The bar: close on the left, the name in the middle, Import on the right. */}
+            <View style={{ height: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12 }}>
+              <Pressable accessibilityLabel="Close" onPress={() => setFiles(null)} style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: groupBg, opacity: pressed ? 0.6 : 1, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 1 } })}>
+                <Icon name="xmark" size={17} color={t.text} />
+              </Pressable>
+              <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>Import to Quill</Text>
+              <Pressable accessibilityLabel="Import" disabled={existing && !into} onPress={run} style={({ pressed }) => ({ height: 44, paddingHorizontal: 20, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent, opacity: existing && !into ? 0.4 : pressed ? 0.8 : 1 })}>
+                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>Import</Text>
               </Pressable>
             </View>
-            <ScrollView bounces={false} keyboardShouldPersistTaps="handled" style={{ maxHeight: 460 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 6 }}>
-              <View style={{ flexDirection: 'row', padding: 2, borderRadius: 11, borderCurve: 'continuous', backgroundColor: t.dark ? t.elev : '#E9E9EE', marginTop: 14 }}>
-                {seg('New note', !existing, () => setExisting(false))}
-                {seg('Add to a note', existing, () => { setExisting(true); setInto((v) => v ?? recent[0]?.id ?? null); })}
+            <ScrollView bounces={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 22 }}>
+              {/* What is coming in. */}
+              <View style={[group, { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 }]}>
+                <View style={{ width: 58, height: 72, borderRadius: 6, overflow: 'hidden', backgroundColor: '#fff', borderWidth: 1, borderColor: line, alignItems: 'center', justifyContent: 'center' }}>
+                  {cover ? <Image source={{ uri: cover }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : <Icon name={pdfCount ? 'doc.richtext' : 'photo'} size={24} color="#9AA2B2" />}
+                </View>
+                <Text numberOfLines={2} style={{ flex: 1, color: t.text, fontSize: 17 }}>{fileLine}</Text>
               </View>
-              {existing ? (
+
+              <Text style={caption}>Import options</Text>
+              <View style={group}>
+                {last ? option(`Add to “${last.title}”`, pick === 'last', () => choose('last'), true) : null}
+                {option('Create new note', pick === 'new', () => choose('new'), !last)}
+                {option('Add to existing note', pick === 'existing', () => choose('existing'))}
+              </View>
+              {pick !== 'new' ? <Text style={footnote}>The pages go on the end of that note.</Text> : null}
+
+              {pick === 'existing' ? (
                 <>
-                  <Text style={caption}>Add the pages to the end of</Text>
-                  {recent.length ? (
-                    <View style={group}>
-                      {recent.map((n, i) => {
-                        const on = into === n.id, fo = folderOf(n.folderId);
-                        return (
-                          <View key={n.id}>
-                            {i ? <View style={hair} /> : null}
-                            <Pressable accessibilityLabel={n.title} accessibilityState={{ selected: on }} onPress={() => setInto(n.id)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, paddingHorizontal: 12, backgroundColor: pressed ? (t.dark ? '#3A3A3C' : '#E5E5EA') : 'transparent' })}>
-                              {tile(n.kind === 'pdf' ? 'doc.richtext' : 'doc.text', fo?.color ?? t.accent, 30)}
-                              <View style={{ flex: 1 }}>
-                                <Text numberOfLines={1} style={{ color: t.text, fontSize: 15.5, fontWeight: '500' }}>{n.title}</Text>
-                                <Text numberOfLines={1} style={{ color: t.faint, fontSize: 12.5 }}>{[`${n.pages} ${n.pages === 1 ? 'page' : 'pages'}`, fo?.name, ago(n.opened ?? n.updated)].filter(Boolean).join(' · ')}</Text>
-                              </View>
-                              <Icon name={on ? 'checkmark.circle.fill' : 'circle'} size={21} color={on ? t.accent : t.faint} />
-                            </Pressable>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : <Text style={{ color: t.sub, fontSize: 15, marginLeft: 4 }}>There are no notes yet. Choose New note instead.</Text>}
-                </>
-              ) : (
-                <>
-                  <Text style={caption}>Name</Text>
-                  <View style={[group, { flexDirection: 'row', alignItems: 'center', paddingLeft: 12 }]}>
-                    <Icon name="pencil" size={15} color={t.faint} />
-                    <TextInput accessibilityLabel="Name of the note" value={name} onChangeText={setName} placeholder="Name of the note" placeholderTextColor={t.faint} selectTextOnFocus clearButtonMode="while-editing" returnKeyType="done"
-                      style={{ flex: 1, height: 46, paddingHorizontal: 10, color: t.text, fontSize: 16 }} />
-                  </View>
-                  <Text style={caption}>Subject</Text>
+                  <Text style={caption}>Note</Text>
                   <View style={group}>
-                    {[{ id: null as string | null, name: 'No subject', color: t.faint }, ...lib.lib.folders].map((fo, i) => {
-                      const on = folder === fo.id;
-                      return (
-                        <View key={fo.id ?? 'none'}>
-                          {i ? <View style={hair} /> : null}
-                          <Pressable accessibilityLabel={fo.name} accessibilityState={{ selected: on }} onPress={() => setFolder(fo.id)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 46, paddingHorizontal: 12, backgroundColor: pressed ? (t.dark ? '#3A3A3C' : '#E5E5EA') : 'transparent' })}>
-                            {tile(fo.id ? 'folder.fill' : 'tray', fo.color, 30)}
-                            <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 15.5 }}>{fo.name}</Text>
-                            {on ? <Icon name="checkmark" size={15} color={t.accent} /> : null}
-                          </Pressable>
-                        </View>
-                      );
-                    })}
+                    {recent.map((n, i) => (
+                      <View key={n.id}>
+                        {i ? <View style={{ height: 1, marginLeft: 16, backgroundColor: line }} /> : null}
+                        <Pressable accessibilityLabel={n.title} accessibilityState={{ selected: into === n.id }} onPress={() => setInto(n.id)} style={rowStyle}>
+                          <View style={{ flex: 1, paddingVertical: 8 }}>
+                            <Text numberOfLines={1} style={{ color: t.text, fontSize: 16.5 }}>{n.title}</Text>
+                            <Text numberOfLines={1} style={{ color: t.sub, fontSize: 12.5, marginTop: 1 }}>{[`${n.pages} ${n.pages === 1 ? 'page' : 'pages'}`, folderOf(n.folderId)?.name, ago(n.opened ?? n.updated)].filter(Boolean).join(' · ')}</Text>
+                          </View>
+                          {into === n.id ? <Icon name="checkmark" size={17} color={t.text} /> : null}
+                        </Pressable>
+                      </View>
+                    ))}
                   </View>
                 </>
-              )}
+              ) : null}
+
+              {pick === 'new' ? (
+                <>
+                  <Text style={caption}>Note title</Text>
+                  <View style={[group, { flexDirection: 'row', alignItems: 'center' }]}>
+                    <TextInput accessibilityLabel="Note title" value={name} onChangeText={setName} placeholder="Note title" placeholderTextColor={t.faint} selectTextOnFocus returnKeyType="done"
+                      style={{ flex: 1, height: 54, paddingHorizontal: 16, color: t.text, fontSize: 17 }} />
+                    {name ? <Pressable accessibilityLabel="Clear the title" hitSlop={10} onPress={() => setName('')} style={{ paddingHorizontal: 14 }}><Icon name="xmark.circle.fill" size={18} color={t.faint} /></Pressable> : null}
+                  </View>
+                  <Text style={footnote}>Tap the title to rename it.</Text>
+
+                  <Text style={caption}>Folder</Text>
+                  <View style={group}>
+                    <Pressable accessibilityLabel={`Folder: ${fo?.name ?? 'No subject'}. Tap to change.`} onPress={() => setFolderOpen((v) => !v)} style={rowStyle}>
+                      <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: fo?.color ?? t.faint, marginRight: 12 }} />
+                      <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 17 }}>{fo?.name ?? 'No subject'}</Text>
+                      <Icon name={folderOpen ? 'chevron.down' : 'chevron.right'} size={14} color={t.sub} />
+                    </Pressable>
+                    {folderOpen ? [{ id: null as string | null, name: 'No subject', color: t.faint }, ...lib.lib.folders].map((x) => (
+                      <View key={x.id ?? 'none'}>
+                        <View style={{ height: 1, marginLeft: 16, backgroundColor: line }} />
+                        <Pressable accessibilityLabel={x.name} accessibilityState={{ selected: folder === x.id }} onPress={() => { setFolder(x.id); setFolderOpen(false); }} style={rowStyle}>
+                          <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: x.color, marginRight: 12, marginLeft: 14 }} />
+                          <Text numberOfLines={1} style={{ flex: 1, color: t.text, fontSize: 16.5 }}>{x.name}</Text>
+                          {folder === x.id ? <Icon name="checkmark" size={16} color={t.text} /> : null}
+                        </Pressable>
+                      </View>
+                    )) : null}
+                  </View>
+                </>
+              ) : null}
             </ScrollView>
-            <View style={{ padding: 20, paddingTop: 16 }}>
-              <Pressable accessibilityLabel="Import" disabled={existing && !into} onPress={run} style={({ pressed }) => ({ height: 52, borderRadius: 16, borderCurve: 'continuous', flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent, opacity: existing && !into ? 0.4 : pressed ? 0.85 : 1 })}>
-                <Icon name="square.and.arrow.down" size={17} color="#fff" />
-                <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>{existing ? 'Add to this note' : 'Import'}</Text>
-              </Pressable>
-            </View>
           </Reanimated.View>
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* Afterwards: a small menu. */}
       <Modal visible={!!done} transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']} onRequestClose={() => setDone(null)}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.38)' }}>
-          <Reanimated.View entering={FadeIn.duration(200)} style={[card, { maxWidth: 380, alignItems: 'center', padding: 26 }]}>
-            <Reanimated.View entering={ZoomIn.springify().damping(12)} style={{ width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center', backgroundColor: '#30A46C' }}>
-              <Icon name="checkmark" size={30} color="#fff" />
-            </Reanimated.View>
-            <Text style={{ color: t.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4, marginTop: 16 }}>It's in Quill</Text>
-            <Text style={{ color: t.sub, fontSize: 15.5, textAlign: 'center', marginTop: 6 }}>{done ? `${done.added} ${done.added === 1 ? 'page' : 'pages'} added to “${done.title}”.` : ''}</Text>
-            <Pressable accessibilityLabel="Open the note" onPress={() => { const id = done?.id; setDone(null); if (id) router.push(`/note/${id}`); }} style={({ pressed }) => ({ alignSelf: 'stretch', height: 52, borderRadius: 16, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', backgroundColor: t.accent, marginTop: 22, opacity: pressed ? 0.85 : 1 })}>
-              <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>Open the note</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.42)' }}>
+          <Reanimated.View entering={FadeIn.duration(180)} style={{ width: '100%', maxWidth: 320, borderRadius: 22, borderCurve: 'continuous', backgroundColor: sheetBg, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 30, shadowOffset: { width: 0, height: 12 } }}>
+            <View style={{ alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16 }}>
+              <Reanimated.View entering={ZoomIn.springify().damping(12)} style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#30A46C' }}>
+                <Icon name="checkmark" size={20} color="#fff" />
+              </Reanimated.View>
+              <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', marginTop: 10 }}>Imported</Text>
+              <Text numberOfLines={2} style={{ color: t.sub, fontSize: 14, textAlign: 'center', marginTop: 3 }}>{done ? `${done.added} ${done.added === 1 ? 'page' : 'pages'} in “${done.title}”` : ''}</Text>
+            </View>
+            <View style={{ height: 1, backgroundColor: line }} />
+            <Pressable accessibilityLabel="Continue to the Quill note" onPress={() => { const id = done?.id; setDone(null); if (id) router.push(`/note/${id}`); }} style={({ pressed }) => ({ height: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? (t.dark ? '#3A3A3C' : '#E5E5EA') : 'transparent' })}>
+              <Text style={{ color: t.accent, fontSize: 17, fontWeight: '700' }}>Continue to Quill note</Text>
             </Pressable>
-            <Pressable accessibilityLabel="Close without opening the note" onPress={() => setDone(null)} style={({ pressed }) => ({ alignSelf: 'stretch', height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 6, opacity: pressed ? 0.5 : 1 })}>
-              <Text style={{ color: t.accent, fontSize: 17, fontWeight: '600' }}>Done</Text>
+            <View style={{ height: 1, backgroundColor: line }} />
+            <Pressable accessibilityLabel="Close" onPress={() => setDone(null)} style={({ pressed }) => ({ height: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? (t.dark ? '#3A3A3C' : '#E5E5EA') : 'transparent' })}>
+              <Text style={{ color: t.accent, fontSize: 17 }}>Close</Text>
             </Pressable>
           </Reanimated.View>
         </View>
