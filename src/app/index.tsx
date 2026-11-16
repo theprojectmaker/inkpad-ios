@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PaperSheet } from '@/components/paper-sheet';
 import { TodayStrip } from '@/components/today-strip';
 import { HomeStrip } from '@/components/home-strip';
-import { dailyTitle, parseTags, tagLine } from '@/lib/extras';
+import { dailyTitle, parseTags, streakOf, tagCounts, tagLine } from '@/lib/extras';
 import { ConfirmSheet, Icon, IconButton, MenuSheet, PromptSheet, useToast } from '@/components/ui';
 import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
@@ -23,7 +23,8 @@ import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { importZip } from '@/lib/zipimport';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
 
-type Filter = { kind: 'home' } | { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'unfiled' } | { kind: 'folder'; id: string };
+type Filter = { kind: 'home' } | { kind: 'all' } | { kind: 'fav' } | { kind: 'trash' } | { kind: 'unfiled' } | { kind: 'smart'; id: 'pinned' | 'flagged' | 'review' | 'today' | 'week' } | { kind: 'tag'; tag: string } | { kind: 'folder'; id: string };
+const SMART: Record<string, string> = { pinned: 'Pinned', flagged: 'With flagged pages', review: 'To review', today: 'Edited today', week: 'This week' };
 
 const fmtDate = (t: number) => {
   const d = new Date(t), now = new Date();
@@ -82,8 +83,10 @@ export default function LibraryScreen() {
 
   const [filter, setFilter] = useState<Filter>({ kind: 'home' });
   const [q, setQ] = useState('');
-  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'tags' | 'label' | 'trashNote' | 'purge' | 'purgeAll'>(null);
+  const [sheet, setSheet] = useState<null | 'home' | 'new' | 'scan' | 'note' | 'move' | 'rename' | 'delete' | 'newFolder' | 'folder' | 'renameFolder' | 'deleteFolder' | 'paper' | 'sort' | 'tags' | 'label' | 'bulkMove' | 'bulkLabel' | 'trashNote' | 'purge' | 'purgeAll'>(null);
   const [target, setTarget] = useState<NoteMeta | null>(null);
+  // Choosing several notes at once: null when not choosing.
+  const [picked, setPicked] = useState<string[] | null>(null);
   const [folderTarget, setFolderTarget] = useState<string | null>(null);
 
   const folderOf = (id: string | null) => lib.lib.folders.find((f) => f.id === id);
@@ -102,6 +105,12 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
     if (filter.kind === 'fav') list = list.filter((n) => n.fav);
     else if (filter.kind === 'folder') list = list.filter((n) => n.folderId === filter.id);
     else if (filter.kind === 'unfiled') list = list.filter((n) => !n.folderId);
+    else if (filter.kind === 'tag') list = list.filter((n) => n.tags?.includes(filter.tag));
+    else if (filter.kind === 'smart') {
+      const dayStart = new Date().setHours(0, 0, 0, 0);
+      list = list.filter((n) => filter.id === 'pinned' ? !!n.pin : filter.id === 'flagged' ? !!n.flags?.length : filter.id === 'review' ? !!n.review
+        : filter.id === 'today' ? n.updated >= dayStart : n.updated >= Date.now() - 7 * 86400000);
+    }
     const needle = q.trim().toLowerCase();
     if (needle) list = list.filter((n) => hay(n).includes(needle));
     const names = new Map(lib.lib.folders.map((f) => [f.id, f.name]));
@@ -270,12 +279,16 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
   const gapX = 24;
   const cols = Math.max(2, Math.floor((mainW - pad * 2 + gapX) / (160 + gapX)));
   const cardW = (mainW - pad * 2 - (cols - 1) * gapX) / cols;
-  const title = filter.kind === 'all' || filter.kind === 'home' ? 'Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : filter.kind === 'unfiled' ? 'No subject' : folderOf(filter.id)?.name ?? 'Subject';
+  const title = filter.kind === 'all' || filter.kind === 'home' ? 'Notes' : filter.kind === 'fav' ? 'Favorites' : filter.kind === 'trash' ? 'Recently Deleted' : filter.kind === 'unfiled' ? 'No subject' : filter.kind === 'smart' ? SMART[filter.id] : filter.kind === 'tag' ? `#${filter.tag}` : folderOf(filter.id)?.name ?? 'Subject';
   const live = lib.lib.notes.filter((n) => !n.trashed);
   const trashed = lib.lib.notes.filter((n) => n.trashed).length;
   const list = s.view === 'list';
   const showHome = filter.kind === 'home' && !q.trim();
   const pinned = live.filter((n) => n.pin).slice(0, 6);
+  const tags = tagCounts(lib.lib.notes);
+  const weekNotes = live.filter((n) => n.updated >= Date.now() - 7 * 86400000).length;
+  const focusToday = s.focusLog?.[new Date().toISOString().slice(0, 10)] ?? 0;
+  const bulk = (f: (id: string) => void) => { (picked ?? []).forEach(f); };
   const sectionTitle = { color: t.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.3, marginTop: 30, marginBottom: 14 } as const;
   const recent = useMemo(() => live.slice().sort((a, b) => (b.opened ?? b.updated) - (a.opened ?? a.updated)).slice(0, 6), [lib.lib.notes]);
   const rowW = mainW - (pad - 10) * 2;
@@ -409,7 +422,11 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
     );
   };
 
-  const pressNote = (n: NoteMeta) => { if (n.trashed) { setTarget(n); setSheet('trashNote'); } else open(n.id); };
+  const pressNote = (n: NoteMeta) => {
+    if (picked && !n.trashed) { setPicked(picked.includes(n.id) ? picked.filter((x) => x !== n.id) : [...picked, n.id]); return; }
+    pressOne(n);
+  };
+  const pressOne = (n: NoteMeta) => { if (n.trashed) { setTarget(n); setSheet('trashNote'); } else open(n.id); };
   const row = (n: NoteMeta, ghost = false) => {
     const thumb = n.thumb ? fsx.uri(notePath(n.id, n.thumb)) : '';
     const f = folderOf(n.folderId);
@@ -419,6 +436,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
         accessibilityHint={n.trashed ? undefined : 'Touch and hold to drag it onto a subject'}
         style={({ pressed }) => ({ width: ghost ? rowW : undefined, flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12,
           backgroundColor: ghost ? t.elev : pressed ? t.chip : 'transparent', opacity: !ghost && drag?.n.id === n.id ? 0.35 : 1 })}>
+        {picked && !n.trashed ? <Icon name={picked.includes(n.id) ? 'checkmark.circle.fill' : 'circle'} size={22} color={picked.includes(n.id) ? t.accent : t.faint} /> : null}
         <View style={{ width: 46, height: 60, borderRadius: 5, overflow: 'hidden', backgroundColor: '#fff', borderWidth: StyleSheet.hairlineWidth, borderColor: t.line, alignItems: 'center', justifyContent: 'center' }}>
           {thumb ? <Image source={{ uri: thumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" /> : <Icon name="doc" size={18} color="#B8BCC4" />}
         </View>
@@ -451,6 +469,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
               ) : paperMock()}
           </View>
           {n.label ? <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 6, borderTopLeftRadius: 14, borderTopRightRadius: 14, backgroundColor: n.label }} /> : null}
+          {picked && !n.trashed ? <View style={{ position: 'absolute', top: 8, left: 8, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: picked.includes(n.id) ? t.accent : 'rgba(255,255,255,0.92)', borderWidth: 1.5, borderColor: picked.includes(n.id) ? t.accent : '#9AA2B2' }}>{picked.includes(n.id) ? <Icon name="checkmark" size={13} color="#fff" /> : null}</View> : null}
           {n.fav ? <View style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="star.fill" size={14} color="#F5B400" /></View> : null}
           <View style={{ paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.line }}>
             <Text numberOfLines={1} style={{ color: t.text, fontSize: 15, fontWeight: '500' }}>{n.title}</Text>
@@ -502,6 +521,10 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length, drop: NONE })}
             {sideRow('Templates', false, () => setSheet('paper'), { icon: 'doc.plaintext' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
+            {live.some((n) => n.pin) ? sideRow('Pinned', filter.kind === 'smart' && filter.id === 'pinned', () => setFilter({ kind: 'smart', id: 'pinned' }), { icon: 'pin', count: live.filter((n) => n.pin).length }) : null}
+            {live.some((n) => n.flags?.length) ? sideRow('Flagged pages', filter.kind === 'smart' && filter.id === 'flagged', () => setFilter({ kind: 'smart', id: 'flagged' }), { icon: 'flag', count: live.filter((n) => n.flags?.length).length }) : null}
+            {live.some((n) => n.review) ? sideRow('To review', filter.kind === 'smart' && filter.id === 'review', () => setFilter({ kind: 'smart', id: 'review' }), { icon: 'bell', count: live.filter((n) => n.review).length }) : null}
+            {sideRow('This week', filter.kind === 'smart' && filter.id === 'week', () => setFilter({ kind: 'smart', id: 'week' }), { icon: 'calendar' })}
             {sideRow('Study', false, () => router.push('/study'), { icon: 'book' })}
             {s.showDraw ? sideRow('Drawing Board', false, () => router.push('/draw' as never), { icon: 'paintbrush.pointed' }) : null}
             {s.showClassroom ? sideRow('Classroom', false, () => router.push('/classroom'), { icon: 'graduationcap' }) : null}
@@ -513,6 +536,12 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
             {lib.lib.folders.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map((f) => sideRow(f.name, filter.kind === 'folder' && filter.id === f.id, () => setFilter({ kind: 'folder', id: f.id }),
               { color: f.color, count: count(f.id), drop: f.id, onLongPress: () => { setFolderTarget(f.id); setSheet('folder'); } }))}
             {lib.lib.folders.length && live.some((x) => !x.folderId) ? sideRow('No subject', filter.kind === 'unfiled', () => setFilter({ kind: 'unfiled' }), { icon: 'tray', count: live.filter((x) => !x.folderId).length }) : null}
+            {tags.length ? (
+              <>
+                <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 22, marginBottom: 6, paddingLeft: 12 }}>Tags</Text>
+                {tags.slice(0, 12).map((x) => sideRow('#' + x.tag, filter.kind === 'tag' && filter.tag === x.tag, () => setFilter({ kind: 'tag', tag: x.tag }), { icon: 'tag', count: x.count }))}
+              </>
+            ) : null}
           </ScrollView>
           <View style={{ paddingHorizontal: 12 }}>
             {sideRow('Recently Deleted', filter.kind === 'trash', () => setFilter({ kind: 'trash' }), { icon: 'trash', count: trashed })}
@@ -591,6 +620,21 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
                 </Pressable>
               ))}
             </View>
+            <Text style={sectionTitle}>This week</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              {([
+                ['Notes worked on', String(weekNotes), 'square.and.pencil', t.accent],
+                ['Day streak', String(streakOf(s.days)), 'flame.fill', '#F76B15'],
+                ['Focus today', focusToday ? `${focusToday} min` : 'None yet', 'hourglass', '#6E56CF'],
+                ['Pages in all', String(live.reduce((a, n) => a + (n.pages ?? 0), 0)), 'doc.on.doc', '#30A46C'],
+              ] as const).map(([label, value, icon, tint]) => (
+                <View key={label} accessibilityLabel={`${label}: ${value}`} style={{ flex: 1, borderRadius: 18, borderCurve: 'continuous', backgroundColor: t.dark ? t.card : t.side, padding: 14 }}>
+                  <Icon name={icon} size={17} color={tint} />
+                  <Text style={{ color: t.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4, marginTop: 8 }}>{value}</Text>
+                  <Text numberOfLines={1} style={{ color: t.sub, fontSize: 13 }}>{label}</Text>
+                </View>
+              ))}
+            </View>
             {pinned.length ? (
               <>
                 <Text style={sectionTitle}>Pinned</Text>
@@ -634,6 +678,29 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
         </View>
       </View>
 
+      {picked ? (
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: ins.bottom + 18, alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 26, borderCurve: 'continuous', backgroundColor: t.elev, shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 20, shadowOffset: { width: 0, height: 8 } }}>
+            <Text style={{ color: t.text, fontSize: 15, fontWeight: '700', marginHorizontal: 8 }}>{picked.length} selected</Text>
+            <IconButton name="folder" label="Move the selected notes to a subject" disabled={!picked.length} onPress={() => setSheet('bulkMove')} />
+            <IconButton name="circle.fill" label="Give the selected notes a colour label" disabled={!picked.length} onPress={() => setSheet('bulkLabel')} />
+            <IconButton name="pin" label="Pin the selected notes" disabled={!picked.length} onPress={() => { bulk((x) => lib.updateNote(x, { pin: true })); toast(`Pinned ${picked.length}`); setPicked(null); }} />
+            <IconButton name="star" label="Add the selected notes to Favorites" disabled={!picked.length} onPress={() => { bulk((x) => lib.updateNote(x, { fav: true })); toast(`Added ${picked.length} to Favorites`); setPicked(null); }} />
+            <IconButton name="trash" label="Delete the selected notes" color={t.danger} disabled={!picked.length} onPress={() => { bulk((x) => lib.trashNote(x)); toast(`Moved ${picked.length} to Recently Deleted`); setPicked(null); }} />
+            <Pressable accessibilityLabel="Select all the notes shown" onPress={() => setPicked(notes.filter((n) => !n.trashed).map((n) => n.id))} style={{ height: 36, paddingHorizontal: 12, borderRadius: 18, justifyContent: 'center', backgroundColor: t.chip }}><Text style={{ color: t.text, fontSize: 14, fontWeight: '600' }}>All</Text></Pressable>
+            <Pressable accessibilityLabel="Stop selecting" onPress={() => setPicked(null)} style={{ height: 36, paddingHorizontal: 14, borderRadius: 18, justifyContent: 'center', backgroundColor: t.accent }}><Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>Done</Text></Pressable>
+          </View>
+        </View>
+      ) : null}
+      <MenuSheet visible={sheet === 'bulkMove'} onClose={() => setSheet(null)} title={`Move ${picked?.length ?? 0} to`} items={[
+        { label: 'No subject', icon: 'tray', onPress: () => { bulk((x) => lib.updateNote(x, { folderId: null })); setPicked(null); } },
+        ...lib.lib.folders.map((f) => ({ label: f.name, icon: 'folder', onPress: () => { bulk((x) => lib.updateNote(x, { folderId: f.id })); setPicked(null); } })),
+      ]} />
+      <MenuSheet visible={sheet === 'bulkLabel'} onClose={() => setSheet(null)} title="Colour label" items={[
+        { label: 'None', icon: 'circle', onPress: () => { bulk((x) => lib.updateNote(x, { label: undefined })); setPicked(null); } },
+        ...([['Red', '#E5484D'], ['Orange', '#F76B15'], ['Yellow', '#FFC53D'], ['Green', '#30A46C'], ['Blue', '#0090FF'], ['Purple', '#6E56CF'], ['Pink', '#D6409F']] as const).map(([name, hex]) => (
+          { label: name, icon: 'circle.fill', onPress: () => { bulk((x) => lib.updateNote(x, { label: hex })); setPicked(null); } })),
+      ]} />
       {drag ? (
         <Reanimated.View pointerEvents="none" onLayout={(e) => { ghostSize.current = { w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height }; }}
           style={[{ position: 'absolute', left: 0, top: 0, zIndex: 50 }, drag.list ? { borderRadius: 12, shadowColor: '#000', shadowOpacity: t.dark ? 0.5 : 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 } } : null, ghostLook]}>
@@ -643,6 +710,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
 
       <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
         { group: 1, label: "Today's note", icon: 'calendar', onPress: openToday },
+        { group: 1, label: 'Select notes', icon: 'checkmark.circle', onPress: () => { if (filter.kind === 'home') setFilter({ kind: 'all' }); setPicked([]); } },
         ...(s.showDraw ? [{ group: 1, label: 'Drawing Board', icon: 'paintbrush.pointed', onPress: () => router.push('/draw' as never) }] : []),
         { group: 1, label: 'Import a PDF or zip', icon: 'square.and.arrow.down', onPress: importPdf },
         { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
@@ -664,6 +732,7 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
       <MenuSheet visible={sheet === 'note'} onClose={() => setSheet(null)} title={target2?.title} items={target2 ? [
         { label: 'Rename', icon: 'pencil', onPress: () => setSheet('rename') },
         { label: target2.fav ? 'Remove from Favorites' : 'Add to Favorites', icon: target2.fav ? 'star.fill' : 'star', onPress: () => lib.updateNote(target2.id, { fav: !target2.fav }) },
+        { label: 'Select notes', icon: 'checkmark.circle', onPress: () => setPicked([target2.id]) },
         { label: 'Colour label', icon: 'circle.fill', onPress: () => setSheet('label') },
         { label: 'Tags…', sub: tagLine(target2.tags) || undefined, icon: 'tag', onPress: () => setSheet('tags') },
         { label: target2.pin ? 'Unpin from the top' : 'Pin to the top', icon: target2.pin ? 'pin.slash' : 'pin', onPress: () => lib.updateNote(target2.id, { pin: !target2.pin }) },

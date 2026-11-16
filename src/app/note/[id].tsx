@@ -7,7 +7,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, PanResponder, Pressable, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type CanvasHandle, type CanvasPage, type CanvasState, type LegacyStroke, PAGE_GAP, QuillCanvas } from '@/components/quill-canvas';
@@ -32,7 +32,7 @@ import { HandInSheet } from '@/components/classroom-parts';
 import { Desmos } from '@/components/desmos';
 import { ConfirmSheet, Glass, Icon, IconButton, MenuSheet, PromptSheet, Sheet, useToast } from '@/components/ui';
 import { askStudy } from '@/lib/ai';
-import { advanceReview, REVIEW_DAYS, startReview } from '@/lib/extras';
+import { advanceReview, parseTags, REVIEW_DAYS, startReview } from '@/lib/extras';
 import { copyText, readText, speak, stopSpeaking } from '@/lib/ondevice';
 import { loadPageText, pageTextToSearch, readPages, snapPages } from '@/lib/handindex';
 import { dueLabel, handIn as sendToClassroom, openAssignment } from '@/lib/classroom';
@@ -125,7 +125,7 @@ export default function Editor() {
   const [busy, setBusy] = useState(false);
   const [ruler, setRuler] = useState(false);
   const { s, set } = useSettings();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const tool = useMemo(() => currentTool(s),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady, s.measureMode, s.brushType, s.shapeType, s.shapeLock, s.shapeFill, s.streamline]);
@@ -162,6 +162,18 @@ export default function Editor() {
   const [pageTools, setPageTools] = useState<null | 'menu' | 'stamps' | 'languages' | 'outline'>(null);
   const [toolOut, setToolOut] = useState<{ title: string; busy: boolean; text: string } | null>(null);
   const [reading, setReading] = useState(false);
+  const [details, setDetails] = useState(false);
+  const [guide, setGuide] = useState(false);
+  const [guideY, setGuideY] = useState(260);
+  const guideFrom = useRef(260);
+  const guidePan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderMove: (_, g) => setGuideY(Math.max(80, guideFrom.current + g.dy)),
+    onPanResponderRelease: (_, g) => { guideFrom.current = Math.max(80, guideFrom.current + g.dy); },
+  })).current;
+  const [onBreak, setOnBreak] = useState(false);
   const [outline, setOutline] = useState<Record<string, string>>({});
   const [timerMin, setTimerMin] = useState(25);
   const [timerLeft, setTimerLeft] = useState(25 * 60);
@@ -699,7 +711,23 @@ export default function Editor() {
     const i = setInterval(() => setTimerLeft((l) => (l <= 1 ? 0 : l - 1)), 1000);
     return () => clearInterval(i);
   }, [timerRun]);
-  useEffect(() => { if (timerRun && timerLeft === 0) { setTimerRun(false); toast('Time is up. Nice focus.'); } }, [timerLeft, timerRun]);
+  useEffect(() => {
+    if (!timerRun || timerLeft !== 0) return;
+    if (onBreak) {
+      setOnBreak(false);
+      setTimerRun(false);
+      setTimerLeft(timerMin * 60);
+      toast('Break over. Ready when you are.');
+      return;
+    }
+    // A finished session counts toward today's focus time on Home, and a five-minute break starts.
+    const day = new Date().toISOString().slice(0, 10);
+    set({ focusLog: { ...(s.focusLog ?? {}), [day]: (s.focusLog?.[day] ?? 0) + timerMin } });
+    setOnBreak(true);
+    setTimerLeft(5 * 60);
+    toast(`${timerMin} minutes done. Take five.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerLeft, timerRun]);
   const nextLength = () => { const lens = [15, 25, 45, 60]; const n = lens[(lens.indexOf(timerMin) + 1) % lens.length]; setTimerMin(n); setTimerLeft(n * 60); setTimerRun(false); };
   const toggleFlag = () => {
     if (!curPageId) return;
@@ -738,6 +766,24 @@ export default function Editor() {
       copyText(text);
       toast(`Copied ${text.split('\n').length} lines as text`);
     } catch (e) { toast(String((e as Error)?.message ?? e)); }
+  };
+  const copyNoteText = async () => {
+    if (!doc) return;
+    const count = Math.min(doc.pages.length, 40);
+    const parts: string[] = [];
+    try {
+      for (let i = 0; i < count; i++) {
+        tbusy(`Reading page ${i + 1} of ${count}…`);
+        const rel = `${renderDir(id)}/tool.jpg`;
+        if (!(await canvas.current?.pageThumb(i, absPath(rel), 1400))) continue;
+        const text = (await readText(fsx.uri(rel))).map((l) => l.text).join('\n').trim();
+        if (text) parts.push(count > 1 ? `Page ${i + 1}\n${text}` : text);
+      }
+    } catch (e) { tbusy(null); toast(String((e as Error)?.message ?? e)); return; }
+    tbusy(null);
+    if (!parts.length) { toast("Couldn't find any writing in this note."); return; }
+    copyText(parts.join('\n\n'));
+    toast(`Copied the text of ${parts.length} ${parts.length === 1 ? 'page' : 'pages'}${doc.pages.length > count ? ' (the first 40)' : ''}`);
   };
   const readAloud = async () => {
     if (reading) { stopSpeaking(); setReading(false); return; }
@@ -879,6 +925,15 @@ export default function Editor() {
         {study && doc ? <StudyPanel noteId={id} page={page.page} pageCount={doc.pages.length} canvas={canvas} absPath={absPath} onClose={() => setStudy(false)} /> : null}
       </View>
 
+      {s.warmTint ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: `rgba(255,147,41,${[0, 0.07, 0.13, 0.2][s.warmTint] ?? 0})` }} /> : null}
+      {guide ? (
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: Math.min(height - 120, guideY), height: 58 }}>
+          <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(255,214,10,0.16)', borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: 'rgba(214,158,0,0.55)' }} />
+          <View {...guidePan.panHandlers} accessibilityLabel="Move the reading guide" style={{ position: 'absolute', right: 10, top: 7, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(214,158,0,0.9)' }}>
+            <Icon name="arrow.up.and.down" size={16} color="#fff" />
+          </View>
+        </View>
+      ) : null}
       {/* The tools: on the iPad, but left out of anything that shares or records the screen. */}
       <Shield on={s.shareClean !== false}>
       {!focus ? (
@@ -925,6 +980,7 @@ export default function Editor() {
         { group: 2, label: 'Start study session', icon: 'timer', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
         { group: 3, label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
         { group: 3, label: 'View settings', icon: 'chevron.right', onPress: () => setViewMenu(true) },
+        { group: 4, label: 'Note details', sub: 'Subject, tags, colour, pin', icon: 'info.circle', onPress: () => setDetails(true) },
         { group: 4, label: meta?.title ?? 'Note', sub: 'Tap to rename', icon: 'chevron.right', onPress: () => setRenaming(true) },
         { group: 5, label: 'Version history', icon: 'clock.arrow.circlepath', onPress: () => setVersions(true) },
         ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
@@ -958,6 +1014,8 @@ export default function Editor() {
         { group: 1, label: 'Present', sub: 'Full screen, one page at a time', icon: 'play.rectangle', onPress: () => { setPresent(true); setFocus(true); canvas.current?.fitWidth(); } },
         { group: 1, label: 'Quick button', sub: 'Drag it anywhere; tap for the eraser', icon: 'circle.dashed', checked: !!s.bubble, onPress: () => set({ bubble: !s.bubble }) },
         { group: 1, label: 'Focus mode', sub: 'Hides the toolbars', icon: 'arrow.up.left.and.arrow.down.right', onPress: () => setFocus(true) },
+        { group: 2, label: 'Reading guide', sub: 'A band to keep your place; drag its handle', icon: 'line.3.horizontal', checked: guide, onPress: () => setGuide((v) => !v) },
+        { group: 2, label: ['Warm tint: off', 'Warm tint: light', 'Warm tint: medium', 'Warm tint: strong'][s.warmTint ?? 0], sub: 'Easier on the eyes at night. Tap to change', icon: 'moon', checked: !!s.warmTint, onPress: () => set({ warmTint: ((s.warmTint ?? 0) + 1) % 4 }) },
         { group: 1, label: 'Fit page to width', icon: 'arrow.left.and.right', onPress: () => canvas.current?.fitWidth() },
       ]} />
       <MenuSheet visible={versions} onClose={() => setVersions(false)} title="Version history" items={(() => {
@@ -1049,10 +1107,10 @@ export default function Editor() {
       ) : null}
       {timerOpen && !present ? (
         <Glass stretchy radius={26} style={{ position: 'absolute', bottom: 28, left: 14, flexDirection: 'row', alignItems: 'center', padding: 6, gap: 4 }}>
-          <Text accessibilityLabel="Focus timer" style={{ color: timerLeft === 0 ? '#E8590C' : '#15171C', fontSize: 18, fontWeight: '700', minWidth: 62, textAlign: 'center', fontVariant: ['tabular-nums'] }}>{String(Math.floor(timerLeft / 60)).padStart(2, '0')}:{String(timerLeft % 60).padStart(2, '0')}</Text>
+          <Text accessibilityLabel={onBreak ? 'Break timer' : 'Focus timer'} style={{ color: onBreak ? '#30A46C' : timerLeft === 0 ? '#E8590C' : '#15171C', fontSize: 18, fontWeight: '700', minWidth: 62, textAlign: 'center', fontVariant: ['tabular-nums'] }}>{String(Math.floor(timerLeft / 60)).padStart(2, '0')}:{String(timerLeft % 60).padStart(2, '0')}</Text>
           <IconButton name={timerRun ? 'pause.fill' : 'play.fill'} label={timerRun ? 'Pause the timer' : 'Start the timer'} onPress={() => { if (timerLeft === 0) setTimerLeft(timerMin * 60); setTimerRun((r) => !r); }} />
-          <Pressable accessibilityLabel={`Timer length ${timerMin} minutes. Tap to change.`} onPress={nextLength} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(60,60,67,0.1)' }}><Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>{timerMin} min</Text></Pressable>
-          <IconButton name="xmark" label="Close the timer" onPress={() => { setTimerOpen(false); setTimerRun(false); setTimerLeft(timerMin * 60); }} />
+          <Pressable accessibilityLabel={`Timer length ${timerMin} minutes. Tap to change.`} onPress={() => { setOnBreak(false); nextLength(); }} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(60,60,67,0.1)' }}><Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>{onBreak ? 'Break' : `${timerMin} min`}</Text></Pressable>
+          <IconButton name="xmark" label="Close the timer" onPress={() => { setTimerOpen(false); setTimerRun(false); setOnBreak(false); setTimerLeft(timerMin * 60); }} />
         </Glass>
       ) : null}
       {focus && present ? (
@@ -1102,6 +1160,7 @@ export default function Editor() {
       <MenuSheet topRight visible={pageTools === 'menu'} onClose={() => setPageTools(null)} title="Page tools" items={[
         { group: 1, label: 'Stamps and starters', sub: 'Date, labels, ready-made outlines', icon: 'seal', onPress: () => setPageTools('stamps') },
         { group: 1, label: 'Outline', sub: 'Every page and how it starts', icon: 'list.bullet.indent', onPress: openOutline },
+        { group: 2, label: 'Copy the whole note as text', sub: 'Every page, in order', icon: 'doc.on.doc', onPress: copyNoteText },
         { group: 2, label: 'Copy this page as text', icon: 'doc.on.clipboard', onPress: copyPageText },
         { group: 2, label: reading ? 'Stop reading' : 'Read this page aloud', icon: reading ? 'speaker.slash' : 'speaker.wave.2', onPress: readAloud },
         { group: 2, label: 'Translate this page', icon: 'globe', onPress: () => setPageTools('languages') },
@@ -1143,6 +1202,47 @@ export default function Editor() {
             </View>
           </>
         )}
+      </Sheet>
+      <Sheet visible={details} onClose={() => setDetails(false)} title="Note details" width={460}>
+        <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>Title</Text>
+        <TextInput accessibilityLabel="Note title" defaultValue={meta?.title ?? ''} onEndEditing={(e) => { const v = e.nativeEvent.text.trim(); if (v) lib.updateNote(id, { title: v }); }} returnKeyType="done"
+          style={{ height: 46, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.chip, color: t.text, fontSize: 16 }} />
+        <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 }}>Subject</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {[{ id: null as string | null, name: 'No subject', color: '#9AA2B2' }, ...lib.lib.folders].map((x) => {
+            const on = (meta?.folderId ?? null) === x.id;
+            return (
+              <Pressable key={x.id ?? 'none'} accessibilityLabel={x.name} accessibilityState={{ selected: on }} onPress={() => lib.updateNote(id, { folderId: x.id })} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 34, paddingHorizontal: 12, borderRadius: 17, backgroundColor: on ? t.accent : t.chip }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: on ? '#fff' : x.color }} />
+                <Text numberOfLines={1} style={{ color: on ? '#fff' : t.text, fontSize: 14, fontWeight: '600', maxWidth: 170 }}>{x.name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 16, marginBottom: 6 }}>Tags</Text>
+        <TextInput accessibilityLabel="Tags" defaultValue={(meta?.tags ?? []).join(', ')} placeholder="biology, exam, week 3" placeholderTextColor={t.faint} autoCapitalize="none" onEndEditing={(e) => lib.updateNote(id, { tags: parseTags(e.nativeEvent.text) })} returnKeyType="done"
+          style={{ height: 46, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.chip, color: t.text, fontSize: 16 }} />
+        <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 }}>Colour label</Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {[undefined, '#E5484D', '#F76B15', '#FFC53D', '#30A46C', '#0090FF', '#6E56CF', '#D6409F'].map((c) => {
+            const on = meta?.label === c;
+            return (
+              <Pressable key={c ?? 'none'} accessibilityLabel={c ? `Colour ${c}` : 'No colour label'} accessibilityState={{ selected: on }} onPress={() => lib.updateNote(id, { label: c })}
+                style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: c ?? t.chip, borderWidth: on ? 3 : 0, borderColor: t.text }}>
+                {!c ? <Icon name="xmark" size={12} color={t.sub} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+          {([['Pinned', 'pin', !!meta?.pin, () => lib.updateNote(id, { pin: !meta?.pin })], ['Favorite', 'star', !!meta?.fav, () => lib.updateNote(id, { fav: !meta?.fav })]] as const).map(([label, icon, on, press]) => (
+            <Pressable key={label} accessibilityLabel={label} accessibilityState={{ selected: on }} onPress={press} style={{ flex: 1, height: 44, borderRadius: 12, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? t.accent : t.chip }}>
+              <Icon name={on ? `${icon}.fill` : icon} size={16} color={on ? '#fff' : t.text} />
+              <Text style={{ color: on ? '#fff' : t.text, fontSize: 15, fontWeight: '600' }}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Text style={{ color: t.faint, fontSize: 13, marginTop: 14 }}>{meta ? `${doc?.pages.length ?? 0} pages · made ${new Date(meta.created).toLocaleDateString()} · edited ${new Date(meta.updated).toLocaleDateString()}` : ''}</Text>
       </Sheet>
       <PromptSheet visible={jump} title="Go to page" initial={String(page.page + 1)} confirm="Go" onCancel={() => setJump(false)}
         onSubmit={(v) => { setJump(false); const n = parseInt(v, 10); if (n >= 1 && n <= page.count) canvas.current?.scrollToPage(n - 1); }} />

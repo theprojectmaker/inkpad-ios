@@ -2,7 +2,7 @@
 import { router } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
-import { dueNotes } from '@/lib/extras';
+import { dueNotes, streakOf } from '@/lib/extras';
 import { useLibrary } from '@/lib/library';
 import { useSettings, useTheme } from '@/lib/settings';
 import { Icon } from './ui';
@@ -12,12 +12,7 @@ export function HomeStrip({ onToday }: { onToday: () => void }) {
   const lib = useLibrary();
   const { s } = useSettings();
   const due = dueNotes(lib.lib.notes).slice(0, 6);
-  // Days in a row with a note opened, counting back from today (or yesterday, so it doesn't vanish before you start).
-  const days = new Set(s.days ?? []);
-  let streak = 0;
-  const d = new Date();
-  if (!days.has(d.toISOString().slice(0, 10))) d.setDate(d.getDate() - 1);
-  while (days.has(d.toISOString().slice(0, 10))) { streak++; d.setDate(d.getDate() - 1); }
+  const streak = streakOf(s.days);
   const old = lib.lib.notes.filter((n) => !n.trashed);
   const surprise = () => { const n = old[Math.floor(Math.random() * old.length)]; if (n) router.push(`/note/${n.id}`); };
   const chip = (key: string, icon: string, text: string, go: () => void, tint?: string) => (

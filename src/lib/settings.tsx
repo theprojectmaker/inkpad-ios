@@ -49,6 +49,8 @@ export type Settings = {
   inkSize: number;           // 0 | 1 | 2
   penStyle: PenStyle;        // which pen the Pen tool uses
   textSizeIdx: number;       // 0 | 1 | 2
+  focusLog?: Record<string, number>;   // minutes of finished focus timers, by day
+  warmTint?: number;         // 0 off, 1 to 3: a warm tint over the page for reading at night
   days?: string[];           // the days a note was opened on (for the streak on Home), newest last
   shareClean?: boolean;      // toolbars are left out of screen sharing, mirroring and recordings (on unless turned off)
   showDraw?: boolean;        // the Drawing Board appears on Home and in the sidebar (off unless turned on)
