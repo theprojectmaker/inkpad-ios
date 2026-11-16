@@ -159,3 +159,140 @@ export const WARPS: { id: string; label: string; f: (x: number, y: number, b: Bo
     id: 'melt', label: 'Melt', f: (x, y, b) => [x + Math.sin((y - b.y) / 18) * 3, y + Math.pow(Math.max(0, (y - b.y) / Math.max(1, b.h)), 2) * b.h * 0.18],
   },
 ];
+
+// ---------- more ways to change ink after it's drawn
+
+/** The same line with exactly `n` evenly spaced points. */
+export function resample(pts: number[], n: number): number[] {
+  const m = pts.length / 3;
+  if (m < 1) return [];
+  if (m === 1 || n < 2) return [pts[0], pts[1], pts[2]];
+  const len: number[] = [0];
+  for (let i = 1; i < m; i++) len.push(len[i - 1] + Math.hypot(pts[i * 3] - pts[(i - 1) * 3], pts[i * 3 + 1] - pts[(i - 1) * 3 + 1]));
+  const total = len[m - 1] || 1;
+  const out: number[] = [];
+  let j = 1;
+  for (let k = 0; k < n; k++) {
+    const want = (total * k) / (n - 1);
+    while (j < m - 1 && len[j] < want) j++;
+    const span = len[j] - len[j - 1] || 1;
+    const t = Math.max(0, Math.min(1, (want - len[j - 1]) / span));
+    for (let c = 0; c < 3; c++) out.push(pts[(j - 1) * 3 + c] + (pts[j * 3 + c] - pts[(j - 1) * 3 + c]) * t);
+  }
+  return out;
+}
+
+/** Irons the wobble out of a line: each point moves toward the average of its neighbours. The ends stay put. */
+export function smoothPts(pts: number[], passes = 3): number[] {
+  let cur = densify(pts, 4);
+  const n = cur.length / 3;
+  for (let p = 0; p < passes; p++) {
+    const next = cur.slice();
+    for (let i = 1; i < n - 1; i++) {
+      next[i * 3] = (cur[(i - 1) * 3] + cur[i * 3] * 2 + cur[(i + 1) * 3]) / 4;
+      next[i * 3 + 1] = (cur[(i - 1) * 3 + 1] + cur[i * 3 + 1] * 2 + cur[(i + 1) * 3 + 1]) / 4;
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+/** Shakes a line a little, the same way every time for the same line. */
+export function roughenPts(pts: number[], amount = 2.5): number[] {
+  const cur = densify(pts, 5);
+  let seed = (Math.round(cur[0] * 31 + cur[1] * 17) | 0) || 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+  for (let i = 3; i + 5 < cur.length; i += 3) { cur[i] += rnd() * amount * 2; cur[i + 1] += rnd() * amount * 2; }
+  return cur;
+}
+
+export type Liquify = 'push' | 'pinch' | 'expand' | 'twirl';
+/** Liquify: push ink along with the finger, pull it in to a point, push it away, or swirl it round. null if nothing was in reach. */
+export function liquify(pts: number[], mode: Liquify, x: number, y: number, dx: number, dy: number, radius: number): number[] | null {
+  if (mode === 'push') return pushPts(pts, x, y, dx, dy, radius);
+  let hit = false;
+  const out = pts.slice();
+  for (let i = 0; i + 2 < out.length + 0; i += 3) {
+    const ox = out[i] - x, oy = out[i + 1] - y;
+    const d = Math.hypot(ox, oy);
+    if (d >= radius) continue;
+    const k = (1 - d / radius) ** 2;
+    if (mode === 'twirl') {
+      const a = 0.12 * k, ca = Math.cos(a), sa = Math.sin(a);
+      out[i] = x + ox * ca - oy * sa;
+      out[i + 1] = y + ox * sa + oy * ca;
+    } else {
+      const f = mode === 'pinch' ? 1 - 0.06 * k : 1 + 0.06 * k;
+      out[i] = x + ox * f;
+      out[i + 1] = y + oy * f;
+    }
+    hit = true;
+  }
+  return hit ? out : null;
+}
+
+/** What a hand-drawn line was probably meant to be: a straight line, an ellipse or a box. null: leave it as drawn. */
+export function snapShape(pts: number[]): { pts: number[]; closed: boolean; kind: 'line' | 'ellipse' | 'rect' } | null {
+  const n = pts.length / 3;
+  const b = boundsOf([pts]);
+  if (n < 6 || !b) return null;
+  const diag = Math.hypot(b.w, b.h);
+  if (diag < 40) return null;
+  const x0 = pts[0], y0 = pts[1], x1 = pts[(n - 1) * 3], y1 = pts[(n - 1) * 3 + 1];
+  const chord = Math.hypot(x1 - x0, y1 - y0);
+  if (chord > diag * 0.75) {
+    // A line: every point close to the straight line between the ends.
+    let worst = 0;
+    for (let i = 0; i < n; i++) worst = Math.max(worst, Math.abs((x1 - x0) * (y0 - pts[i * 3 + 1]) - (x0 - pts[i * 3]) * (y1 - y0)) / chord);
+    return worst < chord * 0.06 ? { ...outline('line', [x0, y0], [x1, y1]), kind: 'line' } : null;
+  }
+  if (chord > diag * 0.25) return null;   // neither a line nor a closed loop
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  let eErr = 0, rErr = 0;
+  for (let i = 0; i < n; i++) {
+    const px = pts[i * 3] - cx, py = pts[i * 3 + 1] - cy;
+    const r = Math.hypot(px / (b.w / 2 || 1), py / (b.h / 2 || 1));
+    eErr += Math.abs(r - 1) * Math.min(b.w, b.h) / 2;
+    rErr += Math.min(Math.abs(Math.abs(px) - b.w / 2), Math.abs(Math.abs(py) - b.h / 2));
+  }
+  eErr /= n; rErr /= n;
+  if (Math.min(eErr, rErr) > diag * 0.06) return null;
+  const kind = eErr <= rErr ? 'ellipse' : 'rect';
+  return { ...outline(kind, [b.x, b.y], [b.x + b.w, b.y + b.h]), kind };
+}
+
+// ---------- colour
+
+const hex2 = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+export const rgbOf = (hex: string): [number, number, number] => {
+  const h = hex.replace('#', '');
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.padEnd(6, '0');
+  return [parseInt(f.slice(0, 2), 16) || 0, parseInt(f.slice(2, 4), 16) || 0, parseInt(f.slice(4, 6), 16) || 0];
+};
+export const hexOf = (r: number, g: number, b: number) => `#${hex2(r)}${hex2(g)}${hex2(b)}`.toUpperCase();
+export function hslOf(hex: string): [number, number, number] {
+  const [r, g, b] = rgbOf(hex).map((v) => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (!d) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+export function hexOfHsl(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s, hp = (((h % 360) + 360) % 360) / 60, x = c * (1 - Math.abs((hp % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+  return hexOf((r + m) * 255, (g + m) * 255, (b + m) * 255);
+}
+/** Turns the hue, and scales how strong and how light the colour is. */
+export function adjustColor(hex: string, turn: number, sat: number, light: number): string {
+  const [h, s, l] = hslOf(hex);
+  return hexOfHsl(h + turn, Math.max(0, Math.min(1, s * sat)), Math.max(0, Math.min(1, l + light)));
+}
+export const invertColor = (hex: string) => { const [r, g, b] = rgbOf(hex); return hexOf(255 - r, 255 - g, 255 - b); };
+export const mixColor = (a: string, b: string, t: number) => { const p = rgbOf(a), q = rgbOf(b); return hexOf(p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t); };
+
+/** A line part-way between two lines (0 = the first, 1 = the second). This is what morphs one drawing into another. */
+export function tweenPts(a: number[], b: number[], t: number, n = 48): number[] {
+  const p = resample(a, n), q = resample(b, n);
+  return p.map((v, i) => v + (q[i] - v) * t);
+}
