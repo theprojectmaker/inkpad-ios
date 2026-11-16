@@ -80,7 +80,7 @@ export function ShareLinkSheet({ visible, noteId, title, makePdf, onSendPdf, onC
   };
 
   const btn = (label: string, onPress: () => void, solid = false, danger = false) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={onPress} disabled={busy} style={({ pressed }) => ({ height: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center', opacity: pressed || busy ? 0.6 : 1, backgroundColor: solid ? '#3F6AF2' : t.chip })}>
+    <Pressable key={label} accessibilityLabel={label} onPress={onPress} disabled={busy} style={({ pressed }) => ({ height: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center', opacity: pressed || busy ? 0.6 : 1, backgroundColor: solid ? '#007AFF' : t.chip })}>
       <Text style={{ color: solid ? '#fff' : danger ? t.danger : t.text, fontSize: 15, fontWeight: '600' }}>{label}</Text>
     </Pressable>
   );

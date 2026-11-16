@@ -150,7 +150,7 @@ function Match({ cards, onEnd }: { cards: Card[]; onEnd: () => void }) {
         if (gone.includes(x.pair)) return <View key={x.id} style={{ width: 230, height: 96 }} />;
         const on = held?.id === x.id, bad = miss === x.id;
         return (
-          <Pressable key={x.id} accessibilityLabel={x.text} onPress={() => tap(x)} style={{ width: 230, height: 96, borderRadius: 12, padding: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: on ? '#3F6AF2' : bad ? t.danger : t.line, backgroundColor: on ? '#3F6AF21A' : t.card }}>
+          <Pressable key={x.id} accessibilityLabel={x.text} onPress={() => tap(x)} style={{ width: 230, height: 96, borderRadius: 12, padding: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: on ? '#007AFF' : bad ? t.danger : t.line, backgroundColor: on ? '#007AFF1A' : t.card }}>
             <Text numberOfLines={4} style={{ color: t.text, fontSize: 15, textAlign: 'center' }}>{x.text}</Text>
           </Pressable>
         );
@@ -210,7 +210,7 @@ export default function Flashcards() {
 
   const modeRow = (icon: string, label: string, sub: string, cards: Card[], m: Mode) => (
     <Pressable key={label} accessibilityLabel={label} disabled={!cards.length && m !== 'edit'} onPress={() => start(m, cards)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, backgroundColor: pressed ? t.chip : t.card, borderWidth: 1, borderColor: t.line, opacity: !cards.length && m !== 'edit' ? 0.45 : 1 })}>
-      <Icon name={icon} size={19} color="#3F6AF2" />
+      <Icon name={icon} size={19} color="#007AFF" />
       <View style={{ flex: 1 }}>
         <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{label}</Text>
         <Text style={{ color: t.sub, fontSize: 13 }}>{sub}</Text>
@@ -260,11 +260,11 @@ export default function Flashcards() {
           {modeRow('flame', 'Hardest cards', 'The ones you miss most.', hardest(deck.cards), 'hard')}
           {modeRow('pencil', 'Edit cards', 'Add, change or delete cards.', [], 'edit')}
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-            <Pressable accessibilityLabel="Answer first" onPress={() => setSwapped((v) => !v)} style={{ flex: 1, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: swapped ? '#3F6AF21A' : t.chip }}>
-              <Text style={{ color: swapped ? '#3F6AF2' : t.text, fontSize: 14, fontWeight: '500' }}>{swapped ? 'Showing answers first' : 'Show answers first'}</Text>
+            <Pressable accessibilityLabel="Answer first" onPress={() => setSwapped((v) => !v)} style={{ flex: 1, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: swapped ? '#007AFF1A' : t.chip }}>
+              <Text style={{ color: swapped ? '#007AFF' : t.text, fontSize: 14, fontWeight: '500' }}>{swapped ? 'Showing answers first' : 'Show answers first'}</Text>
             </Pressable>
-            <Pressable accessibilityLabel="Shuffle" onPress={() => setRandom((v) => !v)} style={{ flex: 1, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: random ? '#3F6AF21A' : t.chip }}>
-              <Text style={{ color: random ? '#3F6AF2' : t.text, fontSize: 14, fontWeight: '500' }}>{random ? 'Shuffled' : 'In order'}</Text>
+            <Pressable accessibilityLabel="Shuffle" onPress={() => setRandom((v) => !v)} style={{ flex: 1, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: random ? '#007AFF1A' : t.chip }}>
+              <Text style={{ color: random ? '#007AFF' : t.text, fontSize: 14, fontWeight: '500' }}>{random ? 'Shuffled' : 'In order'}</Text>
             </Pressable>
           </View>
         </ScrollView>

@@ -11,7 +11,7 @@ import { PAPER_STYLES, PAPERS, STYLE_GROUPS, stylesIn } from '@/lib/paper';
 import { useSettings } from '@/lib/settings';
 import { paperPicture } from '@/lib/skia-render';
 
-const BLUE = '#3F6AF2';
+const BLUE = '#007AFF';
 const BASIC: [PaperStyle, string][] = [['blank', 'Blank'], ['lined', 'Lined'], ['grid', 'Grid'], ['dotted', 'Dotted']];
 const MORE: [PaperStyle, string][] = [['narrow', 'Narrow lined'], ['cornell', 'Cornell notes'], ['todo', 'Checklist'], ['music', 'Music'], ['iso', 'Isometric']];
 const SIZES: [PageSizeId, string][] = PAGE_SIZES.filter((p) => p.id !== 'landscape').map((p) => [p.id, p.name]);

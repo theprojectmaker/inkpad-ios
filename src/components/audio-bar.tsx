@@ -26,7 +26,7 @@ export const fmtTime = (ms: number) => {
 };
 
 const RATES = [1, 1.25, 1.5, 2, 0.75];
-const BLUE = '#3F6AF2';
+const BLUE = '#007AFF';
 const RED = '#E5322D';
 const plainPath = (uri: string) => decodeURIComponent(uri.replace(/^file:\/\//, ''));
 

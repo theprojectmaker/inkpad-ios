@@ -3,7 +3,7 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Component, createContext, Fragment, type ErrorInfo, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewProps, type ViewStyle, type StyleProp } from 'react-native';
-import Reanimated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Reanimated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { useTheme } from '@/lib/settings';
 
@@ -36,7 +36,7 @@ export function IconButton({ name, onPress, active, disabled, size = 20, label, 
   const t = useTheme();
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label ?? name} onPress={onPress} onLongPress={onLongPress} disabled={disabled} hitSlop={6}
-      style={({ pressed }) => [{ minWidth: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, flexDirection: 'row', gap: 6,
+      style={({ pressed }) => [{ minWidth: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, flexDirection: 'row', gap: 6,
         backgroundColor: active ? t.accent + (t.dark ? '33' : '1F') : pressed ? t.chip : 'transparent', opacity: disabled ? 0.35 : 1 }, style]}>
       <Icon name={name} size={size} color={color ?? (active ? t.accent : t.text)} />
       {label && style?.paddingHorizontal ? <Text style={{ color: active ? t.accent : t.text, fontSize: 15, fontWeight: '500' }}>{label}</Text> : null}
@@ -49,7 +49,7 @@ export function Button({ title, onPress, kind = 'plain', disabled, icon }: { tit
   const bg = kind === 'primary' ? t.accent : kind === 'danger' ? t.danger : t.chip;
   const fg = kind === 'plain' ? t.text : '#fff';
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} disabled={disabled} style={({ pressed }) => ({ backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1, paddingHorizontal: 16, height: 42, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} disabled={disabled} style={({ pressed }) => ({ backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.85 : 1, transform: [{ scale: pressed ? 0.97 : 1 }], paddingHorizontal: 18, height: 46, borderRadius: 14, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 })}>
       {icon ? <Icon name={icon} size={17} color={fg} /> : null}
       <Text style={{ color: fg, fontSize: 16, fontWeight: '600' }}>{title}</Text>
     </Pressable>
@@ -76,10 +76,17 @@ export function Sheet({ visible, onClose, children, width = 420, title, topRight
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.32)' }]} onPress={onClose} />
+        <Pressable accessibilityLabel="Close" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.36)' }]} onPress={onClose} />
         <View style={topRight ? { flex: 1, alignItems: 'flex-end', justifyContent: 'flex-start', paddingTop: 70, paddingRight: 12 } : { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 }} pointerEvents="box-none">
-          <Reanimated.View entering={FadeIn.duration(110)} style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 18, padding: 18, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
-            {title ? <Text style={{ color: t.text, fontSize: 19, fontWeight: '700', marginBottom: 12 }}>{title}</Text> : null}
+          <Reanimated.View entering={topRight ? FadeIn.duration(130) : FadeInDown.duration(240)} style={{ width: '100%', maxWidth: width, maxHeight: '90%', backgroundColor: t.elev, borderRadius: 26, borderCurve: 'continuous', padding: 20, shadowColor: '#000', shadowOpacity: 0.24, shadowRadius: 32, shadowOffset: { width: 0, height: 14 } }}>
+            {title ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <Text numberOfLines={2} style={{ flex: 1, color: t.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.3 }}>{title}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={onClose} hitSlop={10} style={({ pressed }) => ({ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: t.chip, opacity: pressed ? 0.6 : 1 })}>
+                  <Icon name="xmark" size={12} color={t.sub} />
+                </Pressable>
+              </View>
+            ) : null}
             <ScrollView bounces={false} keyboardShouldPersistTaps="handled">{children}</ScrollView>
           </Reanimated.View>
         </View>
@@ -113,9 +120,14 @@ export function MenuSheet({ visible, onClose, title, items, topRight }: { visibl
         </View>
       )) : items.map((it, i) => (
         <Pressable key={i} accessibilityRole="button" accessibilityLabel={it.label} testID={`menu-${it.label}`} onPress={() => { if (fired.current) return; fired.current = true; onClose(); setTimeout(it.onPress, Platform.OS === 'ios' ? 380 : 60); }}
-          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 10, backgroundColor: pressed ? t.chip : 'transparent' })}>
-          {it.icon ? <Icon name={it.icon} size={19} color={it.danger ? t.danger : t.text} /> : null}
-          <Text style={{ flex: 1, color: it.danger ? t.danger : t.text, fontSize: 16 }}>{it.label}</Text>
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 13, minHeight: 48, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12, borderCurve: 'continuous', backgroundColor: pressed ? t.chip : 'transparent',
+            // A hairline where one group of items ends and the next begins.
+            marginTop: i && it.group !== items[i - 1].group ? 9 : 0, borderTopWidth: 0 })}>
+          {it.icon ? <Icon name={it.icon} size={19} color={it.danger ? t.danger : it.checked ? t.accent : t.text} /> : null}
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: it.danger ? t.danger : t.text, fontSize: 16 }}>{it.label}</Text>
+            {it.sub ? <Text numberOfLines={2} style={{ color: t.faint, fontSize: 12.5, marginTop: 1 }}>{it.sub}</Text> : null}
+          </View>
           {it.checked ? <Icon name="checkmark" size={16} color={t.accent} /> : null}
         </Pressable>
       ))}
@@ -133,7 +145,7 @@ export function PromptSheet({ visible, title, initial = '', placeholder, confirm
     <Sheet visible={visible} onClose={onCancel} title={title} width={400}>
       <TextInput value={v} onChangeText={setV} placeholder={placeholder} placeholderTextColor={t.faint} autoFocus selectTextOnFocus
         onSubmitEditing={() => onSubmit(v)} returnKeyType="done"
-        style={{ color: t.text, fontSize: 17, borderWidth: 1, borderColor: t.line, borderRadius: 11, paddingHorizontal: 12, height: 46, backgroundColor: t.card }} />
+        style={{ color: t.text, fontSize: 17, borderRadius: 13, borderCurve: 'continuous', paddingHorizontal: 14, height: 48, backgroundColor: t.chip }} />
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
         <Button title="Cancel" onPress={onCancel} />
         <Button title={confirm} kind="primary" onPress={() => onSubmit(v)} />
@@ -178,13 +190,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastCtx.Provider value={{ toast, busy }}>
       {children}
       {msg ? (
-        <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 40, alignSelf: 'center', opacity: op, backgroundColor: t.dark ? '#F1F2F4' : '#1C1D21', paddingHorizontal: 18, paddingVertical: 11, borderRadius: 22, maxWidth: 520 }}>
+        <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 44, alignSelf: 'center', opacity: op, transform: [{ translateY: op.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }], backgroundColor: t.dark ? '#F1F2F4' : 'rgba(28,29,33,0.94)', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24, maxWidth: 520, shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } }}>
           <Text style={{ color: t.dark ? '#111' : '#fff', fontSize: 15, fontWeight: '500', textAlign: 'center' }}>{msg}</Text>
         </Animated.View>
       ) : null}
       {busyMsg ? (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' }]}>
-          <View style={{ backgroundColor: t.elev, borderRadius: 16, paddingHorizontal: 26, paddingVertical: 20, alignItems: 'center', gap: 12, minWidth: 200 }}>
+          <View style={{ backgroundColor: t.elev, borderRadius: 22, borderCurve: 'continuous', paddingHorizontal: 28, paddingVertical: 22, alignItems: 'center', gap: 12, minWidth: 200, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, shadowOffset: { width: 0, height: 10 } }}>
             <ActivityIndicator color={t.accent} />
             <Text style={{ color: t.text, fontSize: 15 }}>{busyMsg}</Text>
           </View>

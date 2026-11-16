@@ -233,7 +233,7 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingBottom: 12 }}>
             <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Toolbar position</Text>
             {(['top', 'bottom'] as const).map((d) => (
-              <Pressable key={d} accessibilityLabel={`Toolbar on the ${d}`} onPress={() => set({ toolDock: d })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: (s.toolDock ?? 'top') === d ? '#E9EEFD' : '#ECEDF1' }}>
+              <Pressable key={d} accessibilityLabel={`Toolbar on the ${d}`} onPress={() => set({ toolDock: d })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: (s.toolDock ?? 'top') === d ? '#E5F0FF' : '#ECEDF1' }}>
                 <Text style={{ color: (s.toolDock ?? 'top') === d ? BLUE : '#15171C', fontSize: 13, fontWeight: '500' }}>{d[0].toUpperCase() + d.slice(1)}</Text>
               </Pressable>
             ))}
@@ -437,7 +437,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const R2 = { flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center' } as const;
 
   const chip = (label: string, on: boolean, onPress: () => void) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 30, paddingHorizontal: 14, borderRadius: 15, justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 30, paddingHorizontal: 14, borderRadius: 15, justifyContent: 'center', backgroundColor: on ? '#E5F0FF' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
       <Text style={{ color: INK, fontSize: 13 }}>{label}</Text>
     </Pressable>
   );
@@ -506,7 +506,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   } else if (kind === 'shape') {
     const cur = s.shapeType ?? 'line';
     const shapeBtn = (icon: string, label: string, on: boolean, press: () => void) => (
-      <Pressable key={label} accessibilityLabel={label} onPress={press} style={{ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : 'transparent' }}>
+      <Pressable key={label} accessibilityLabel={label} onPress={press} style={{ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E5F0FF' : 'transparent' }}>
         <ToolIcon name={icon} size={19} color={on ? BLUE : INK} />
       </Pressable>
     );
@@ -538,13 +538,13 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         <Bar />
         {dots}
         <Bar />
-        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E9EEFD' : 'transparent' }}>
+        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E5F0FF' : 'transparent' }}>
           <Text style={{ fontSize: 15, fontWeight: '800', color: s.textBold ? BLUE : INK }}>B</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? '#E9EEFD' : 'transparent' }}>
+        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? '#E5F0FF' : 'transparent' }}>
           <Text style={{ fontSize: 15, fontStyle: 'italic', color: s.textItalic ? BLUE : INK }}>I</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? '#E9EEFD' : 'transparent' }}>
+        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? '#E5F0FF' : 'transparent' }}>
           <Text style={{ fontSize: 15, textDecorationLine: 'underline', color: s.textUnderline ? BLUE : INK }}>U</Text>
         </Pressable>
       </View>
@@ -613,7 +613,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 const on = (s.shapeType ?? 'line') === x.id;
                 return (
                   <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => { set({ shapeType: x.id }); setPop(null); }}
-                    style={{ width: 84, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E9EEFD' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+                    style={{ width: 84, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E5F0FF' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
                     <ToolIcon name={x.icon} size={22} color={on ? BLUE : INK} />
                     <Text style={{ fontSize: 12, color: '#15171C' }}>{x.label}</Text>
                   </Pressable>
@@ -629,7 +629,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 const on = (s.nibAngle ?? 45) === a;
                 return (
                   <Pressable key={a} accessibilityLabel={`Nib angle ${a} degrees`} onPress={() => { set({ nibAngle: a }); setPop(null); }}
-                    style={{ width: 56, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E9EEFD' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+                    style={{ width: 56, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E5F0FF' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
                     <Text style={{ fontSize: 13, color: '#15171C' }}>{a}°</Text>
                   </Pressable>
                 );
@@ -641,7 +641,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
             <View style={{ gap: 6 }}>
               <ScrollView style={{ maxHeight: 330 }} contentContainerStyle={{ gap: 6 }}>
               {BRUSHES.map((b) => (
-                <Pressable key={b.id} accessibilityLabel={b.label} onPress={() => { set({ brushType: b.id }); setPop(null); }} style={{ height: 44, paddingHorizontal: 12, borderRadius: 10, justifyContent: 'center', backgroundColor: (s.brushType ?? 'brushpen') === b.id ? '#E9EEFD' : '#F2F3F6' }}>
+                <Pressable key={b.id} accessibilityLabel={b.label} onPress={() => { set({ brushType: b.id }); setPop(null); }} style={{ height: 44, paddingHorizontal: 12, borderRadius: 10, justifyContent: 'center', backgroundColor: (s.brushType ?? 'brushpen') === b.id ? '#E5F0FF' : '#F2F3F6' }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: '#15171C' }}>{b.label}</Text>
                   <Text style={{ fontSize: 12, color: '#5A6478' }}>{b.note}</Text>
                 </Pressable>
@@ -659,7 +659,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
             <View style={{ gap: 8, alignItems: 'center', marginTop: 8 }}>
               {LINES.map((l) => (
                 <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { patch({ line: l }); setPop(null); }}
-                  style={{ width: 88, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: k.line === l ? '#E9EEFD' : '#ECEDF1', borderWidth: k.line === l ? 1.2 : 0, borderColor: BLUE }}>
+                  style={{ width: 88, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: k.line === l ? '#E5F0FF' : '#ECEDF1', borderWidth: k.line === l ? 1.2 : 0, borderColor: BLUE }}>
                   <LineGlyph line={l} />
                 </Pressable>
               ))}
@@ -793,7 +793,7 @@ export function StylePopover({ color, width, onChange, onFill, onClose }: { colo
         <ThicknessSlider value={n} onChange={setN} onDone={(v) => onChange({ width: widthOf('pen', v) })} />
         <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'space-between', marginVertical: 8 }}>
           {LINES.map((l) => (
-            <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { setLine(l); onChange({ line: l }); }} style={{ width: 70, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: line === l ? '#E9EEFD' : '#ECEDF1', borderWidth: line === l ? 1.2 : 0, borderColor: BLUE }}>
+            <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { setLine(l); onChange({ line: l }); }} style={{ width: 70, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: line === l ? '#E5F0FF' : '#ECEDF1', borderWidth: line === l ? 1.2 : 0, borderColor: BLUE }}>
               <LineGlyph line={l} />
             </Pressable>
           ))}

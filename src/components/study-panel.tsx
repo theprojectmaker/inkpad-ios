@@ -122,7 +122,7 @@ export function StudyPanel({ noteId, page, pageCount, canvas, absPath, onClose }
   } else if (tab === 'home') {
     const Box = ({ tag, children, onPress, label }: { tag: string; children: React.ReactNode; onPress: () => void; label: string }) => (
       <Pressable accessibilityLabel={label} onPress={onPress} style={{ marginTop: 16, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: t.line, backgroundColor: t.card }}>
-        <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, height: 20, borderRadius: 5, justifyContent: 'center', backgroundColor: '#E9EEFD', marginBottom: 8 }}><Text style={{ color: '#3F6AF2', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4 }}>{tag}</Text></View>
+        <View style={{ alignSelf: 'flex-start', paddingHorizontal: 8, height: 20, borderRadius: 5, justifyContent: 'center', backgroundColor: '#E5F0FF', marginBottom: 8 }}><Text style={{ color: '#007AFF', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.4 }}>{tag}</Text></View>
         {children}
       </Pressable>
     );

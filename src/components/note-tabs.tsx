@@ -36,7 +36,7 @@ export function NoteTabs({ current, onPick, onClose }: { current: string; onPick
         })}
         {tabs.length > 1 ? (
           <Pressable accessibilityLabel="Close other notes" onPress={() => { closeOtherTabs(current); onClose(); }} style={{ padding: 10 }}>
-            <Text style={{ color: '#3F6AF2', fontSize: 14 }}>Close the others</Text>
+            <Text style={{ color: '#007AFF', fontSize: 14 }}>Close the others</Text>
           </Pressable>
         ) : null}
       </Reanimated.View>

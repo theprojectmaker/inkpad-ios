@@ -982,7 +982,7 @@ export default function Editor() {
             <Text style={{ color: t.sub, fontSize: 14, marginTop: 12 }}>Unit</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
               {['Inches', 'Feet', 'Centimeters', 'Meters'].map((u) => (
-                <Pressable key={u} accessibilityLabel={u} onPress={() => setCalUnit(u)} style={{ height: 34, paddingHorizontal: 12, borderRadius: 17, justifyContent: 'center', backgroundColor: calUnit === u ? '#E9EEFD' : t.chip }}><Text style={{ color: t.text, fontSize: 14 }}>{u}</Text></Pressable>
+                <Pressable key={u} accessibilityLabel={u} onPress={() => setCalUnit(u)} style={{ height: 34, paddingHorizontal: 12, borderRadius: 17, justifyContent: 'center', backgroundColor: calUnit === u ? '#E5F0FF' : t.chip }}><Text style={{ color: t.text, fontSize: 14 }}>{u}</Text></Pressable>
               ))}
             </View>
           </>
@@ -991,7 +991,7 @@ export default function Editor() {
           const v = parseFloat(calValue);
           if (!calibrate?.need && calibrate?.length && v > 0) { set({ measureScale: { perPoint: v / calibrate.length, unit: calUnit } }); toast('Scale set. Drag on the page to measure.'); }
           setCalibrate(null);
-        }} style={{ height: 44, borderRadius: 10, marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3F6AF2' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Continue</Text></Pressable>
+        }} style={{ height: 44, borderRadius: 10, marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#007AFF' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Continue</Text></Pressable>
       </Sheet>
       <MenuSheet visible={insert} onClose={() => setInsert(false)} title="Insert" items={[
         { label: 'Photo on this page', icon: 'photo', onPress: () => placePhoto('library') },
@@ -1160,7 +1160,7 @@ export default function Editor() {
                   else { copyText(c.text); closePanels(); setCalcLoaded(true); setCalc(true); toast("Couldn't plot that here. It's copied, ready to paste into the calculator."); }
                 }
                 else canvas.current?.replaceSelection(c.text);
-              }} style={{ height: 40, paddingHorizontal: 18, borderRadius: 10, justifyContent: 'center', backgroundColor: '#3F6AF2' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Convert</Text></Pressable>
+              }} style={{ height: 40, paddingHorizontal: 18, borderRadius: 10, justifyContent: 'center', backgroundColor: '#007AFF' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Convert</Text></Pressable>
             </View>
           </>
         )}

@@ -36,7 +36,7 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => Pro
     <View style={{ flex: 1, padding: 32, paddingTop: 80, backgroundColor: '#FFF' }}>
       <Text style={{ fontSize: 22, fontWeight: '700', color: '#111' }}>Quill hit an error</Text>
       <Text selectable style={{ marginTop: 14, fontSize: 14, color: '#333', fontFamily: 'Menlo' }}>{`${error?.name ?? 'Error'}: ${error?.message ?? String(error)}\n\n${String(error?.stack ?? '').split('\n').slice(0, 10).join('\n')}`}</Text>
-      <Pressable onPress={() => { retry(); }} style={{ marginTop: 24, alignSelf: 'flex-start', backgroundColor: '#2563EB', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 10 }}>
+      <Pressable onPress={() => { retry(); }} style={{ marginTop: 24, alignSelf: 'flex-start', backgroundColor: '#007AFF', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 10 }}>
         <Text style={{ color: '#FFF', fontWeight: '600', fontSize: 16 }}>Try again</Text>
       </Pressable>
     </View>

@@ -813,7 +813,7 @@ export default function DrawBoard() {
         {board.layers.slice().reverse().map((l) => {
           const on = l.id === layerId;
           return (
-            <View key={l.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 8, borderRadius: 12, backgroundColor: on ? '#E9EEFD' : 'transparent' }}>
+            <View key={l.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 8, borderRadius: 12, backgroundColor: on ? '#E5F0FF' : 'transparent' }}>
               <Pressable accessibilityLabel={l.visible ? `Hide ${l.name}` : `Show ${l.name}`} hitSlop={8} onPress={() => patchLayer(l.id, { visible: !l.visible })}><Icon name={l.visible ? 'eye' : 'eye.slash'} size={19} color={l.visible ? '#15171C' : '#9AA2B2'} /></Pressable>
               <Pressable accessibilityLabel={l.locked ? `Unlock ${l.name}` : `Lock ${l.name}`} hitSlop={8} onPress={() => patchLayer(l.id, { locked: !l.locked })}><Icon name={l.locked ? 'lock.fill' : 'lock.open'} size={17} color={l.locked ? '#E8590C' : '#9AA2B2'} /></Pressable>
               <Pressable accessibilityLabel={`Draw on ${l.name}`} onPress={() => { setLayerId(l.id); setSel([]); }} style={{ flex: 1 }}>

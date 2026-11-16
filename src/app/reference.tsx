@@ -10,7 +10,7 @@ import { copyText, defineWord } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
 import { convert, CONVERT } from '@/lib/study-logic';
 
-const BLUE = '#3F6AF2';
+const BLUE = '#007AFF';
 
 const FORMULAS: { title: string; rows: [string, string][] }[] = [
   { title: 'Geometry: area', rows: [['Rectangle', 'A = l × w'], ['Square', 'A = s²'], ['Triangle', 'A = ½ × b × h'], ['Parallelogram', 'A = b × h'], ['Trapezoid', 'A = ½ × (b₁ + b₂) × h'], ['Rhombus', 'A = ½ × d₁ × d₂'], ['Circle', 'A = π × r²'], ['Sector', 'A = (θ / 360) × π × r²'], ['Regular polygon', 'A = ½ × apothem × perimeter']] },

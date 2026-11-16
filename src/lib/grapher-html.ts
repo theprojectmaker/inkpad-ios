@@ -15,10 +15,10 @@ html,body{margin:0;height:100%;font:15px -apple-system,system-ui,sans-serif;colo
 .dot i{width:16px;height:16px;border-radius:8px;display:block}
 .body{flex:1;display:flex;flex-direction:column;justify-content:center;padding:6px 8px 6px 12px;min-width:0}
 .body input{border:0;outline:0;font:500 19px "SF Mono",ui-monospace,Menlo,monospace;width:100%;background:transparent;color:#1d1d1f;padding:6px 0}
-.val{font:14px ui-monospace,Menlo,monospace;color:#2563eb}.err{font-size:12.5px;color:#c7372f}
+.val{font:14px ui-monospace,Menlo,monospace;color:#007AFF}.err{font-size:12.5px;color:#c7372f}
 .x{width:34px;border:0;background:none;color:#aaa;font-size:20px}
-.slider{display:flex;align-items:center;gap:8px;font:13px ui-monospace,monospace;color:#666}.slider input[type=range]{flex:1;accent-color:#2563eb}
-#add{border:0;border-top:1px solid #e3e3e8;background:#fafafa;height:46px;font:600 15px -apple-system,sans-serif;color:#2563eb}
+.slider{display:flex;align-items:center;gap:8px;font:13px ui-monospace,monospace;color:#666}.slider input[type=range]{flex:1;accent-color:#007AFF}
+#add{border:0;border-top:1px solid #e3e3e8;background:#fafafa;height:46px;font:600 15px -apple-system,sans-serif;color:#007AFF}
 #graph{flex:1;position:relative;touch-action:none}
 canvas{width:100%;height:100%;display:block}
 #tools{position:absolute;right:12px;top:12px;display:flex;flex-direction:column;gap:8px}
