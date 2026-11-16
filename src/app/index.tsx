@@ -620,6 +620,8 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
                 </Pressable>
               ))}
             </View>
+            {s.homeStats ? (
+              <>
             <Text style={sectionTitle}>This week</Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               {([
@@ -635,6 +637,8 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
                 </View>
               ))}
             </View>
+              </>
+            ) : null}
             {pinned.length ? (
               <>
                 <Text style={sectionTitle}>Pinned</Text>

@@ -57,6 +57,7 @@ export type Settings = {
   toolScale?: number;        // toolbar size: 0.88 small, 1 regular, 1.15 large
   solidBars?: boolean;       // toolbars are solid white cards instead of glass
   shareClean?: boolean;      // toolbars are left out of screen sharing, mirroring and recordings (on unless turned off)
+  homeStats?: boolean;       // the This week tiles on Home (off unless turned on)
   showDraw?: boolean;        // the Drawing Board appears on Home and in the sidebar (off unless turned on)
   showClassroom?: boolean;   // Classroom appears in the sidebar (off unless turned on)
   tidyOnLift?: boolean;      // smooth each stroke a little when the Pencil lifts (off unless turned on)

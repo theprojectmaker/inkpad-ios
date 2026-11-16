@@ -237,6 +237,8 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
             right={<Choice value={s.theme === 'dark' ? 'dark' : 'light'} onPick={(v) => set({ theme: v })} options={[{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />} />
           <Row icon="square.grid.2x2" label="Library view"
             right={<Choice value={s.view} onPick={(v) => set({ view: v })} options={[{ id: 'grid', label: 'Grid' }, { id: 'list', label: 'List' }]} />} />
+          <Row icon="chart.bar" label="This week on Home" note="Shows your notes worked on, streak, focus time and pages on Home."
+            onPress={() => set({ homeStats: !s.homeStats })} right={<Toggle label="This week on Home" value={!!s.homeStats} onChange={(v) => set({ homeStats: v })} />} />
           <Row icon="paintbrush.pointed" label="Drawing Board" note="Shows the Drawing Board on Home and in the sidebar."
             onPress={() => set({ showDraw: !s.showDraw })} right={<Toggle label="Drawing Board" value={!!s.showDraw} onChange={(v) => set({ showDraw: v })} />} />
           <Row icon="graduationcap" label="Classroom" note="Shows Classroom in the sidebar."
