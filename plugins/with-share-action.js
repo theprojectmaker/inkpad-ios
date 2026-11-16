@@ -23,7 +23,7 @@ const FILES = {
   entitlements: 'QuillAction.entitlements',
 };
 
-// ---- the icon: a pencil over a line, as a template image (iOS tints it itself)
+// ---- the icon: a quill over a line of ink, as a template image (iOS tints it itself)
 
 function crc32(buf) {
   let c, crc = 0xffffffff;
@@ -40,16 +40,26 @@ function chunk(type, data) {
   const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
   return Buffer.concat([len, td, crc]);
 }
-/** Is the point (0...1, y down) part of the picture? */
+/** Is the point (0...1, y down) part of the picture? A quill: a feather leaning to the right, its shaft, and the line it wrote. */
 function inGlyph(x, y) {
   const u = (x + (1 - y)) / 2;            // 0 at the bottom left corner, 1 at the top right
-  const v = (x - (1 - y)) / Math.SQRT2;   // how far off that diagonal
-  const half = 0.088;
-  if (u >= 0.37 && u <= 0.78 && Math.abs(v) <= half) return true;                       // the barrel
-  if (u >= 0.815 && u <= 0.88 && Math.abs(v) <= half) return true;                      // the end cap
-  if (u >= 0.2 && u < 0.34 && Math.abs(v) <= half * ((u - 0.2) / 0.14)) return true;    // the point
-  if (y >= 0.84 && y <= 0.885 && x >= 0.46 && x <= 0.86) return true;                   // the line it wrote
-  return false;
+  const v = (x - (1 - y)) / Math.SQRT2;   // how far off that diagonal (positive: toward the bottom right)
+  // The line of ink under the nib.
+  if (y >= 0.875 && y <= 0.915 && x >= 0.24 && x <= 0.62) return true;
+  // The bare shaft, tapering to the nib at the bottom left.
+  if (u >= 0.1 && u < 0.34) return Math.abs(v) <= 0.006 + 0.03 * ((u - 0.1) / 0.24);
+  if (u < 0.34 || u > 0.94) return false;
+  // The vane: fuller on the lower side, coming to a soft point at the top.
+  const t = (u - 0.34) / 0.6;
+  const swell = Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.92 + 0.04)), 0.75);
+  const half = v >= 0 ? 0.2 * swell : 0.15 * swell;
+  if (Math.abs(v) > half) return false;
+  // The shaft shows as a fine line through the vane.
+  if (t < 0.86 && Math.abs(v) < 0.011) return false;
+  // Three splits in the barbs, slanting back toward the nib.
+  if (v > 0.03 && (Math.abs(u - 0.5 - v * 0.75) < 0.011 || Math.abs(u - 0.68 - v * 0.75) < 0.011)) return false;
+  if (v < -0.03 && Math.abs(u - 0.6 + v * 0.75) < 0.011) return false;
+  return true;
 }
 function iconPng(size) {
   const raw = Buffer.alloc((size * 4 + 1) * size);
