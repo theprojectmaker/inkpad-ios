@@ -1,4 +1,5 @@
 // The Note Switcher: the notes that are open, with a picture of each.
+import { accent } from '@/lib/settings';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Reanimated, { FadeIn } from 'react-native-reanimated';
 
@@ -36,7 +37,7 @@ export function NoteTabs({ current, onPick, onClose }: { current: string; onPick
         })}
         {tabs.length > 1 ? (
           <Pressable accessibilityLabel="Close other notes" onPress={() => { closeOtherTabs(current); onClose(); }} style={{ padding: 10 }}>
-            <Text style={{ color: '#007AFF', fontSize: 14 }}>Close the others</Text>
+            <Text style={{ color: accent(), fontSize: 14 }}>Close the others</Text>
           </Pressable>
         ) : null}
       </Reanimated.View>

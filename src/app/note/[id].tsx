@@ -1,6 +1,7 @@
 // Editor, laid out like the recordings of Notability: the page fills the screen and everything floats over it. Back on the left, the
 // tools in the middle, insert / audio / undo / redo / more on the right; the tool's
 // options on a card; an optional page sidebar; the ink canvas; panels beside it.
+import { accent, accentSoft, ink } from '@/lib/settings';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
@@ -59,7 +60,7 @@ function TopBtn({ icon, label, onPress, active, disabled }: { icon: string; labe
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled} hitSlop={3}
       style={({ pressed }) => ({ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1, backgroundColor: active ? 'rgba(0,122,255,0.14)' : pressed ? 'rgba(60,60,67,0.1)' : 'transparent' })}>
-      <ToolIcon name={icon} size={20} color={active ? '#007AFF' : '#3B4252'} />
+      <ToolIcon name={icon} size={20} color={active ? accent() : ink()} />
     </Pressable>
   );
 }
@@ -163,6 +164,7 @@ export default function Editor() {
   const [toolOut, setToolOut] = useState<{ title: string; busy: boolean; text: string } | null>(null);
   const [reading, setReading] = useState(false);
   const [details, setDetails] = useState(false);
+  const [stickers, setStickers] = useState(false);
   const [guide, setGuide] = useState(false);
   const [guideY, setGuideY] = useState(260);
   const guideFrom = useRef(260);
@@ -896,7 +898,7 @@ export default function Editor() {
                 {flagged ? <Icon name="flag.fill" size={11} color="#F59E0B" /> : null}
                 <Pressable accessibilityLabel="Previous page" hitSlop={8} onPress={() => canvas.current?.scrollToPage(Math.max(0, page.page - 1))} style={{ padding: 5 }}><ToolIcon name="up" size={13} /></Pressable>
                 <Pressable accessibilityLabel="Go to page" onPress={() => setJump(true)} style={{ paddingVertical: 2, alignItems: 'center' }}>
-                  <Text style={{ color: '#3B4252', fontSize: 11, fontWeight: '600' }}>{page.page + 1}</Text>
+                  <Text style={{ color: ink(), fontSize: 11, fontWeight: '600' }}>{page.page + 1}</Text>
                   <View style={{ width: 12, height: 1, backgroundColor: '#9AA2B2', marginVertical: 2 }} />
                   <Text style={{ color: '#7A8294', fontSize: 11 }}>{page.count}</Text>
                 </Pressable>
@@ -954,7 +956,7 @@ export default function Editor() {
           {meta?.hw ? (
             <View style={{ position: 'absolute', top: 70, left: 12, flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 6, borderRadius: 18, backgroundColor: '#fff', maxWidth: 220, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}>
               <Pressable onPress={() => openAssignment(meta.hw!)} accessibilityLabel="Assignment" style={{ flexShrink: 1, paddingHorizontal: 6 }}>
-                <Text numberOfLines={1} style={{ color: '#3B4252', fontSize: 12.5, fontWeight: '600' }}>{meta.hw.title}{meta.hw.due ? ` · ${dueLabel(meta.hw.due)}` : ''}</Text>
+                <Text numberOfLines={1} style={{ color: ink(), fontSize: 12.5, fontWeight: '600' }}>{meta.hw.title}{meta.hw.due ? ` · ${dueLabel(meta.hw.due)}` : ''}</Text>
               </Pressable>
               <Pressable onPress={handIn} accessibilityLabel="Hand in to Classroom" style={{ height: 26, paddingHorizontal: 10, borderRadius: 13, justifyContent: 'center', backgroundColor: '#1E8E3E' }}>
                 <Text style={{ color: '#fff', fontSize: 12.5, fontWeight: '700' }}>Hand in</Text>
@@ -1044,7 +1046,7 @@ export default function Editor() {
             <Text style={{ color: t.sub, fontSize: 14, marginTop: 12 }}>Unit</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
               {['Inches', 'Feet', 'Centimeters', 'Meters'].map((u) => (
-                <Pressable key={u} accessibilityLabel={u} onPress={() => setCalUnit(u)} style={{ height: 34, paddingHorizontal: 12, borderRadius: 17, justifyContent: 'center', backgroundColor: calUnit === u ? '#E5F0FF' : t.chip }}><Text style={{ color: t.text, fontSize: 14 }}>{u}</Text></Pressable>
+                <Pressable key={u} accessibilityLabel={u} onPress={() => setCalUnit(u)} style={{ height: 34, paddingHorizontal: 12, borderRadius: 17, justifyContent: 'center', backgroundColor: calUnit === u ? accentSoft() : t.chip }}><Text style={{ color: t.text, fontSize: 14 }}>{u}</Text></Pressable>
               ))}
             </View>
           </>
@@ -1053,16 +1055,74 @@ export default function Editor() {
           const v = parseFloat(calValue);
           if (!calibrate?.need && calibrate?.length && v > 0) { set({ measureScale: { perPoint: v / calibrate.length, unit: calUnit } }); toast('Scale set. Drag on the page to measure.'); }
           setCalibrate(null);
-        }} style={{ height: 44, borderRadius: 10, marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#007AFF' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Continue</Text></Pressable>
+        }} style={{ height: 44, borderRadius: 10, marginTop: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: accent() }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Continue</Text></Pressable>
       </Sheet>
-      <MenuSheet visible={insert} onClose={() => setInsert(false)} title="Insert" items={[
-        { label: 'Photo on this page', icon: 'photo', onPress: () => placePhoto('library') },
-        { label: 'Take a photo', icon: 'camera', onPress: () => placePhoto('camera') },
-        { label: 'Paste', icon: 'doc.on.clipboard', onPress: paste },
-        { label: 'Blank page after this one', icon: 'doc.badge.plus', onPress: () => addPage(page.page) },
-        ...(canScan() ? [{ label: 'Scan paper', icon: 'doc.viewfinder', onPress: () => addPictures('scan') }] : []),
-        { label: 'Photos as new pages', icon: 'photo.on.rectangle', onPress: () => addPictures('photos') },
-      ]} />
+      <Sheet visible={insert} onClose={() => setInsert(false)} title="Add to this note" width={480}>
+        {(() => {
+          // Closes first, then acts: a picker opened while the sheet is still leaving gets dropped by iOS.
+          const go = (fn: () => void) => () => { setInsert(false); setTimeout(fn, 380); };
+          const groups: { name: string; items: { label: string; sub: string; icon: string; tint: string; onPress: () => void }[] }[] = [
+            { name: 'Photos', items: [
+              { label: 'Photo', sub: 'Onto this page', icon: 'photo', tint: '#30A46C', onPress: go(() => placePhoto('library')) },
+              { label: 'Camera', sub: 'Take one now', icon: 'camera', tint: '#0090FF', onPress: go(() => placePhoto('camera')) },
+              { label: 'Photos as pages', sub: 'Each becomes a page', icon: 'photo.on.rectangle', tint: '#12A594', onPress: go(() => addPictures('photos')) },
+              ...(canScan() ? [{ label: 'Scan paper', sub: 'Straightened and cleaned', icon: 'doc.viewfinder', tint: '#6E56CF', onPress: go(() => addPictures('scan')) }] : []),
+            ] },
+            { name: 'On the page', items: [
+              { label: 'Sticker', sub: 'Marks, study, reactions', icon: 'face.smiling', tint: '#F76B15', onPress: go(() => setStickers(true)) },
+              { label: 'Stamp', sub: 'Date, labels, outlines', icon: 'seal', tint: '#D6409F', onPress: go(() => setPageTools('stamps')) },
+              { label: 'Paste', sub: 'What you copied', icon: 'doc.on.clipboard', tint: '#5B6370', onPress: go(paste) },
+            ] },
+            { name: 'Pages', items: [
+              { label: 'Blank page', sub: 'After this one', icon: 'doc.badge.plus', tint: accent(), onPress: go(() => addPage(page.page)) },
+              { label: 'Five pages', sub: 'At the end', icon: 'plus.rectangle.on.rectangle', tint: accent(), onPress: go(() => addPages(5)) },
+            ] },
+          ];
+          return groups.map((g) => (
+            <View key={g.name} style={{ marginBottom: 14 }}>
+              <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>{g.name}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                {g.items.map((it) => (
+                  <Pressable key={it.label} accessibilityRole="button" accessibilityLabel={`${it.label}. ${it.sub}`} onPress={it.onPress}
+                    style={({ pressed }) => ({ width: 101, paddingVertical: 12, paddingHorizontal: 6, borderRadius: 16, borderCurve: 'continuous', alignItems: 'center', gap: 7, backgroundColor: t.dark ? t.card : t.side, transform: [{ scale: pressed ? 0.96 : 1 }] })}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: it.tint + '22' }}><Icon name={it.icon} size={19} color={it.tint} /></View>
+                    <Text numberOfLines={1} style={{ color: t.text, fontSize: 14, fontWeight: '600' }}>{it.label}</Text>
+                    <Text numberOfLines={1} style={{ color: t.faint, fontSize: 11.5 }}>{it.sub}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ));
+        })()}
+      </Sheet>
+      <Sheet visible={stickers} onClose={() => setStickers(false)} title="Stickers" width={440}>
+        {([
+          ['Marks', ['⭐', '✅', '❌', '❗', '❓', '➡️', '⬅️', '⬆️', '⬇️', '🔺', '🔴', '🟡', '🟢', '🔵']],
+          ['Study', ['📌', '📎', '✏️', '📝', '📚', '🧠', '💡', '🔍', '🧪', '🧮', '📐', '🗓️', '⏰', '🎯']],
+          ['Reactions', ['👍', '👎', '👏', '🙌', '💪', '😀', '🤔', '😴', '😮', '🥳', '❤️', '🔥', '✨', '💯']],
+        ] as const).map(([name, list]) => (
+          <View key={name} style={{ marginBottom: 12 }}>
+            <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 6 }}>{name}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {list.map((e) => (
+                <Pressable key={e} accessibilityLabel={`Sticker ${e}`} onPress={() => { setStickers(false); canvas.current?.addPageText(page.page, e); toast('Sticker added. Select it to move or resize it.'); }}
+                  style={({ pressed }) => ({ width: 50, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? t.chip : 'transparent' })}>
+                  <Text style={{ fontSize: 30 }}>{e}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
+        <Text style={{ color: t.sub, fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Words</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {['Great work!', 'Important', 'Key idea', 'Review this', 'Due soon', 'Done ✓', 'Ask the teacher', 'On the test'].map((w) => (
+            <Pressable key={w} accessibilityLabel={`Sticker ${w}`} onPress={() => { setStickers(false); canvas.current?.addPageText(page.page, w); toast('Sticker added. Select it to move or resize it.'); }}
+              style={({ pressed }) => ({ height: 36, paddingHorizontal: 14, borderRadius: 18, justifyContent: 'center', backgroundColor: accentSoft(), opacity: pressed ? 0.6 : 1 })}>
+              <Text style={{ color: accent(), fontSize: 14, fontWeight: '700' }}>{w}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
       <MenuSheet visible={pageMenu != null} onClose={() => setPageMenu(null)} title={`Page ${(pageMenu ?? 0) + 1}`} items={pageMenu == null || !doc ? [] : (() => { const i = pageMenu; const p = doc.pages[i]; return [
         { label: p?.mark ? 'Remove bookmark' : 'Bookmark', icon: p?.mark ? 'bookmark.slash' : 'bookmark', onPress: () => savePages(doc.pages.map((q, k) => { if (k !== i) return q; const { mark: _m, ...rest } = q; return p?.mark ? rest : { ...rest, mark: 1 as const }; })) },
         ...(i > 0 ? [{ label: 'Move up', icon: 'arrow.up', onPress: () => movePage(i, i - 1) }] : []),
@@ -1099,7 +1159,7 @@ export default function Editor() {
       {scratch && !focus ? (
         <Glass radius={18} style={{ position: 'absolute', top: 70, right: 12, width: 250, padding: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>Scratchpad</Text>
+            <Text style={{ color: ink(), fontSize: 13, fontWeight: '700' }}>Scratchpad</Text>
             <Pressable accessibilityLabel="Close scratchpad" hitSlop={10} onPress={() => setScratch(false)}><Icon name="xmark" size={13} color="#6B7385" /></Pressable>
           </View>
           <TextInput multiline value={scratchText} onChangeText={saveScratch} placeholder="Jot anything. It stays with this note, not on the page." placeholderTextColor="#8A92A3" style={{ height: 150, marginTop: 8, fontSize: 15, color: '#15171C', textAlignVertical: 'top' }} />
@@ -1109,7 +1169,7 @@ export default function Editor() {
         <Glass stretchy radius={26} style={{ position: 'absolute', bottom: 28, left: 14, flexDirection: 'row', alignItems: 'center', padding: 6, gap: 4 }}>
           <Text accessibilityLabel={onBreak ? 'Break timer' : 'Focus timer'} style={{ color: onBreak ? '#30A46C' : timerLeft === 0 ? '#E8590C' : '#15171C', fontSize: 18, fontWeight: '700', minWidth: 62, textAlign: 'center', fontVariant: ['tabular-nums'] }}>{String(Math.floor(timerLeft / 60)).padStart(2, '0')}:{String(timerLeft % 60).padStart(2, '0')}</Text>
           <IconButton name={timerRun ? 'pause.fill' : 'play.fill'} label={timerRun ? 'Pause the timer' : 'Start the timer'} onPress={() => { if (timerLeft === 0) setTimerLeft(timerMin * 60); setTimerRun((r) => !r); }} />
-          <Pressable accessibilityLabel={`Timer length ${timerMin} minutes. Tap to change.`} onPress={() => { setOnBreak(false); nextLength(); }} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(60,60,67,0.1)' }}><Text style={{ color: '#3B4252', fontSize: 13, fontWeight: '700' }}>{onBreak ? 'Break' : `${timerMin} min`}</Text></Pressable>
+          <Pressable accessibilityLabel={`Timer length ${timerMin} minutes. Tap to change.`} onPress={() => { setOnBreak(false); nextLength(); }} style={{ height: 34, paddingHorizontal: 10, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(60,60,67,0.1)' }}><Text style={{ color: ink(), fontSize: 13, fontWeight: '700' }}>{onBreak ? 'Break' : `${timerMin} min`}</Text></Pressable>
           <IconButton name="xmark" label="Close the timer" onPress={() => { setTimerOpen(false); setTimerRun(false); setOnBreak(false); setTimerLeft(timerMin * 60); }} />
         </Glass>
       ) : null}
@@ -1266,7 +1326,7 @@ export default function Editor() {
                   else { copyText(c.text); closePanels(); setCalcLoaded(true); setCalc(true); toast("Couldn't plot that here. It's copied, ready to paste into the calculator."); }
                 }
                 else canvas.current?.replaceSelection(c.text);
-              }} style={{ height: 40, paddingHorizontal: 18, borderRadius: 10, justifyContent: 'center', backgroundColor: '#007AFF' }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Convert</Text></Pressable>
+              }} style={{ height: 40, paddingHorizontal: 18, borderRadius: 10, justifyContent: 'center', backgroundColor: accent() }}><Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>Convert</Text></Pressable>
             </View>
           </>
         )}

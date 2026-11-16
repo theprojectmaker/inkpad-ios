@@ -5,7 +5,7 @@ import { Component, createContext, Fragment, type ErrorInfo, useCallback, useCon
 import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ViewProps, type ViewStyle, type StyleProp } from 'react-native';
 import Reanimated, { FadeIn, FadeInDown, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
-import { useTheme } from '@/lib/settings';
+import { useSettings, useTheme } from '@/lib/settings';
 
 // SF Symbols on iOS; a plain glyph in the web preview.
 const FALLBACK: Record<string, string> = {
@@ -289,12 +289,13 @@ function GuardCard({ label, error, retry }: { label?: string; error: Error; retr
 /** A floating surface: clear Liquid Glass where the iPad has it (iPadOS 26), a see-through white card where it doesn't. */
 const HAS_GLASS = (() => { try { return Platform.OS === 'ios' && isLiquidGlassAvailable(); } catch { return false; } })();
 function GlassBody({ radius, style, children, ...rest }: ViewProps & { radius: number }) {
+  const { s } = useSettings();
   return (
-    HAS_GLASS ? (
+    HAS_GLASS && !s.solidBars ? (
       // The buttons sit inside the glass, so it lights up and flexes under a touch like the system's bars.
       <GlassView {...rest} glassEffectStyle="clear" isInteractive style={[{ borderRadius: radius, borderCurve: 'continuous' }, style]}>{children}</GlassView>
     ) : (
-    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, { backgroundColor: 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(60,60,67,0.18)', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
+    <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, { backgroundColor: s.solidBars ? '#FFFFFF' : 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(60,60,67,0.18)', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
       {children}
     </View>
     )

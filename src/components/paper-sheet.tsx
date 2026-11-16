@@ -1,5 +1,6 @@
 // The Templates page: page size and orientation, the everyday papers as big previews,
 // more templates, and paper colour. Apply uses it.
+import { accent } from '@/lib/settings';
 import { Canvas, Group, Picture } from '@shopify/react-native-skia';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
@@ -11,7 +12,6 @@ import { PAPER_STYLES, PAPERS, STYLE_GROUPS, stylesIn } from '@/lib/paper';
 import { useSettings } from '@/lib/settings';
 import { paperPicture } from '@/lib/skia-render';
 
-const BLUE = '#007AFF';
 const BASIC: [PaperStyle, string][] = [['blank', 'Blank'], ['lined', 'Lined'], ['grid', 'Grid'], ['dotted', 'Dotted']];
 const MORE: [PaperStyle, string][] = [['narrow', 'Narrow lined'], ['cornell', 'Cornell notes'], ['todo', 'Checklist'], ['music', 'Music'], ['iso', 'Isometric']];
 const SIZES: [PageSizeId, string][] = PAGE_SIZES.filter((p) => p.id !== 'landscape').map((p) => [p.id, p.name]);
@@ -54,12 +54,12 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
     const on = id === st;
     return (
       <Pressable key={id} accessibilityLabel={name} onPress={() => setSt(id)} style={{ width: w }}>
-        <View style={{ borderWidth: on ? 4 : 1, borderColor: on ? BLUE : '#C9CFDB', backgroundColor: '#fff', overflow: 'hidden' }}>
+        <View style={{ borderWidth: on ? 4 : 1, borderColor: on ? accent() : '#C9CFDB', backgroundColor: '#fff', overflow: 'hidden' }}>
           <Preview style={id} color={co} w={w - (on ? 8 : 2)} landscape={landscape} />
           {on ? <View style={{ position: 'absolute', top: 8, left: 8, height: 22, paddingHorizontal: 9, borderRadius: 11, justifyContent: 'center', backgroundColor: '#7A7F8A' }}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>CURRENT</Text></View> : null}
           {on ? (
             <Pressable accessibilityLabel={isMine ? 'Remove from My Templates' : 'Add to My Templates'} onPress={() => set({ myTemplates: isMine ? mine.filter((x) => x !== id) : [...mine, id] })} hitSlop={8} style={{ position: 'absolute', top: 8, right: 8 }}>
-              <Icon name={isMine ? 'star.fill' : 'star'} size={20} color={BLUE} />
+              <Icon name={isMine ? 'star.fill' : 'star'} size={20} color={accent()} />
             </Pressable>
           ) : null}
         </View>
@@ -74,7 +74,7 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
         <View style={{ height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#E5E7EC' }}>
           <Pressable accessibilityLabel="Close templates" onPress={onClose} style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E7EC' }}><Icon name="xmark" size={16} color="#15171C" /></Pressable>
           <Text style={{ fontSize: 21, fontWeight: '700', color: '#15171C' }}>Templates</Text>
-          <Pressable accessibilityLabel={confirm} onPress={() => onDone(st, co, sz)} style={{ height: 44, paddingHorizontal: 20, borderRadius: 22, justifyContent: 'center', backgroundColor: BLUE }}><Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>{confirm}</Text></Pressable>
+          <Pressable accessibilityLabel={confirm} onPress={() => onDone(st, co, sz)} style={{ height: 44, paddingHorizontal: 20, borderRadius: 22, justifyContent: 'center', backgroundColor: accent() }}><Text style={{ color: '#fff', fontSize: 17, fontWeight: '700' }}>{confirm}</Text></Pressable>
         </View>
         {tab === 'mine' ? (
           <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 110 }}>
@@ -102,7 +102,7 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
                 <View style={{ flexDirection: 'row', backgroundColor: '#ECEDF1', borderRadius: 10, padding: 2 }}>
                   {[false, true].map((l) => (
                     <Pressable key={String(l)} accessibilityLabel={l ? 'Landscape' : 'Portrait'} onPress={() => setSz(l ? 'landscape' : 'letter')} style={{ width: 42, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: landscape === l ? '#fff' : 'transparent' }}>
-                      <View style={{ width: l ? 18 : 13, height: l ? 13 : 18, borderWidth: 1.5, borderColor: landscape === l ? BLUE : '#7A8294', borderRadius: 2 }} />
+                      <View style={{ width: l ? 18 : 13, height: l ? 13 : 18, borderWidth: 1.5, borderColor: landscape === l ? accent() : '#7A8294', borderRadius: 2 }} />
                     </Pressable>
                   ))}
                 </View>
@@ -110,7 +110,7 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
             ) : null}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 24, marginHorizontal: -24 }} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
               {STYLE_GROUPS.map((g) => (
-                <Pressable key={g} accessibilityLabel={`${g} templates`} onPress={() => setGroup(g)} style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, justifyContent: 'center', backgroundColor: g === group ? BLUE : '#ECEDF1' }}>
+                <Pressable key={g} accessibilityLabel={`${g} templates`} onPress={() => setGroup(g)} style={{ height: 38, paddingHorizontal: 16, borderRadius: 19, justifyContent: 'center', backgroundColor: g === group ? accent() : '#ECEDF1' }}>
                   <Text style={{ fontSize: 15, fontWeight: '700', color: g === group ? '#fff' : '#15171C' }}>{g}</Text>
                 </Pressable>
               ))}
@@ -121,7 +121,7 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
               {PAPERS.map((p) => (
                 <Pressable key={p.id} accessibilityLabel={p.name} onPress={() => setCo(p.id)} style={{ alignItems: 'center', gap: 5 }}>
-                  <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: p.bg, borderWidth: p.id === co ? 3 : 1, borderColor: p.id === co ? BLUE : '#C9CFDB' }} />
+                  <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: p.bg, borderWidth: p.id === co ? 3 : 1, borderColor: p.id === co ? accent() : '#C9CFDB' }} />
                   <Text style={{ color: '#6B7385', fontSize: 12 }}>{p.name}</Text>
                 </Pressable>
               ))}
@@ -132,8 +132,8 @@ export function PaperSheet({ visible, confirm = 'Apply', style, color, size, wit
           <View style={{ flexDirection: 'row', padding: 4, borderRadius: 26, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }}>
             {([['all', 'Templates', 'doc.plaintext'], ['mine', 'My Templates', 'heart']] as const).map(([id, n, icon]) => (
               <Pressable key={id} accessibilityLabel={n} onPress={() => setTab(id)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 42, paddingHorizontal: 14, borderRadius: 21, backgroundColor: tab === id ? '#ECEDF1' : 'transparent' }}>
-                <Icon name={icon} size={18} color={tab === id ? BLUE : '#3B4252'} />
-                <Text style={{ color: tab === id ? BLUE : '#3B4252', fontSize: 15, fontWeight: '600' }}>{n}</Text>
+                <Icon name={icon} size={18} color={tab === id ? accent() : '#3B4252'} />
+                <Text style={{ color: tab === id ? accent() : '#3B4252', fontSize: 15, fontWeight: '600' }}>{n}</Text>
               </Pressable>
             ))}
           </View>

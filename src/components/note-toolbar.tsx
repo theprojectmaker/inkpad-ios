@@ -2,6 +2,7 @@
 // a white pill at the top of the page. Top row: the tools, on two swipeable sets.
 // Bottom row: the picked tool's colours, three sizes and its line style. Every tool
 // remembers its own colours and sizes.
+import { accent, accentSoft, ink } from '@/lib/settings';
 import { Canvas, Group, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, PanResponder, Pressable, ScrollView, StyleSheet, Switch, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
@@ -91,8 +92,6 @@ export function currentTool(s: Settings): CanvasTool {
   }
 }
 
-const INK = '#3B4252';
-const BLUE = '#007AFF';
 /** How many tools sit on the first row; the rest are one tap away. */
 const FIRST_ROW = 6;
 /** Pen smoothing when the setting has never been touched: enough to steady a line, not enough to feel late. */
@@ -229,21 +228,37 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
           <View style={{ height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }}>
             <Pressable accessibilityLabel="Cancel toolbox" onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E7EC' }}><Icon name="xmark" size={14} color="#15171C" /></Pressable>
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#15171C' }}>Toolbox</Text>
-            <Pressable accessibilityLabel="Done with toolbox" onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }}><Icon name="checkmark" size={15} color="#fff" /></Pressable>
+            <Pressable accessibilityLabel="Done with toolbox" onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: accent() }}><Icon name="checkmark" size={15} color="#fff" /></Pressable>
           </View>
           <Text style={{ color: '#6B7385', fontSize: 14, paddingHorizontal: 18, paddingBottom: 10 }}>Drag to reorder, or hide the Toolbox tools. You can also hold a tool in the bar to hide it.</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingBottom: 12 }}>
             <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Toolbar position</Text>
             {(['top', 'bottom'] as const).map((d) => (
-              <Pressable key={d} accessibilityLabel={`Toolbar on the ${d}`} onPress={() => set({ toolDock: d })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: (s.toolDock ?? 'top') === d ? '#E5F0FF' : '#ECEDF1' }}>
-                <Text style={{ color: (s.toolDock ?? 'top') === d ? BLUE : '#15171C', fontSize: 13, fontWeight: '500' }}>{d[0].toUpperCase() + d.slice(1)}</Text>
+              <Pressable key={d} accessibilityLabel={`Toolbar on the ${d}`} onPress={() => set({ toolDock: d })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: (s.toolDock ?? 'top') === d ? accentSoft() : '#ECEDF1' }}>
+                <Text style={{ color: (s.toolDock ?? 'top') === d ? accent() : '#15171C', fontSize: 13, fontWeight: '500' }}>{d[0].toUpperCase() + d.slice(1)}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingBottom: 12 }}>
+            <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Toolbar size</Text>
+            {([['Small', 0.88], ['Regular', 1], ['Large', 1.15]] as const).map(([name, k]) => (
+              <Pressable key={name} accessibilityLabel={`${name} toolbar`} onPress={() => set({ toolScale: k })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: (s.toolScale ?? 1) === k ? accentSoft() : '#ECEDF1' }}>
+                <Text style={{ color: (s.toolScale ?? 1) === k ? accent() : '#15171C', fontSize: 13, fontWeight: '500' }}>{name}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingBottom: 12 }}>
+            <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Bars</Text>
+            {([['Glass', false], ['Solid', true]] as const).map(([name, solid]) => (
+              <Pressable key={name} accessibilityLabel={`${name} bars`} onPress={() => set({ solidBars: solid })} style={{ height: 30, paddingHorizontal: 10, borderRadius: 8, justifyContent: 'center', backgroundColor: !!s.solidBars === solid ? accentSoft() : '#ECEDF1' }}>
+                <Text style={{ color: !!s.solidBars === solid ? accent() : '#15171C', fontSize: 13, fontWeight: '500' }}>{name}</Text>
               </Pressable>
             ))}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingBottom: 12 }}>
             <Text style={{ flex: 1, color: '#15171C', fontSize: 15 }}>Tools on the first page</Text>
             <Pressable accessibilityLabel="Fewer tools on the first page" disabled={firstN <= FIRST_MIN} onPress={() => set({ toolFirstPage: firstN - 1 })} style={{ width: 32, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECEDF1', opacity: firstN <= FIRST_MIN ? 0.35 : 1 }}><Text style={{ fontSize: 18, fontWeight: '600', color: '#15171C' }}>−</Text></Pressable>
-            <Text accessibilityLabel={`${firstN} tools on the first page`} style={{ width: 26, textAlign: 'center', fontSize: 16, fontWeight: '700', color: BLUE }}>{firstN}</Text>
+            <Text accessibilityLabel={`${firstN} tools on the first page`} style={{ width: 26, textAlign: 'center', fontSize: 16, fontWeight: '700', color: accent() }}>{firstN}</Text>
             <Pressable accessibilityLabel="More tools on the first page" disabled={firstN >= FIRST_MAX} onPress={() => set({ toolFirstPage: firstN + 1 })} style={{ width: 32, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECEDF1', opacity: firstN >= FIRST_MAX ? 0.35 : 1 }}><Text style={{ fontSize: 18, fontWeight: '600', color: '#15171C' }}>+</Text></Pressable>
           </View>
           <ScrollView scrollEnabled={!drag}>
@@ -255,14 +270,14 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
                   <Pressable accessibilityLabel={(off ? 'Show ' : 'Hide ') + x.label} onPress={() => set(hidePatch(s, id, !off))} hitSlop={8}>
                     <Icon name={off ? 'eye.slash' : 'eye'} size={20} color="#9AA2B2" />
                   </Pressable>
-                  {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: INK }}>Tt</Text> : <ToolIcon name={x.icon} size={22} color={off ? '#B8BFCC' : INK} />}
+                  {id === 'text' ? <Text style={{ width: 26, textAlign: 'center', fontSize: 19, fontWeight: '800', fontStyle: 'italic', color: ink() }}>Tt</Text> : <ToolIcon name={x.icon} size={22} color={off ? '#B8BFCC' : ink()} />}
                   <Text style={{ flex: 1, fontSize: 16, color: off ? '#9AA2B2' : '#15171C' }}>{x.label}</Text>
-                  {!off ? <Text style={{ fontSize: 12, fontWeight: '600', color: onFirstPage.has(id) ? BLUE : '#9AA2B2' }}>{onFirstPage.has(id) ? 'Page 1' : 'Page 2'}</Text> : null}
+                  {!off ? <Text style={{ fontSize: 12, fontWeight: '600', color: onFirstPage.has(id) ? accent() : '#9AA2B2' }}>{onFirstPage.has(id) ? 'Page 1' : 'Page 2'}</Text> : null}
                   <DragGrip label={'Reorder ' + x.label} onDrag={(dy) => setDrag({ from: i, dy })} onDrop={(dy) => drop(i, dy)} />
                 </View>
               );
             })}
-            <Pressable accessibilityLabel="App settings" onPress={() => { onClose(); onSettings(); }} style={{ padding: 16 }}><Text style={{ color: BLUE, fontSize: 16 }}>App settings</Text></Pressable>
+            <Pressable accessibilityLabel="App settings" onPress={() => { onClose(); onSettings(); }} style={{ padding: 16 }}><Text style={{ color: accent(), fontSize: 16 }}>App settings</Text></Pressable>
           </ScrollView>
         </View>
       </View>
@@ -273,7 +288,7 @@ function Toolbox({ visible, onClose, onSettings }: { visible: boolean; onClose: 
 const WAVE = 'M3 14C8 4 14 4 20 11S32 19 37 7';
 
 /** A little picture of a line style. */
-function LineGlyph({ line, color = INK, width = 40 }: { line: PenLine; color?: string; width?: number }) {
+function LineGlyph({ line, color = ink(), width = 40 }: { line: PenLine; color?: string; width?: number }) {
   const path = Skia.Path.MakeFromSVGString(WAVE);
   if (!path) return null;
   return (
@@ -301,13 +316,13 @@ export function ThicknessSlider({ value, onChange, onDone, max = 12, preview = t
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
     {preview ? <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-      <Reanimated.View layout={LinearTransition.springify().damping(15)} style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: INK }} />
+      <Reanimated.View layout={LinearTransition.springify().damping(15)} style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: ink() }} />
     </View> : null}
     <View accessibilityLabel="Thickness" style={{ flex: 1, height: 40, justifyContent: 'center' }} onLayout={(e) => { w.current = Math.max(1, e.nativeEvent.layout.width); }}
       onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderGrant={at} onResponderMove={at} onResponderRelease={() => onDone?.(last.current)}>
       <View pointerEvents="none" style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
         {Array.from({ length: max }, (_, i) => (
-          <View key={i} style={{ flex: 1, height: 3 + (i / (max - 1)) * 8, borderRadius: 2, backgroundColor: i / (max - 1) <= f ? BLUE : '#C4CBDA' }} />
+          <View key={i} style={{ flex: 1, height: 3 + (i / (max - 1)) * 8, borderRadius: 2, backgroundColor: i / (max - 1) <= f ? accent() : '#C4CBDA' }} />
         ))}
       </View>
       <View pointerEvents="none" style={{ position: 'absolute', left: `${f * 100}%`, marginLeft: -15, width: 30, height: 30, borderRadius: 15, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
@@ -353,7 +368,7 @@ function ToolMark({ on, color, children }: { on: boolean; color: string; childre
   const tile = useAnimatedStyle(() => ({ opacity: k.value * 0.14 }));
   return (
     <>
-      <Reanimated.View style={[{ position: 'absolute', width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: color === INK ? BLUE : color }, tile]} />
+      <Reanimated.View style={[{ position: 'absolute', width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: color === ink() ? accent() : color }, tile]} />
       {children}
     </>
   );
@@ -418,7 +433,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const on = x.id === kind;
     const tk = kitOf(s, x.id);
     const tint = on && tk.colors.length ? tk.colors[tk.color] : null;
-    const shown = tint && tint.toUpperCase() !== '#FFFFFF' ? tint : on ? BLUE : INK;
+    const shown = tint && tint.toUpperCase() !== '#FFFFFF' ? tint : on ? accent() : ink();
     return (
       <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => pick(x.id)} onLongPress={() => hide(x.id, x.label)} delayLongPress={500} style={({ pressed }) => ({ width: 40, height: 44, alignItems: 'center', justifyContent: 'center', transform: [{ scale: pressed ? 0.86 : 1 }] })}>
         <ToolMark on={on} color={shown}>
@@ -431,7 +446,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   };
   const plain = (icon: string, label: string, onPress: () => void, tint?: string, active?: boolean, hideId?: string) => (
     <Pressable key={label} accessibilityLabel={label} onPress={() => { setPop(null); onPress(); }} onLongPress={hideId ? () => hide(hideId, label) : undefined} delayLongPress={500} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-      <ToolIcon name={icon} size={icon === 'next' || icon === 'prev' ? 15 : 21} color={tint ?? (active ? BLUE : INK)} />
+      <ToolIcon name={icon} size={icon === 'next' || icon === 'prev' ? 15 : 21} color={tint ?? (active ? accent() : ink())} />
     </Pressable>
   );
   const Div = () => <View style={upright ? { height: 1, width: 20, backgroundColor: '#D5D9E2', marginVertical: 4 } : { width: 1, height: 22, backgroundColor: '#E2E5EC', marginHorizontal: 6 }} />;
@@ -439,8 +454,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   const R2 = { flexDirection: upright ? 'column' : 'row', alignItems: 'center', justifyContent: 'center' } as const;
 
   const chip = (label: string, on: boolean, onPress: () => void) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 30, paddingHorizontal: 14, borderRadius: 15, justifyContent: 'center', backgroundColor: on ? '#E5F0FF' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
-      <Text style={{ color: INK, fontSize: 13 }}>{label}</Text>
+    <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={{ height: 30, paddingHorizontal: 14, borderRadius: 15, justifyContent: 'center', backgroundColor: on ? accentSoft() : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: accent() }}>
+      <Text style={{ color: ink(), fontSize: 13 }}>{label}</Text>
     </Pressable>
   );
 
@@ -452,14 +467,14 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         return (
           <Pressable key={i + c} accessibilityLabel={`Colour ${c}`} onPress={() => { if (on) setPop(pop === 'colors' ? null : 'colors'); else { patch({ color: i }); setPop(null); } }}
             style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-            <View style={{ width: on ? 26 : 22, height: on ? 26 : 22, borderRadius: 13, backgroundColor: c, borderWidth: white || on ? 1.5 : 0, borderColor: on ? BLUE : '#B8BFCC', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: on ? 26 : 22, height: on ? 26 : 22, borderRadius: 13, backgroundColor: c, borderWidth: white || on ? 1.5 : 0, borderColor: on ? accent() : '#B8BFCC', alignItems: 'center', justifyContent: 'center' }}>
               {on ? <Icon name="pencil" size={11} color={white || c.toUpperCase() === '#FFFF00' ? '#333' : '#fff'} /> : null}
             </View>
           </Pressable>
         );
       })}
       <Pressable accessibilityLabel="More colours" onPress={() => setPop(pop === 'addColor' ? null : 'addColor')} style={{ width: 32, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ width: 22, height: 22, borderRadius: 10, backgroundColor: '#ECEDF1', alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={10} color={INK} /></View>
+        <View style={{ width: 22, height: 22, borderRadius: 10, backgroundColor: '#ECEDF1', alignItems: 'center', justifyContent: 'center' }}><Icon name="plus" size={10} color={ink()} /></View>
       </Pressable>
     </>
   );
@@ -468,8 +483,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     const d = kind === 'text' ? [6, 10, 15][i] ?? 10 : dotOf(n);
     return (
       <Pressable key={i} accessibilityLabel={['Small', 'Medium', 'Large'][i]} onPress={() => { if (on) setPop(pop === 'size' ? null : 'size'); else { patch({ size: i }); setPop(null); } }} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: on ? '#fff' : '#ECEDF1', borderWidth: on ? 1.5 : 0, borderColor: BLUE, alignItems: 'center', justifyContent: 'center' }}>
-          <Reanimated.View layout={LinearTransition.springify().damping(16)} style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: on && k.colors.length && (k.colors[k.color] ?? '').toUpperCase() !== '#FFFFFF' ? k.colors[k.color] : INK }} />
+        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: on ? '#fff' : '#ECEDF1', borderWidth: on ? 1.5 : 0, borderColor: accent(), alignItems: 'center', justifyContent: 'center' }}>
+          <Reanimated.View layout={LinearTransition.springify().damping(16)} style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: on && k.colors.length && (k.colors[k.color] ?? '').toUpperCase() !== '#FFFFFF' ? k.colors[k.color] : ink() }} />
         </View>
       </Pressable>
     );
@@ -494,7 +509,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         {chip('Calculate area', m === 'area', () => { set({ measureMode: 'area' }); onCalibrate(); })}
         {chip('Angle', m === 'angle', () => { set({ measureMode: 'angle' }); onRuler(false); })}
         <Bar />
-        <Pressable accessibilityLabel={ruler ? 'Hide ruler' : 'Show ruler'} onPress={() => onRuler(!ruler)} style={{ padding: 4 }}><Icon name={ruler ? 'eye.slash' : 'eye'} size={21} color={INK} /></Pressable>
+        <Pressable accessibilityLabel={ruler ? 'Hide ruler' : 'Show ruler'} onPress={() => onRuler(!ruler)} style={{ padding: 4 }}><Icon name={ruler ? 'eye.slash' : 'eye'} size={21} color={ink()} /></Pressable>
       </View>
     );
   } else if (kind === 'lasso') {
@@ -512,8 +527,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
   } else if (kind === 'shape') {
     const cur = s.shapeType ?? 'line';
     const shapeBtn = (icon: string, label: string, on: boolean, press: () => void) => (
-      <Pressable key={label} accessibilityLabel={label} onPress={press} style={{ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E5F0FF' : 'transparent' }}>
-        <ToolIcon name={icon} size={19} color={on ? BLUE : INK} />
+      <Pressable key={label} accessibilityLabel={label} onPress={press} style={{ width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? accentSoft() : 'transparent' }}>
+        <ToolIcon name={icon} size={19} color={on ? accent() : ink()} />
       </Pressable>
     );
     row2 = (
@@ -538,20 +553,20 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
       <View style={R2}>
         {chip(fonts[fi][1], false, () => set({ textFont: fonts[(fi + 1) % fonts.length][0] }))}
         <Bar />
-        <Pressable accessibilityLabel="Smaller text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.max(8, n - 1); patch({ sizes: v }); }} style={{ padding: 4 }}><Icon name="minus.circle" size={17} color={INK} /></Pressable>
-        <Text style={{ width: 24, textAlign: 'center', color: INK, fontSize: 13 }}>{n}</Text>
-        <Pressable accessibilityLabel="Bigger text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.min(96, n + 1); patch({ sizes: v }); }} style={{ padding: 4 }}><Icon name="plus.circle" size={17} color={INK} /></Pressable>
+        <Pressable accessibilityLabel="Smaller text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.max(8, n - 1); patch({ sizes: v }); }} style={{ padding: 4 }}><Icon name="minus.circle" size={17} color={ink()} /></Pressable>
+        <Text style={{ width: 24, textAlign: 'center', color: ink(), fontSize: 13 }}>{n}</Text>
+        <Pressable accessibilityLabel="Bigger text" onPress={() => { const v = k.sizes.slice(); v[k.size] = Math.min(96, n + 1); patch({ sizes: v }); }} style={{ padding: 4 }}><Icon name="plus.circle" size={17} color={ink()} /></Pressable>
         <Bar />
         {dots}
         <Bar />
-        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? '#E5F0FF' : 'transparent' }}>
-          <Text style={{ fontSize: 15, fontWeight: '800', color: s.textBold ? BLUE : INK }}>B</Text>
+        <Pressable accessibilityLabel="Bold" onPress={() => set({ textBold: !s.textBold })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textBold ? accentSoft() : 'transparent' }}>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: s.textBold ? accent() : ink() }}>B</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? '#E5F0FF' : 'transparent' }}>
-          <Text style={{ fontSize: 15, fontStyle: 'italic', color: s.textItalic ? BLUE : INK }}>I</Text>
+        <Pressable accessibilityLabel="Italic" onPress={() => set({ textItalic: !s.textItalic })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textItalic ? accentSoft() : 'transparent' }}>
+          <Text style={{ fontSize: 15, fontStyle: 'italic', color: s.textItalic ? accent() : ink() }}>I</Text>
         </Pressable>
-        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? '#E5F0FF' : 'transparent' }}>
-          <Text style={{ fontSize: 15, textDecorationLine: 'underline', color: s.textUnderline ? BLUE : INK }}>U</Text>
+        <Pressable accessibilityLabel="Underline" onPress={() => set({ textUnderline: !s.textUnderline })} style={{ width: 25, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: s.textUnderline ? accentSoft() : 'transparent' }}>
+          <Text style={{ fontSize: 15, textDecorationLine: 'underline', color: s.textUnderline ? accent() : ink() }}>U</Text>
         </Pressable>
       </View>
     );
@@ -605,7 +620,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 const adding = pop === 'addColor';
                 setPop(null);
                 setTimeout(async () => { const c = await pickColor(color); if (c) usePicked(c, adding); }, 300);
-              }} hitSlop={8}><Icon name="paintpalette.fill" size={24} color={BLUE} /></Pressable>
+              }} hitSlop={8}><Icon name="paintpalette.fill" size={24} color={accent()} /></Pressable>
             </View>
             <ColorGrid current={color} onPick={(c) => { usePicked(c, pop === 'addColor'); setPop(null); }} />
           </Card>
@@ -620,8 +635,8 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 const on = (s.shapeType ?? 'line') === x.id;
                 return (
                   <Pressable key={x.id} accessibilityLabel={x.label} onPress={() => { set({ shapeType: x.id }); setPop(null); }}
-                    style={{ width: 84, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? '#E5F0FF' : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
-                    <ToolIcon name={x.icon} size={22} color={on ? BLUE : INK} />
+                    style={{ width: 84, height: 70, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: on ? accentSoft() : '#F3F4F7', borderWidth: on ? 1.2 : 0, borderColor: accent() }}>
+                    <ToolIcon name={x.icon} size={22} color={on ? accent() : ink()} />
                     <Text style={{ fontSize: 12, color: '#15171C' }}>{x.label}</Text>
                   </Pressable>
                 );
@@ -636,7 +651,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
                 const on = (s.nibAngle ?? 45) === a;
                 return (
                   <Pressable key={a} accessibilityLabel={`Nib angle ${a} degrees`} onPress={() => { set({ nibAngle: a }); setPop(null); }}
-                    style={{ width: 56, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? '#E5F0FF' : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: BLUE }}>
+                    style={{ width: 56, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? accentSoft() : '#ECEDF1', borderWidth: on ? 1.2 : 0, borderColor: accent() }}>
                     <Text style={{ fontSize: 13, color: '#15171C' }}>{a}°</Text>
                   </Pressable>
                 );
@@ -648,7 +663,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
             <View style={{ gap: 6 }}>
               <ScrollView style={{ maxHeight: 330 }} contentContainerStyle={{ gap: 6 }}>
               {BRUSHES.map((b) => (
-                <Pressable key={b.id} accessibilityLabel={b.label} onPress={() => { set({ brushType: b.id }); setPop(null); }} style={{ height: 44, paddingHorizontal: 12, borderRadius: 10, justifyContent: 'center', backgroundColor: (s.brushType ?? 'brushpen') === b.id ? '#E5F0FF' : '#F2F3F6' }}>
+                <Pressable key={b.id} accessibilityLabel={b.label} onPress={() => { set({ brushType: b.id }); setPop(null); }} style={{ height: 44, paddingHorizontal: 12, borderRadius: 10, justifyContent: 'center', backgroundColor: (s.brushType ?? 'brushpen') === b.id ? accentSoft() : '#F2F3F6' }}>
                   <Text style={{ fontSize: 15, fontWeight: '600', color: '#15171C' }}>{b.label}</Text>
                   <Text style={{ fontSize: 12, color: '#5A6478' }}>{b.note}</Text>
                 </Pressable>
@@ -666,7 +681,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
             <View style={{ gap: 8, alignItems: 'center', marginTop: 8 }}>
               {LINES.map((l) => (
                 <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { patch({ line: l }); setPop(null); }}
-                  style={{ width: 88, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: k.line === l ? '#E5F0FF' : '#ECEDF1', borderWidth: k.line === l ? 1.2 : 0, borderColor: BLUE }}>
+                  style={{ width: 88, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: k.line === l ? accentSoft() : '#ECEDF1', borderWidth: k.line === l ? 1.2 : 0, borderColor: accent() }}>
                   <LineGlyph line={l} />
                 </Pressable>
               ))}
@@ -712,6 +727,8 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
   dock: 'top' | 'bottom' | 'left' | 'right'; below?: boolean; raised?: boolean; width: number; maxHeight: number; onDock: (d: 'top' | 'bottom' | 'left' | 'right') => void; tools: React.ReactNode; options: React.ReactNode;
 }) {
   const upright = dock === 'left' || dock === 'right';
+  const { s: prefs } = useSettings();
+  const scale = prefs.toolScale ?? 1;
   const size = useWindowDimensions();
   const x = useSharedValue(0), y = useSharedValue(0);
   const moved = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }, { translateY: y.value }] }));
@@ -755,7 +772,8 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
         </Reanimated.View>
       ) : (
         // Two capsules, each only as wide as what's in it: the tools, and the picked tool's options.
-        <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', alignItems: 'center', flexDirection: dock === 'bottom' ? 'column-reverse' : 'column', gap: 8 }, place, moved]}>
+        <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', alignItems: 'center' }, place, moved]}>
+          <View pointerEvents="box-none" style={{ maxWidth: '100%', alignItems: 'center', flexDirection: dock === 'bottom' ? 'column-reverse' : 'column', gap: 8, transform: [{ scale }], transformOrigin: dock === 'bottom' ? 'bottom' : 'top' }}>
           <Glass stretchy="vertical" radius={24} style={{ maxWidth: '100%' }}>
             {grip}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false} style={{ flexGrow: 0 }} contentContainerStyle={{ height: 48, alignItems: 'center', paddingHorizontal: 8 }}>{tools}</ScrollView>
@@ -763,6 +781,7 @@ function DockedPill({ dock, below, raised, width, maxHeight, onDock, tools, opti
           <Glass stretchy="vertical" radius={24} style={{ maxWidth: '100%' }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ flexGrow: 0 }}>{options}</ScrollView>
           </Glass>
+          </View>
         </Reanimated.View>
       )}
     </View>
@@ -800,7 +819,7 @@ export function StylePopover({ color, width, onChange, onFill, onClose }: { colo
         <ThicknessSlider value={n} onChange={setN} onDone={(v) => onChange({ width: widthOf('pen', v) })} />
         <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'space-between', marginVertical: 8 }}>
           {LINES.map((l) => (
-            <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { setLine(l); onChange({ line: l }); }} style={{ width: 70, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: line === l ? '#E5F0FF' : '#ECEDF1', borderWidth: line === l ? 1.2 : 0, borderColor: BLUE }}>
+            <Pressable key={l} accessibilityLabel={`Line ${l}`} onPress={() => { setLine(l); onChange({ line: l }); }} style={{ width: 70, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: line === l ? accentSoft() : '#ECEDF1', borderWidth: line === l ? 1.2 : 0, borderColor: accent() }}>
               <LineGlyph line={l} />
             </Pressable>
           ))}

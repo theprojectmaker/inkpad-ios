@@ -1,5 +1,6 @@
 // Settings: tabs down the left (General, Writing, Pencil & Touch, Paper & Pages, Sync & Backup,
 // Study, Privacy, About) and that tab's rows on the right, like the iPad's own Settings app.
+import { accent, ACCENTS } from '@/lib/settings';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -26,7 +27,7 @@ const TABS: { id: TabId; label: string; icon: string; tint: string }[] = [
   { id: 'writing', label: 'Writing', icon: 'pencil.tip', tint: '#FF9500' },
   { id: 'pencil', label: 'Pencil & Touch', icon: 'applepencil', tint: '#5856D6' },
   { id: 'paper', label: 'Paper & Pages', icon: 'doc.text', tint: '#34C759' },
-  { id: 'sync', label: 'Sync & Backup', icon: 'icloud', tint: '#007AFF' },
+  { id: 'sync', label: 'Sync & Backup', icon: 'icloud', tint: accent() },
   { id: 'study', label: 'Study', icon: 'book', tint: '#FF2D55' },
   { id: 'privacy', label: 'Privacy', icon: 'hand.raised', tint: '#30B0C7' },
   { id: 'about', label: 'About', icon: 'info.circle', tint: '#636366' },
@@ -211,6 +212,26 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
   switch (tab) {
     case 'general': return (
       <>
+        <Section title="Style" footer="The accent colours buttons, selections and highlights. Your pens keep their own colours.">
+          <Row icon="paintpalette" label="Accent colour" below={
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              {ACCENTS.map((c) => {
+                const on = (s.accent ?? '#007AFF').toUpperCase() === c.hex;
+                return (
+                  <Pressable key={c.hex} onPress={() => set({ accent: c.hex })} accessibilityRole="button" accessibilityLabel={`${c.name} accent`} accessibilityState={{ selected: on }} style={{ alignItems: 'center', gap: 4 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.hex, borderWidth: on ? 3 : 0, borderColor: t.text, alignItems: 'center', justifyContent: 'center' }}>
+                      {on ? <Icon name="checkmark" size={14} color="#fff" /> : null}
+                    </View>
+                    <Text style={{ color: on ? t.text : t.sub, fontSize: 11.5, fontWeight: '600' }}>{c.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>} />
+          <Row icon="pencil.tip" label="Toolbar icons"
+            right={<Choice value={s.iconTint ?? 'slate'} onPick={(v) => set({ iconTint: v })} options={[{ id: 'slate', label: 'Slate' }, { id: 'black', label: 'Black' }, { id: 'accent', label: 'Accent' }]} />} />
+          <Row icon="rectangle.roundedtop" label="Bars" last
+            right={<Choice value={s.solidBars ? 'solid' : 'glass'} onPick={(v) => set({ solidBars: v === 'solid' })} options={[{ id: 'glass', label: 'Glass' }, { id: 'solid', label: 'Solid' }]} />} />
+        </Section>
         <Section title="Look">
           <Row icon="circle.lefthalf.filled" label="Appearance"
             right={<Choice value={s.theme === 'dark' ? 'dark' : 'light'} onPick={(v) => set({ theme: v })} options={[{ id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]} />} />

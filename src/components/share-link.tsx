@@ -1,5 +1,6 @@
 // Share settings: a link to a PDF copy of this note, which people can read and comment on.
 // Nothing leaves the iPad until "Create link" is tapped. Links last 30 days and can be stopped.
+import { accent } from '@/lib/settings';
 import { fetch as sendFile } from 'expo/fetch';
 import { File } from 'expo-file-system';
 import { useEffect, useState } from 'react';
@@ -80,7 +81,7 @@ export function ShareLinkSheet({ visible, noteId, title, makePdf, onSendPdf, onC
   };
 
   const btn = (label: string, onPress: () => void, solid = false, danger = false) => (
-    <Pressable key={label} accessibilityLabel={label} onPress={onPress} disabled={busy} style={({ pressed }) => ({ height: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center', opacity: pressed || busy ? 0.6 : 1, backgroundColor: solid ? '#007AFF' : t.chip })}>
+    <Pressable key={label} accessibilityLabel={label} onPress={onPress} disabled={busy} style={({ pressed }) => ({ height: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center', opacity: pressed || busy ? 0.6 : 1, backgroundColor: solid ? accent() : t.chip })}>
       <Text style={{ color: solid ? '#fff' : danger ? t.danger : t.text, fontSize: 15, fontWeight: '600' }}>{label}</Text>
     </Pressable>
   );

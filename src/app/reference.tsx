@@ -1,5 +1,6 @@
 // Things to look up, all on the iPad and all offline: formulas, the periodic table, a unit converter,
 // math symbols to copy, and Apple's dictionary.
+import { accent } from '@/lib/settings';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -10,7 +11,6 @@ import { copyText, defineWord } from '@/lib/ondevice';
 import { useTheme } from '@/lib/settings';
 import { convert, CONVERT } from '@/lib/study-logic';
 
-const BLUE = '#007AFF';
 
 const FORMULAS: { title: string; rows: [string, string][] }[] = [
   { title: 'Geometry: area', rows: [['Rectangle', 'A = l × w'], ['Square', 'A = s²'], ['Triangle', 'A = ½ × b × h'], ['Parallelogram', 'A = b × h'], ['Trapezoid', 'A = ½ × (b₁ + b₂) × h'], ['Rhombus', 'A = ½ × d₁ × d₂'], ['Circle', 'A = π × r²'], ['Sector', 'A = (θ / 360) × π × r²'], ['Regular polygon', 'A = ½ × apothem × perimeter']] },
@@ -53,8 +53,8 @@ export default function Reference() {
   const chipRow = (list: string[], cur: string, set: (v: string) => void) => (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 6 }}>
       {list.map((x) => (
-        <Pressable key={x} accessibilityLabel={x} onPress={() => set(x)} style={{ height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', backgroundColor: cur === x ? `${BLUE}1F` : t.chip }}>
-          <Text style={{ color: cur === x ? BLUE : t.text, fontSize: 14, fontWeight: '500' }}>{x}</Text>
+        <Pressable key={x} accessibilityLabel={x} onPress={() => set(x)} style={{ height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', backgroundColor: cur === x ? `${accent()}1F` : t.chip }}>
+          <Text style={{ color: cur === x ? accent() : t.text, fontSize: 14, fontWeight: '500' }}>{x}</Text>
         </Pressable>
       ))}
     </ScrollView>
@@ -125,7 +125,7 @@ export default function Reference() {
         {tab === 'Dictionary' ? (
           <View style={{ gap: 10 }}>
             <TextInput accessibilityLabel="Word to look up" value={word} onChangeText={setWord} onSubmitEditing={() => word.trim() && defineWord(word.trim())} returnKeyType="search" placeholder="Look up a word" placeholderTextColor={t.faint} style={{ height: 46, borderRadius: 10, backgroundColor: t.chip, paddingHorizontal: 12, color: t.text, fontSize: 16 }} />
-            <Pressable accessibilityLabel="Look up" disabled={!word.trim()} onPress={() => defineWord(word.trim())} style={{ height: 42, borderRadius: 10, backgroundColor: word.trim() ? BLUE : t.chip, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable accessibilityLabel="Look up" disabled={!word.trim()} onPress={() => defineWord(word.trim())} style={{ height: 42, borderRadius: 10, backgroundColor: word.trim() ? accent() : t.chip, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: word.trim() ? '#fff' : t.faint, fontSize: 15, fontWeight: '600' }}>Look up</Text>
             </Pressable>
             <Text style={{ color: t.sub, fontSize: 13 }}>Uses the iPad's own dictionary. Add more languages from its Manage button.</Text>

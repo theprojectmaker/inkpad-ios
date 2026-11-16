@@ -52,6 +52,10 @@ export type Settings = {
   focusLog?: Record<string, number>;   // minutes of finished focus timers, by day
   warmTint?: number;         // 0 off, 1 to 3: a warm tint over the page for reading at night
   days?: string[];           // the days a note was opened on (for the streak on Home), newest last
+  accent?: string;           // the app's colour for buttons and selections (blue unless changed)
+  iconTint?: 'slate' | 'black' | 'accent';   // what colour the toolbar's icons are
+  toolScale?: number;        // toolbar size: 0.88 small, 1 regular, 1.15 large
+  solidBars?: boolean;       // toolbars are solid white cards instead of glass
   shareClean?: boolean;      // toolbars are left out of screen sharing, mirroring and recordings (on unless turned off)
   showDraw?: boolean;        // the Drawing Board appears on Home and in the sidebar (off unless turned on)
   showClassroom?: boolean;   // Classroom appears in the sidebar (off unless turned on)
@@ -124,8 +128,24 @@ const KEY = 'inkpad.settings.v1';   // key kept from the app's first name (Inkpa
 type Ctx = { s: Settings; set: (patch: Partial<Settings>) => void; loaded: boolean };
 const SettingsCtx = createContext<Ctx>({ s: DEFAULTS, set: () => {}, loaded: false });
 
+/** The colours to choose the app's accent from. */
+export const ACCENTS: { name: string; hex: string }[] = [
+  { name: 'Blue', hex: '#007AFF' }, { name: 'Indigo', hex: '#5856D6' }, { name: 'Purple', hex: '#AF52DE' }, { name: 'Pink', hex: '#FF2D55' },
+  { name: 'Red', hex: '#FF3B30' }, { name: 'Orange', hex: '#FF9500' }, { name: 'Green', hex: '#28A745' }, { name: 'Teal', hex: '#1B9AAA' }, { name: 'Graphite', hex: '#5B6370' },
+];
+// What the chosen style comes to. Kept here, outside React, so any piece of the app can read it while it draws.
+let ACCENT = '#007AFF', ICON = '#3B4252';
+/** The app's colour for buttons, selections and highlights. */
+export const accent = () => ACCENT;
+/** A faint wash of that colour, for the background of something selected. */
+export const accentSoft = () => ACCENT + '22';
+/** The colour of toolbar icons. */
+export const ink = () => ICON;
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [s, setS] = useState(DEFAULTS);
+  ACCENT = /^#[0-9A-Fa-f]{6}$/.test(s.accent ?? '') ? s.accent! : '#007AFF';
+  ICON = s.iconTint === 'accent' ? ACCENT : s.iconTint === 'black' ? '#111111' : '#3B4252';
   const [loaded, setLoaded] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -170,5 +190,7 @@ export function useTheme(): Theme {
   const sys = useColorScheme();
   // The app is light like the recordings, unless Dark is picked on purpose.
   const dark = s.theme === 'dark' && sys != null;
-  return dark ? DARK : LIGHT;
+  const base = dark ? DARK : LIGHT;
+  const hex = /^#[0-9A-Fa-f]{6}$/.test(s.accent ?? '') ? s.accent! : null;
+  return useMemo(() => (hex ? { ...base, accent: hex } : base), [base, hex]);
 }

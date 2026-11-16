@@ -1,5 +1,6 @@
 // A comment on the page: a thread you can reply to. Saved in the pin's text as a small JSON list,
 // so older comments (plain text) still open.
+import { accent } from '@/lib/settings';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
@@ -49,7 +50,7 @@ export function CommentSheet({ raw, onSave, onClose }: { raw: string | null; onS
       <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ gap: 12, paddingBottom: 12 }}>
         {thread.map((c, i) => (
           <View key={i} style={{ flexDirection: 'row', gap: 10 }}>
-            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#007AFF', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: accent(), alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>Y</Text>
             </View>
             <View style={{ flex: 1 }}>
@@ -66,7 +67,7 @@ export function CommentSheet({ raw, onSave, onClose }: { raw: string | null; onS
         <TextInput accessibilityLabel="Write a comment" value={draft} onChangeText={setDraft} onSubmitEditing={post} autoFocus returnKeyType="send"
           placeholder={thread.length ? 'Reply' : 'Add a comment'} placeholderTextColor={t.faint}
           style={{ flex: 1, height: 40, paddingHorizontal: 12, borderRadius: 10, backgroundColor: t.chip, color: t.text, fontSize: 15 }} />
-        <Pressable accessibilityLabel="Post" onPress={post} disabled={!draft.trim()} style={{ height: 40, paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', backgroundColor: draft.trim() ? '#007AFF' : t.chip }}>
+        <Pressable accessibilityLabel="Post" onPress={post} disabled={!draft.trim()} style={{ height: 40, paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center', backgroundColor: draft.trim() ? accent() : t.chip }}>
           <Text style={{ color: draft.trim() ? '#fff' : t.faint, fontSize: 15, fontWeight: '600' }}>Post</Text>
         </Pressable>
       </View>

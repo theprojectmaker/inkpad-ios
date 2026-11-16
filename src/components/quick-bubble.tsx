@@ -1,5 +1,6 @@
 // The quick button: a round glass button that can be dragged anywhere on a note. A tap flips between
 // the eraser and whatever was in hand before; holding it opens a few more things to reach for.
+import { accent, ink } from '@/lib/settings';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Reanimated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -108,7 +109,7 @@ export function QuickBubble({ onAction }: { onAction: (id: string) => void }) {
   const pick = (tool: InkTool) => { if (tool !== s.inkKind) set({ inkKind: tool, lastTool: s.inkKind }); setOpen(false); };
   const item = (icon: string, label: string, onPress: () => void, on = false) => (
     <Pressable key={label} accessibilityLabel={label} onPress={onPress} style={({ pressed }) => ({ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? 'rgba(0,122,255,0.16)' : pressed ? 'rgba(60,60,67,0.12)' : 'transparent' })}>
-      <ToolIcon name={icon} size={20} color={on ? '#007AFF' : '#3B4252'} />
+      <ToolIcon name={icon} size={20} color={on ? accent() : ink()} />
     </Pressable>
   );
   const onLeft = at.current.x < width / 2;
@@ -117,7 +118,7 @@ export function QuickBubble({ onAction }: { onAction: (id: string) => void }) {
     <Reanimated.View pointerEvents="box-none" style={[{ position: 'absolute', left: 0, top: 0, flexDirection: onLeft ? 'row' : 'row-reverse', alignItems: 'center', gap: 8 }, place, onLeft ? null : { marginLeft: -(open ? stripW + 8 : 0) }]}>
       <View {...pan.panHandlers} accessibilityRole="button" accessibilityLabel={erasing ? 'Quick button: back to the pen. Hold for more.' : 'Quick button: eraser. Hold for more.'}>
         <Glass radius={SIZE / 2} style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
-          <View pointerEvents="none"><ToolIcon name={erasing ? 'pen' : 'eraser'} size={24} color={erasing ? '#007AFF' : '#3B4252'} /></View>
+          <View pointerEvents="none"><ToolIcon name={erasing ? 'pen' : 'eraser'} size={24} color={erasing ? accent() : ink()} /></View>
         </Glass>
       </View>
       {open ? (
@@ -148,16 +149,16 @@ export function QuickBubble({ onAction }: { onAction: (id: string) => void }) {
               const on = chosen.includes(x.id);
               return (
                 <Pressable key={x.id} accessibilityLabel={x.label} accessibilityState={{ selected: on }} onPress={() => toggle(x.id)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, height: 44, paddingHorizontal: 8, borderRadius: 10, backgroundColor: pressed ? 'rgba(60,60,67,0.1)' : 'transparent' })}>
-                  <ToolIcon name={x.icon} size={20} color={on ? '#007AFF' : '#3B4252'} />
+                  <ToolIcon name={x.icon} size={20} color={on ? accent() : ink()} />
                   <Text style={{ flex: 1, fontSize: 16, color: '#15171C' }}>{x.label}</Text>
-                  <Icon name={on ? 'checkmark.circle.fill' : 'circle'} size={20} color={on ? '#007AFF' : '#B8BFCC'} />
+                  <Icon name={on ? 'checkmark.circle.fill' : 'circle'} size={20} color={on ? accent() : '#B8BFCC'} />
                 </Pressable>
               );
             })}
           </View>
         ))}
         <Pressable accessibilityLabel="Put the strip back to how it started" onPress={() => set({ bubbleTools: undefined })} style={{ height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}>
-          <Text style={{ color: '#007AFF', fontSize: 16 }}>Back to the starting set</Text>
+          <Text style={{ color: accent(), fontSize: 16 }}>Back to the starting set</Text>
         </Pressable>
       </Sheet>
     </>

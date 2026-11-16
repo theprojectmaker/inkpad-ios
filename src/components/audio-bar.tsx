@@ -1,6 +1,7 @@
 // Notability-style audio: record a class while you write; every stroke remembers when it was
 // written. On playback, ink written later shows faintly and fills in as it plays; tap ink to hear
 // what was being said. The words appear as they're said, and Record to Notes also keeps notes.
+import { accent } from '@/lib/settings';
 import { requestRecordingPermissionsAsync, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { requireNativeModule } from 'expo-modules-core';
 import * as Sharing from 'expo-sharing';
@@ -26,7 +27,6 @@ export const fmtTime = (ms: number) => {
 };
 
 const RATES = [1, 1.25, 1.5, 2, 0.75];
-const BLUE = '#007AFF';
 const RED = '#E5322D';
 const plainPath = (uri: string) => decodeURIComponent(uri.replace(/^file:\/\//, ''));
 
@@ -119,9 +119,9 @@ function Scrubber({ pos, dur, onSeek }: { pos: number; dur: number; onSeek: (ms:
     <View onLayout={(e) => { w.current = Math.max(1, e.nativeEvent.layout.width); }} style={{ flex: 1, height: 30, justifyContent: 'center', minWidth: 100 }}
       accessibilityLabel="Recording position" onStartShouldSetResponder={() => true} onResponderGrant={at} onResponderMove={at}>
       <View pointerEvents="none" style={{ height: 3, borderRadius: 2, backgroundColor: t.line }}>
-        <View style={{ width: `${f * 100}%`, height: 3, borderRadius: 2, backgroundColor: BLUE }} />
+        <View style={{ width: `${f * 100}%`, height: 3, borderRadius: 2, backgroundColor: accent() }} />
       </View>
-      <View pointerEvents="none" style={{ position: 'absolute', left: `${f * 100}%`, marginLeft: -6, width: 12, height: 12, borderRadius: 6, backgroundColor: BLUE }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: `${f * 100}%`, marginLeft: -6, width: 12, height: 12, borderRadius: 6, backgroundColor: accent() }} />
     </View>
   );
 }
@@ -183,7 +183,7 @@ export function AudioBar({ audio, noteId, recs, toNotes, panelOpen, onPanel, onS
   const pos = cur ? audio.status.currentTime * 1000 : 0;
 
   const startButton = (label: string, a11y: string, toNotesNow: boolean, solid: boolean, icon?: string) => (
-    <Pressable onPress={() => onStartRec(toNotesNow)} accessibilityLabel={a11y} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 7, height: 36, paddingHorizontal: 13, borderRadius: 18, opacity: pressed ? 0.75 : 1, backgroundColor: solid ? BLUE : t.chip })}>
+    <Pressable onPress={() => onStartRec(toNotesNow)} accessibilityLabel={a11y} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 7, height: 36, paddingHorizontal: 13, borderRadius: 18, opacity: pressed ? 0.75 : 1, backgroundColor: solid ? accent() : t.chip })}>
       {icon ? <Icon name={icon} size={15} color="#fff" /> : <View style={{ width: 11, height: 11, borderRadius: 6, backgroundColor: RED }} />}
       {label ? <Text style={{ color: solid ? '#fff' : t.text, fontWeight: '600', fontSize: 14 }}>{label}</Text> : null}
     </Pressable>
@@ -208,7 +208,7 @@ export function AudioBar({ audio, noteId, recs, toNotes, panelOpen, onPanel, onS
             {recs.length > 1 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, maxWidth: 110 }} contentContainerStyle={{ gap: 4, alignItems: 'center' }}>
                 {recs.map((r, i) => (
-                  <Pressable key={r.id} onPress={() => audio.load(r)} accessibilityLabel={`Recording ${i + 1}`} style={{ height: 26, minWidth: 26, paddingHorizontal: 7, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cur.id === r.id ? BLUE : t.chip }}>
+                  <Pressable key={r.id} onPress={() => audio.load(r)} accessibilityLabel={`Recording ${i + 1}`} style={{ height: 26, minWidth: 26, paddingHorizontal: 7, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: cur.id === r.id ? accent() : t.chip }}>
                     <Text style={{ color: cur.id === r.id ? '#fff' : t.text, fontSize: 12, fontWeight: '600' }}>{i + 1}</Text>
                   </Pressable>
                 ))}
@@ -262,7 +262,7 @@ function SaidList({ lines, partial, pos, onSeek, empty }: { lines: { t: number; 
         const next = lines[index + 1]?.t ?? Infinity;
         const on = pos / 1000 >= item.t && pos / 1000 < next;
         return (
-          <Pressable onPress={() => onSeek(item.t * 1000)} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 8, backgroundColor: on ? BLUE + '1F' : 'transparent' }}>
+          <Pressable onPress={() => onSeek(item.t * 1000)} style={{ flexDirection: 'row', gap: 10, padding: 8, borderRadius: 8, backgroundColor: on ? accent() + '1F' : 'transparent' }}>
             <Text style={{ color: t.faint, fontSize: 12, width: 36, marginTop: 2, fontVariant: ['tabular-nums'] }}>{fmtTime(item.t * 1000)}</Text>
             <Text style={{ flex: 1, color: t.text, fontSize: 15, lineHeight: 21 }}>{item.text}</Text>
           </Pressable>
@@ -301,14 +301,14 @@ function AfterClass({ rec }: { rec: Recording }) {
               setAdded((a) => [...a, x.text]);
             }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Icon name={done ? 'checkmark.circle.fill' : 'plus.circle'} size={18} color={BLUE} />
+            <Icon name={done ? 'checkmark.circle.fill' : 'plus.circle'} size={18} color={accent()} />
             <Text style={{ flex: 1, color: t.text, fontSize: 14, lineHeight: 19 }}>{x.text}</Text>
           </Pressable>
         );
       })}
       <Pressable disabled={made} onPress={makeCards} accessibilityLabel="Make flashcards from these notes"
-        style={({ pressed }) => ({ height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE + '14', opacity: pressed || made ? 0.55 : 1 })}>
-        <Text style={{ color: BLUE, fontSize: 14, fontWeight: '600' }}>{made ? 'Flashcards made' : 'Make flashcards'}</Text>
+        style={({ pressed }) => ({ height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: accent() + '14', opacity: pressed || made ? 0.55 : 1 })}>
+        <Text style={{ color: accent(), fontSize: 14, fontWeight: '600' }}>{made ? 'Flashcards made' : 'Make flashcards'}</Text>
       </Pressable>
     </View>
   );
@@ -338,7 +338,7 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSee
           {marks.map((m, i) => (
             <Animated.View key={i} entering={FadeIn.duration(200)}>
               <Pressable accessibilityLabel={`Mark at ${fmtTime(m)}`} onPress={() => { if (!recording) onSeek(m); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 26, paddingHorizontal: 9, borderRadius: 13, backgroundColor: t.chip }}>
-                <Icon name="bookmark.fill" size={10} color={BLUE} />
+                <Icon name="bookmark.fill" size={10} color={accent()} />
                 <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{fmtTime(m)}</Text>
               </Pressable>
             </Animated.View>
@@ -349,8 +349,8 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSee
       {showing === 0 ? (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 90, gap: 10 }}>
           {live?.now ? (
-            <Animated.View key={live.now} entering={FadeIn.duration(260)} style={{ padding: 12, borderRadius: 12, backgroundColor: BLUE + '14' }}>
-              <Text style={{ color: BLUE, fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Right now</Text>
+            <Animated.View key={live.now} entering={FadeIn.duration(260)} style={{ padding: 12, borderRadius: 12, backgroundColor: accent() + '14' }}>
+              <Text style={{ color: accent(), fontSize: 12, fontWeight: '600', marginBottom: 4 }}>Right now</Text>
               <Text style={{ color: t.text, fontSize: 15, lineHeight: 21 }}>{live.now}</Text>
             </Animated.View>
           ) : null}
@@ -378,8 +378,8 @@ export function ClassPanel({ live, toNotes, rec, busy, pos, marks, onMake, onSee
         <View style={{ alignItems: 'center', padding: 24, gap: 14 }}>
           <Icon name="text.quote" size={28} color={t.faint} />
           <Text style={{ color: t.sub, fontSize: 14, textAlign: 'center' }}>Turns this recording into text you can read and search.</Text>
-          {busy ? <ActivityIndicator color={BLUE} /> : (
-            <Pressable onPress={onMake} accessibilityLabel="Make transcript" style={({ pressed }) => ({ height: 40, paddingHorizontal: 18, borderRadius: 10, backgroundColor: BLUE, justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
+          {busy ? <ActivityIndicator color={accent()} /> : (
+            <Pressable onPress={onMake} accessibilityLabel="Make transcript" style={({ pressed }) => ({ height: 40, paddingHorizontal: 18, borderRadius: 10, backgroundColor: accent(), justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
               <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Make transcript</Text>
             </Pressable>
           )}
