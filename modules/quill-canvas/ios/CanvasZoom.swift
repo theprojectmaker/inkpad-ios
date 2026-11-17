@@ -329,7 +329,7 @@ extension QuillCanvasView {
       self.refreshInkPatch()
     }
     writingIdle = w
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
   }
 
   func refreshInkPatchSoon() {
@@ -467,9 +467,25 @@ extension QuillCanvasView {
   /// The page is about to move (a drag, or a jump to another page). In the tethered style the ink rides
   /// on the pages as pictures, exactly as in a pinch, so it can never lag behind or drift off them.
   /// Returns false when that can't be used (writing is going on): the caller falls back to the moving picture.
+  /// Every page on screen already has an up-to-date picture of its ink.
+  private func visiblePicturesReady() -> Bool {
+    let seen = canvas.convert(canvas.bounds, to: pageHost)
+    for i in frames.indices where i < specs.count && i < pageViewList.count && frames[i].intersects(seen) {
+      if !pictureIsCurrent(i) { return false }
+    }
+    return true
+  }
+
   func moveBegan() -> Bool {
     guard tethered, capture == nil, !canvas.pencilDown else { return false }
     if !zoomPreviewing {
+      // Right after writing the pictures are out of date, and drawing them now would hold up the start of
+      // the scroll. This time the moving picture carries the ink, and the pictures are made meanwhile.
+      guard visiblePicturesReady() else {
+        GestureLog.add("scroll start: pictures not ready, moving picture")
+        refreshInkPictures()
+        return false
+      }
       pinchBegan()
       if zoomPreviewing { GestureLog.add("scroll start"); GestureLog.watching = true }
     }

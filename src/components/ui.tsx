@@ -293,7 +293,7 @@ function GlassBody({ radius, style, children, ...rest }: ViewProps & { radius: n
   return (
     HAS_GLASS && !s.solidBars ? (
       // The buttons sit inside the glass, so it lights up and flexes under a touch like the system's bars.
-      <GlassView {...rest} glassEffectStyle="clear" isInteractive style={[{ borderRadius: radius, borderCurve: 'continuous' }, style]}>{children}</GlassView>
+      <GlassView {...rest} glassEffectStyle="clear" style={[{ borderRadius: radius, borderCurve: 'continuous' }, style]}>{children}</GlassView>
     ) : (
     <View {...rest} style={[{ borderRadius: radius, borderCurve: 'continuous' }, { backgroundColor: s.solidBars ? '#FFFFFF' : 'rgba(255,255,255,0.72)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(60,60,67,0.18)', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } }, style]}>
       {children}
@@ -314,7 +314,7 @@ export function Glass({ radius = 22, style, children, stretchy, ...rest }: ViewP
   const mode = useRef(stretchy);
   mode.current = stretchy;
   const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => !!mode.current && Math.hypot(g.dx, g.dy) > 12 && (mode.current !== 'vertical' || Math.abs(g.dy) > Math.abs(g.dx) * 1.5),
+    onMoveShouldSetPanResponder: (_, g) => !!mode.current && Math.hypot(g.dx, g.dy) > 22 && (mode.current !== 'vertical' || Math.abs(g.dy) > Math.abs(g.dx) * 1.5),
     onPanResponderMove: (_, g) => { px.value = mode.current === 'vertical' ? 0 : g.dx; py.value = g.dy; },
     onPanResponderRelease: () => { px.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); py.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); },
     onPanResponderTerminate: () => { px.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); py.value = withSpring(0, { damping: 9, stiffness: 190, mass: 0.6 }); },

@@ -146,7 +146,7 @@ final class PalmWatch: UIGestureRecognizer {
     let down = event.allTouches?.filter { $0.type == .direct && $0.phase != .ended && $0.phase != .cancelled } ?? []
     let biggest = down.map(\.majorRadius).max() ?? 0
     // Two fingertips with the Pencil off the page are a pinch or a two-finger scroll, never a hand.
-    if !scroll.pencilDown && sincePencil >= 0.25 && down.count >= 2 && biggest < Self.afterWriting {
+    if !scroll.pencilDown && sincePencil >= 0.25 && down.count >= 2 && biggest < Self.alone {
       for t in down { hands.remove(ObjectIdentifier(t)) }
       if scroll.palmOn {
         scroll.palmOn = false
@@ -155,7 +155,9 @@ final class PalmWatch: UIGestureRecognizer {
       return
     }
     let resting = down.contains { hands.contains(ObjectIdentifier($0)) }
-    let hand = resting || (writing ? biggest >= Self.afterWriting : (down.count == 1 && biggest >= Self.alone))
+    // Only while the Pencil is down or just lifting is a mid-sized touch a hand; after that, only a big one.
+    let fresh = scroll.pencilDown || sincePencil < Self.handLands
+    let hand = resting || (fresh ? biggest >= Self.afterWriting : (down.count == 1 && biggest >= Self.alone))
     if hand {
       if !scroll.palmOn {
         scroll.palmOn = true
