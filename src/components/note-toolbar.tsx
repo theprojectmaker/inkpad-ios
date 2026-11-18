@@ -577,7 +577,6 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         {dots}
         <Bar />
         {sizes}
-        {kind !== 'calligraphy' ? <><Bar />{lineChip}</> : null}
         {kind !== 'calligraphy' ? <><Bar />{smoothChip}</> : null}
       </View>
     );

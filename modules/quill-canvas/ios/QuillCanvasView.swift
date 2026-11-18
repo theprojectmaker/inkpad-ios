@@ -189,6 +189,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   }
   var inkPatch: (rect: CGRect, zoom: CGFloat, version: Int, image: CGImage?)?
   var patchRun = 0
+  var patchFollowing = false       // a fresh sharp patch is being drawn for where a high-zoom pan has got to
   var patchSoon: DispatchWorkItem?
   let inkLowView = UIView()      // each page's ink picture, with a hole where the sharp one goes
   let patchLayer = CALayer()     // the sharp picture of what's on screen
@@ -619,6 +620,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     syncInk()
     reportPage()
+    if zoomPreviewing { followPatch() }
   }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {

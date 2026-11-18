@@ -296,10 +296,10 @@ extension QuillCanvasView {
     if let p = inkPatch, abs(p.zoom - z) < z * 0.001, p.rect.contains(seen), !document.changed(p.rect, since: p.version) { return }
     // Zoomed in, the screen covers a small part of the page, so a patch well beyond it is still drawn at full
     // sharpness: moving around stays crisp instead of showing the softer page picture at the edges.
-    let margin: CGFloat = z > max(0.01, currentFit()) * 2 ? 0.5 : 0.12
+    let margin: CGFloat = z > max(0.01, currentFit()) * 2 ? 1.0 : 0.12
     let rect = seen.insetBy(dx: -seen.width * margin, dy: -seen.height * margin).integral
     let screen = window?.screen.scale ?? UIScreen.main.scale
-    let density = min(z * screen, 4096 / max(1, max(rect.width, rect.height)))
+    let density = min(z * screen, 6144 / max(1, max(rect.width, rect.height)))
     patchRun += 1
     let run = patchRun, version = document.version
     let strokes = document.strokes.filter { !$0.lifted && $0.bounds.intersects(rect) }
@@ -332,6 +332,41 @@ extension QuillCanvasView {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: w)
   }
 
+  /// While panning zoomed in, keep the sharp patch centred on what's on screen, so the ink stays crisp
+  /// instead of the softer page picture. The patch is drawn just off the main thread and shown the moment
+  /// it's ready, so a fast flick is briefly soft in a new spot and sharpens as soon as it's drawn.
+  func followPatch() {
+    guard zoomPreviewing, glide == nil, !canvas.isZooming, !frames.isEmpty else { return }
+    let z = canvas.zoomScale
+    guard z > max(0.01, currentFit()) * 2 else { return }    // only once zoomed in, where the pictures look soft
+    let seen = visibleContent()
+    // Still well inside the patch we have, at this zoom: nothing to do.
+    if let p = inkPatch, p.image != nil, abs(p.zoom - z) < z * 0.01,
+       p.rect.insetBy(dx: seen.width * 0.25, dy: seen.height * 0.25).contains(seen) { return }
+    if patchFollowing { return }                             // one at a time
+    let rect = seen.insetBy(dx: -seen.width, dy: -seen.height).integral   // twice the view each way
+    let screen = window?.screen.scale ?? UIScreen.main.scale
+    let density = min(z * screen, 6144 / max(1, max(rect.width, rect.height)))
+    patchRun += 1
+    let run = patchRun, version = document.version
+    let strokes = document.strokes.filter { !$0.lifted && $0.bounds.intersects(rect) }
+    patchFollowing = true
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let image: CGImage? = strokes.isEmpty ? nil : autoreleasepool {
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = density; fmt.opaque = false
+        return UIGraphicsImageRenderer(size: rect.size, format: fmt).image { InkRaster.draw(strokes, rect: rect, in: $0.cgContext) }.cgImage
+      }
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.patchFollowing = false
+        guard run == self.patchRun, self.zoomPreviewing, !self.document.changed(rect, since: version) else { return }
+        self.inkPatch = (rect, z, version, image)
+        self.showPatch()
+        self.followPatch()      // catch up if the pan has moved on
+      }
+    }
+  }
+
   func refreshInkPatchSoon() {
     patchSoon?.cancel()
     let w = DispatchWorkItem { [weak self] in self?.refreshInkPatch() }
@@ -339,7 +374,7 @@ extension QuillCanvasView {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: w)
   }
 
-  private func showPatch() {
+  func showPatch() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }

@@ -289,21 +289,10 @@ final class PenCapture {
       wet.refresh(ahead: [InkPoint(x: fx, y: fy, r: r, a: a)])
       return
     }
-    var ahead = [InkPoint(x: rawX, y: rawY, r: r, a: a)]
-    // Barely moving: a guess at where the Pencil is going is only noise, and it makes the tip flicker.
-    if lastSpeed > 150 {
-      // Only along the way the line is already going, and not far: on a tiny curve a guess at
-      // where the Pencil's heading points off the curve, and shows as a spike.
-      let reach = 6 / zoom
-      for p in predicted {
-        let x = Float(p.x), y = Float(p.y)
-        let mx = x - rawX, my = y - rawY, gone = hypot(mx, my)
-        if gone > reach { break }
-        if gone > 0.01 && (mx * dirX + my * dirY) / gone < 0.9 { break }
-        ahead.append(InkPoint(x: x, y: y, r: r, a: a))
-      }
-    }
-    wet.refresh(ahead: ahead)
+    // The line ends exactly where the Pencil is. Guessing a little ahead shaved a few milliseconds off the
+    // latency but now and then the guess pointed off the curve and flicked out a short stray stroke, so it's gone.
+    _ = predicted
+    wet.refresh(ahead: [InkPoint(x: rawX, y: rawY, r: r, a: a)])
   }
 
   /// The finished line.
