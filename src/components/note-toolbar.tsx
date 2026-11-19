@@ -490,9 +490,6 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
     );
   });
   // How much the pens steady the hand: one tap steps through the four strengths.
-  const SMOOTHS = [[0, 'Off'], [0.2, 'Light'], [0.45, 'Medium'], [0.7, 'High']] as const;
-  const smoothAt = SMOOTHS.reduce((best, x, i) => (Math.abs(x[0] - (s.streamline ?? SMOOTH)) < Math.abs(SMOOTHS[best][0] - (s.streamline ?? SMOOTH)) ? i : best), 0);
-  const smoothChip = chip(`Smooth: ${SMOOTHS[smoothAt][1]}`, smoothAt > 0, () => { const next = SMOOTHS[(smoothAt + 1) % SMOOTHS.length]; set({ streamline: next[0] }); toast(next[0] ? `${next[1]} smoothing: the line steadies your hand${next[0] >= 0.45 ? ' and trails the Pencil a little' : ''}` : 'Smoothing off: the line follows the Pencil exactly'); });
   const lineChip = (
     <Pressable accessibilityLabel="Line style" onPress={() => setPop(pop === 'line' ? null : 'line')} style={{ height: 34, paddingHorizontal: 6, justifyContent: 'center' }}>
       <LineGlyph line={k.line} width={40} />
@@ -577,7 +574,7 @@ export function NoteToolbar({ recording, hasAudio, ruler, zoom, onInsert, onAudi
         {dots}
         <Bar />
         {sizes}
-        {kind !== 'calligraphy' ? <><Bar />{smoothChip}</> : null}
+        {kind !== 'calligraphy' ? <><Bar />{lineChip}</> : null}
       </View>
     );
   }
