@@ -149,8 +149,8 @@ export async function readQuillFromUri(uri: string): Promise<QuillFile> {
   } finally { await fsx.remove(tmp).catch(() => {}); }
 }
 
-/** Builds pages from a vector-only (Scriptly) file: one Page per page index, strokes laid in. */
-function pagesFromStrokes(qf: QuillFile): Page[] {
+/** Builds pages from a vector (Scriptly) file: one Page per page index, strokes laid in, any bundled page image kept behind them. */
+function pagesFromStrokes(qf: QuillFile, noteId: string): Page[] {
   const want = Math.max(
     1,
     qf.pages?.length ?? 0,
@@ -160,8 +160,11 @@ function pagesFromStrokes(qf: QuillFile): Page[] {
   const pages: Page[] = [];
   for (let i = 0; i < want; i++) {
     const g = qf.pages?.[i];
-    const bg: PageBg = g?.bg && g.bg.kind === 'paper' ? g.bg
-      : { kind: 'paper', style: qf.paper?.style ?? 'blank', color: qf.paper?.color ?? 'white' };
+    const paperBg: PageBg = { kind: 'paper', style: qf.paper?.style ?? 'blank', color: qf.paper?.color ?? 'white' };
+    // A worksheet scan (or PDF page) behind the ink: keep it only if its file was bundled.
+    let bg: PageBg = paperBg;
+    if (g?.bg && (g.bg.kind === 'image' || g.bg.kind === 'pdf') && g.bg.file && fsx.exists(notePath(noteId, g.bg.file))) bg = g.bg;
+    else if (g?.bg && g.bg.kind === 'paper') bg = g.bg;
     pages.push({ id: uid('p'), w: g?.w ?? sz.w, h: g?.h ?? sz.h, bg, strokes: [], texts: [], images: [] });
   }
   for (const s of qf.strokes ?? []) {
@@ -203,9 +206,15 @@ export async function importQuillFile(qf: QuillFile, lib: Lib, opts: { folderId?
       if (qf.tags?.length || qf.label) lib.updateNote(id, { ...(qf.tags?.length ? { tags: qf.tags } : {}), ...(qf.label ? { label: qf.label } : {}) });
       return { id, title, pages: doc.pages.length };
     }
-    // Vector file (Scriptly): rebuild editable ink from `strokes`.
-    const pages = pagesFromStrokes(qf);
-    await lib.createNote({ id, folderId, title, kind: 'paper', pages, paper: qf.paper ?? { style: 'blank', color: 'white' } });
+    // Vector file (Scriptly): write any bundled page images, then rebuild editable ink from `strokes`.
+    for (const [name, blob] of Object.entries(qf.files ?? {})) {
+      if (name === 'note.json' || name.includes('..') || name.startsWith('/')) continue;
+      if (blob.text != null) await fsx.writeText(notePath(id, name), blob.text);
+      else if (blob.b64 != null) await fsx.writeBase64(notePath(id, name), blob.b64);
+    }
+    const pages = pagesFromStrokes(qf, id);
+    const kind: NoteKind = pages.some((p) => p.bg.kind === 'image') ? 'image' : pages.some((p) => p.bg.kind === 'pdf') ? 'pdf' : 'paper';
+    await lib.createNote({ id, folderId, title, kind, pages, paper: qf.paper ?? { style: 'blank', color: 'white' } });
     if (qf.tags?.length || qf.label) lib.updateNote(id, { ...(qf.tags?.length ? { tags: qf.tags } : {}), ...(qf.label ? { label: qf.label } : {}) });
     return { id, title, pages: pages.length };
   } catch (e) {
