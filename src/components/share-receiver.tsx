@@ -12,6 +12,7 @@ import { useLibrary } from '@/lib/library';
 import { type Page, uid } from '@/lib/model';
 import { imagePages, loadDoc, pdfPages, saveDoc } from '@/lib/noteio';
 import { pdfCover, setShareLibrary, takePendingImports } from '@/lib/ondevice';
+import { importQuillFile, isQuillShared, readQuillFromUri } from '@/lib/quillfile';
 import { useTheme } from '@/lib/settings';
 import { useIncomingShare } from '@/lib/share';
 import { importZip } from '@/lib/zipimport';
@@ -40,9 +41,27 @@ export function ShareReceiver() {
   useEffect(() => {
     if (!hasShareIntent || working.current || !lib.ready) return;
     const all = (shareIntent.files ?? []) as Shared[];
-    const zips = all.filter((f) => /zip/i.test(f.mimeType) || /\.zip$/i.test(f.fileName ?? f.path));
-    const usable = all.filter((f) => !zips.includes(f) && (/^image\//i.test(f.mimeType) || isPdf(f)));
+    const quills = all.filter(isQuillShared);
+    const zips = all.filter((f) => !quills.includes(f) && (/zip/i.test(f.mimeType) || /\.zip$/i.test(f.fileName ?? f.path)));
+    const usable = all.filter((f) => !quills.includes(f) && !zips.includes(f) && (/^image\//i.test(f.mimeType) || isPdf(f)));
     resetShareIntent();
+    if (quills.length) {
+      working.current = true;
+      (async () => {
+        let last: { id: string; title: string; added: number } | null = null;
+        for (const q of quills) {
+          busy('Opening the Quill note…');
+          try {
+            const r = await importQuillFile(await readQuillFromUri(q.path), lib, { folderId: null });
+            last = { id: r.id, title: r.title, added: r.pages };
+          } catch (e) { toast("Couldn't open that Quill note: " + String((e as Error)?.message ?? e)); }
+        }
+        busy(null);
+        working.current = false;
+        if (last) setDone(last);
+      })();
+      return;
+    }
     if (zips.length) {
       working.current = true;
       (async () => {

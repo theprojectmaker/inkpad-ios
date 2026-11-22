@@ -45,6 +45,7 @@ import { useLibrary } from '@/lib/library';
 import { type NoteDoc, type NoteMeta, type Page, type PaperColor, type PaperStyle, paperPage, pageSizeOf, type Recording, uid, clockAt, soundAt } from '@/lib/model';
 import { enhanceImage } from '@/lib/ondevice';
 import { imagePages, listVersions, loadDoc, notePath, renderDir, restoreVersion, saveDoc, saveImage, saveVersion, scanPages } from '@/lib/noteio';
+import { exportNoteQuill, QUILL_MIME, QUILL_UTI } from '@/lib/quillfile';
 import { setOpenNote } from '@/lib/icloud';
 import { keepAwake } from '@/lib/ondevice';
 import { canScan, scanEnhanced } from '@/lib/scan';
@@ -429,6 +430,23 @@ export default function Editor() {
       await sharePdf(path, title);
     } catch (e) {
       toast("Couldn't make the PDF: " + String((e as Error)?.message ?? e));
+    } finally { setBusy(false); }
+  };
+
+  /** The note as a .quill file: opens fully editable on another iPad (ink and all). */
+  const shareQuill = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      try { await canvas.current?.save(); } catch {}
+      const d = docRef.current ?? (await loadDoc(id));
+      const m = lib.meta(id);
+      if (!d || !m) throw new Error('note not ready');
+      const path = await exportNoteQuill(d, m);
+      if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device.');
+      await Sharing.shareAsync(fsx.uri(path), { mimeType: QUILL_MIME, UTI: QUILL_UTI, dialogTitle: m.title || 'Note' });
+    } catch (e) {
+      toast("Couldn't make the Quill file: " + String((e as Error)?.message ?? e));
     } finally { setBusy(false); }
   };
 
@@ -1011,6 +1029,7 @@ export default function Editor() {
       <MenuSheet topRight visible={exportMenu} onClose={() => setExportMenu(false)} items={[
         { group: 1, label: 'PDF', sub: 'All pages', icon: 'doc.richtext', onPress: share },
         { group: 1, label: 'Picture', sub: 'This page', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
+        { group: 2, label: 'Quill file', sub: 'Editable on another iPad', icon: 'square.and.arrow.up.on.square', onPress: shareQuill },
       ]} />
       <MenuSheet topRight visible={viewMenu} onClose={() => setViewMenu(false)} items={[
         { group: 1, label: 'Present', sub: 'Full screen, one page at a time', icon: 'play.rectangle', onPress: () => { setPresent(true); setFocus(true); canvas.current?.fitWidth(); } },

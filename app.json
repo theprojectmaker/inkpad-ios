@@ -13,7 +13,26 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDisplayName": "Quill",
-        "NSSpeechRecognitionUsageDescription": "Quill turns what you record into text you can read and search, and uses it to write your notes."
+        "NSSpeechRecognitionUsageDescription": "Quill turns what you record into text you can read and search, and uses it to write your notes.",
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Quill Note",
+            "CFBundleTypeRole": "Editor",
+            "LSHandlerRank": "Owner",
+            "LSItemContentTypes": ["com.solyapps.quill.note"]
+          }
+        ],
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.solyapps.quill.note",
+            "UTTypeDescription": "Quill Note",
+            "UTTypeConformsTo": ["public.json", "public.content"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["quill"],
+              "public.mime-type": ["application/vnd.quill.note+json"]
+            }
+          }
+        ]
       },
       "isTabletOnly": true
     },

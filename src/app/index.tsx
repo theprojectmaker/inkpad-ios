@@ -19,6 +19,7 @@ import { fsx } from '@/lib/fsx';
 import { useLibrary } from '@/lib/library';
 import { type NoteMeta, type PageSizeId, type PaperColor, type PaperStyle, uid } from '@/lib/model';
 import { imagePages, notePath, pdfPages, scanPages } from '@/lib/noteio';
+import { importQuillFile, isQuillName, QUILL_UTI, readQuillFromUri } from '@/lib/quillfile';
 import { canScan, scanEnhanced, scanToCleanCopy } from '@/lib/scan';
 import { importZip } from '@/lib/zipimport';
 import { type Sort, useSettings, useTheme } from '@/lib/settings';
@@ -218,10 +219,19 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
 
   const importPdf = async () => {
     let r;
-    try { r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'application/zip', 'public.zip-archive'], copyToCacheDirectory: true }); }
+    try { r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'application/zip', 'public.zip-archive', QUILL_UTI, 'public.data'], copyToCacheDirectory: true }); }
     catch (e) { toast("Couldn't open Files: " + String((e as Error)?.message ?? e)); return; }
     if (r.canceled || !r.assets?.[0]) return;
     const a = r.assets[0];
+    if (isQuillName(a.name)) {
+      try {
+        busy('Opening the Quill note…');
+        const q = await importQuillFile(await readQuillFromUri(a.uri), lib, { folderId: currentFolderId });
+        busy(null);
+        open(q.id);
+      } catch (e) { busy(null); toast("Couldn't open that Quill note: " + String((e as Error)?.message ?? e)); }
+      return;
+    }
     if (/\.zip$/i.test(a.name ?? '') || /zip/i.test(a.mimeType ?? '')) {
       try { toast(zipDone(await importZip(a.uri, a.name ?? 'Imported.zip', lib, busy))); }
       catch (e) { toast(String((e as Error)?.message ?? e)); }
