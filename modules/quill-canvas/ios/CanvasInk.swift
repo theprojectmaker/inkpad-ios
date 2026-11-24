@@ -328,6 +328,23 @@ final class PenCapture {
     if count > 2 {
       for i in max(1, count - 8)..<count where pts[i].r > pts[i - 1].r * 1.02 { pts[i].r = pts[i - 1].r * 1.02 }
     }
+    // A pen that starts thin should also release thin: taper the last stretch down to a soft point
+    // instead of ending on a blunt, boxy cap. Scaled to the line's width so thick and thin both read right.
+    if pen.tapers, count > 3 {
+      let baseR = pts[max(0, count - 4)].r
+      let tipLen = max(2.5, baseR * 3)      // how far back the taper reaches, in canvas points
+      var dist: Float = 0
+      var prev = pts[count - 1]
+      for i in stride(from: count - 1, through: 0, by: -1) {
+        dist += hypot(pts[i].x - prev.x, pts[i].y - prev.y)
+        prev = pts[i]
+        if dist >= tipLen { break }
+        let t = dist / tipLen                // 0 at the very tip, → 1 back up the line
+        let eased = t * t * (3 - 2 * t)      // smoothstep, so the width eases in, not a straight ramp
+        let taperR = baseR * (0.32 + 0.68 * eased)
+        if taperR < pts[i].r { pts[i].r = taperR }   // only ever thin the end, never fatten it
+      }
+    }
     return pts
   }
 }
