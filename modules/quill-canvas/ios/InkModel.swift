@@ -156,10 +156,13 @@ struct InkPen {
   var angle: Float = 40    // calligraphy: the nib's slant, in degrees
   var stabilize = false    // calligraphy: a much steadier line
   var streamline: Float = 0   // 0...1: how much the hand's wobble is smoothed out
+  var softTips = false        // the setting: even pens taper at both ends too
 
   var kind: InkKind { style == "dash" ? .dash : style == "dot" ? .dot : type == "spray" ? .spray : type == "marker" || type == "watercolor" || type == "airbrush" || type == "inkwash" || type == "hlchisel" ? .marker : type == "pencil" || type == "crayon" || type == "charcoal" || type == "pastel" || type == "wax" ? .pencil : .pen }
   /// Pens that start thin and grow into the line.
   var tapers: Bool { type == "pen" || type == "fountain" || type == "brushpen" || type == "inkwash" || type == "sketch" }
+  /// Starts and ends on a thin point: the pens that always do, or any pen (not a highlighter) with the setting on.
+  var thinEnds: Bool { tapers || (softTips && kind != .marker && kind != .spray) }
 
   /// Radius and opacity for one moment of the stroke. `p` is pressure 0...1.
   func shape(p: Float, dirX: Float, dirY: Float, altitude: Float) -> (r: Float, a: Float) {

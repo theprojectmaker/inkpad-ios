@@ -60,6 +60,7 @@ export type Settings = {
   homeStats?: boolean;       // the This week tiles on Home (off unless turned on)
   showDraw?: boolean;        // the Drawing Board appears on Home and in the sidebar (off unless turned on)
   showClassroom?: boolean;   // Classroom appears in the sidebar (off unless turned on)
+  softTips?: boolean;        // pens start and end on a thin point instead of a round cap
   tidyOnLift?: boolean;      // smooth each stroke a little when the Pencil lifts (off unless turned on)
   tapUndo?: boolean;         // two-finger tap undoes, three-finger tap redoes (off unless turned on)
   bubble?: boolean;          // the movable quick button on the note (off unless turned on)

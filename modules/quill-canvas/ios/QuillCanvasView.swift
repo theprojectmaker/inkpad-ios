@@ -15,6 +15,7 @@ struct ToolSpec: Record {
   @Field var italic: Bool = false
   @Field var underline: Bool = false
   @Field var streamline: Double = 0
+  @Field var taper: Bool = false    // every pen starts and ends on a thin point
 }
 
 struct LegacyStroke: Record {
@@ -978,7 +979,7 @@ final class QuillCanvasView: ExpoView, UIScrollViewDelegate, UITextViewDelegate,
     }
     if mode == .write || mode == .compass || mode == .shape {
       let exact = mode != .write    // drawn geometry: an even line, no dashes from the pen's mode
-      pen = InkPen(type: exact ? "monoline" : t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: exact ? "" : t.mode, angle: Float(t.angle), stabilize: t.stabilize, streamline: Float(t.streamline))
+      pen = InkPen(type: exact ? "monoline" : t.kind == "felt" ? "pen" : t.kind, rgb: UIColor(hex: t.color).inkRGB, width: Float(w), style: exact ? "" : t.mode, angle: Float(t.angle), stabilize: t.stabilize, streamline: Float(t.streamline), softTips: !exact && t.taper)
     }
   }
 

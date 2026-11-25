@@ -12,6 +12,7 @@ import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, wi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, IconButton } from '@/components/ui';
+import { applyUpdate, fetchUpdate, updateInfo } from '@/lib/appupdate';
 import { openLink } from '@/lib/classroom';
 import { NOTES_SITE } from '@/lib/drive';
 import { syncNow, useCloud, type NetKind } from '@/lib/icloud';
@@ -298,6 +299,8 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
         <Section title="Apple Pencil and fingers">
           <Row icon="hand.point.up.left" label="Smooth scrolling and zoom" note="New: the ink stays locked to the page while it moves. Turn off for the old way."
             onPress={() => set({ smoothMove: s.smoothMove === false })} right={<Toggle label="Smooth scrolling and zoom" value={s.smoothMove !== false} onChange={(v) => set({ smoothMove: v })} />} />
+          <Row icon="pencil.tip" label="Tapered tips" note="Off: lines end on a clean round cap. On: every pen and pencil stroke starts and ends on a thin point, like a real nib."
+            onPress={() => set({ softTips: !s.softTips })} right={<Toggle label="Tapered tips" value={!!s.softTips} onChange={(v) => set({ softTips: v })} />} />
           <Row icon="wand.and.rays" label="Smooth ink when you lift" note="Off: your ink stays exactly as you drew it. On: each stroke is tidied a little as the Pencil lifts, which can make it shift slightly."
             onPress={() => set({ tidyOnLift: !s.tidyOnLift })} right={<Toggle label="Smooth ink when you lift" value={!!s.tidyOnLift} onChange={(v) => set({ tidyOnLift: v })} />} />
           <Row icon="hand.tap" label="Tap to undo" note="Tap with two fingers to undo, three to redo."
@@ -407,12 +410,34 @@ function Pane({ tab, s, set }: { tab: TabId; s: Settings; set: (p: Partial<Setti
             <Text style={{ color: t.sub, fontSize: 14 }}>Version {Constants.expoConfig?.version ?? '?'}</Text>
           </View>
         </Section>
+        <UpdatePane />
         <Section>
           <Row icon="globe" label="My notes online" note="quill-study.pages.dev/notes" onPress={() => openLink(NOTES_SITE)} last />
         </Section>
       </>
     );
   }
+}
+
+function UpdatePane() {
+  const t = useTheme();
+  const info = updateInfo();
+  const [state, setState] = useState<'idle' | 'looking' | 'ready' | 'none' | 'failed' | 'off'>('idle');
+  const look = async () => {
+    if (state === 'ready') { applyUpdate(); return; }
+    setState('looking');
+    setState(await fetchUpdate(true));
+  };
+  const note = state === 'looking' ? 'Looking…' : state === 'ready' ? 'An update is ready. Tap to restart Quill and use it.'
+    : state === 'none' ? 'Quill is up to date.' : state === 'failed' ? "Couldn't reach the update server. Try again on Wi-Fi."
+    : state === 'off' ? 'Updates come with the app in this version.' : 'Small fixes arrive on their own; this checks right now.';
+  return (
+    <Section title="This copy of Quill" footer="Changes to the ink itself come as a new build in TestFlight or the App Store; everything else can arrive as a small update.">
+      <Row icon="number" label="Build" right={<Text style={{ color: t.sub, fontSize: 15 }}>{info.version} ({info.build})</Text>} />
+      <Row icon="arrow.down.circle" label="Update" right={<Text style={{ color: t.sub, fontSize: 15 }}>{info.update}{info.when ? ` · ${info.when}` : ''}</Text>} />
+      <Row icon="arrow.triangle.2.circlepath" label={state === 'ready' ? 'Restart to update' : 'Check for updates'} note={note} onPress={state === 'looking' ? undefined : look} last />
+    </Section>
+  );
 }
 
 function SyncPane({ s, set }: { s: Settings; set: (p: Partial<Settings>) => void }) {

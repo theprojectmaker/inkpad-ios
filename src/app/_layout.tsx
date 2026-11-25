@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ShareReceiver } from '@/components/share-receiver';
 import { ToastProvider } from '@/components/ui';
+import { fetchUpdate } from '@/lib/appupdate';
 import { checkCloud, getCloud, networkKind, setSyncHints, syncNow, type NetKind } from '@/lib/icloud';
 import { LibraryProvider, useLibrary } from '@/lib/library';
 import { EngineHost } from '@/lib/pdf-engine';
@@ -16,6 +17,12 @@ import { SettingsProvider, useSettings, useTheme } from '@/lib/settings';
 function Shell() {
   const t = useTheme();
   const { s } = useSettings();
+  // Pick up new versions while the app lives in the background for days (they're used at the next start).
+  useEffect(() => {
+    fetchUpdate();
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') fetchUpdate(); });
+    return () => sub.remove();
+  }, []);
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <ReducedMotionConfig mode={s.reduceMotion ? ReduceMotion.Always : ReduceMotion.System} />

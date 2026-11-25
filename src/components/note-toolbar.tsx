@@ -74,8 +74,8 @@ export function currentTool(s: Settings): CanvasTool {
   const n = k.sizes[k.size] ?? k.sizes[0];
   const broken = k.line === 'dash' || k.line === 'dot' ? k.line : '';
   switch (id) {
-    case 'pen': return { kind: k.line === 'pressure' ? 'pen' : 'monoline', color, width: widthOf('pen', n), mode: broken, streamline: s.streamline ?? SMOOTH };
-    case 'pencil': return { kind: 'pencil', color, width: widthOf('pencil', n), mode: broken, streamline: s.streamline ?? SMOOTH };
+    case 'pen': return { kind: k.line === 'pressure' ? 'pen' : 'monoline', color, width: widthOf('pen', n), mode: broken, streamline: s.streamline ?? SMOOTH, taper: !!s.softTips };
+    case 'pencil': return { kind: 'pencil', color, width: widthOf('pencil', n), mode: broken, streamline: s.streamline ?? SMOOTH, taper: !!s.softTips };
     case 'marker': return { kind: 'marker', color, width: widthOf('marker', n), mode: broken, streamline: s.streamline ?? SMOOTH };
     case 'brush': return { kind: s.brushType ?? 'brushpen', color, width: widthOf('brush', n), streamline: s.streamline ?? SMOOTH };
     case 'shape': return { kind: 'shape', color, width: widthOf('pen', n), mode: [s.shapeType ?? 'line', s.shapeLock ? 'lock' : '', s.shapeFill ? 'fill' : ''].filter(Boolean).join(',') };

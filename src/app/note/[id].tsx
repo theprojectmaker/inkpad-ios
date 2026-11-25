@@ -130,7 +130,7 @@ export default function Editor() {
   const { width, height } = useWindowDimensions();
   const tool = useMemo(() => currentTool(s),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady, s.measureMode, s.brushType, s.shapeType, s.shapeLock, s.shapeFill, s.streamline]);
+    [s.inkKind, s.tk, s.eraser, s.lassoBox, s.textFont, s.textBold, s.textItalic, s.textUnderline, s.nibAngle, s.nibSteady, s.measureMode, s.brushType, s.shapeType, s.shapeLock, s.shapeFill, s.streamline, s.softTips]);
   const [menu, setMenu] = useState(false);
   const [opts, setOpts] = useState(false);     // the picked pen's options card (tap the pen again)
   const [sidebar, setSidebar] = useState(false);

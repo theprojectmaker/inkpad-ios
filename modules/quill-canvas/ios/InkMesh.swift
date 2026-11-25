@@ -53,7 +53,7 @@ struct Ribbon {
           let reach = (Float(speck >> 16) / 65536).squareRoot() * p.r
           x = p.x + cos(angle) * reach; y = p.y + sin(angle) * reach
           r = max(0.3, p.r * 0.08); a = p.a
-          disc(to: &out)
+          disc(to: &out, fine: false)
         }
         nextDot = walked + max(1, p.r * 0.3)
       }
@@ -135,9 +135,11 @@ struct Ribbon {
     lx = toLX; ly = toLY; rx = toRX; ry = toRY; pc = c
   }
 
-  private func disc(to out: inout [Vtx]) {
+  /// A round cap or dot. `fine` caps have enough sides to stay round when zoomed far in
+  /// (a dozen sides looked boxy at the tips of a line); spray specks don't need them.
+  private func disc(to out: inout [Vtx], fine: Bool = true) {
     let c = color(a)
-    let n = max(10, min(36, Int(5 + r * 5)))
+    let n = fine ? max(32, min(120, Int(28 + r * 14))) : max(8, min(20, Int(5 + r * 5)))
     let step = 2 * Float.pi / Float(n)
     var px = x + r, py = y
     for i in 1...n {

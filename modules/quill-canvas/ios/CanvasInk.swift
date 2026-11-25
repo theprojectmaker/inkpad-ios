@@ -266,7 +266,7 @@ final class PenCapture {
     }
     let want = pen.shape(p: pressure(force: force, speed: speed), dirX: dirX, dirY: dirY, altitude: altitude)
     if first {
-      r = pen.tapers ? want.r * 0.6 : want.r
+      r = pen.thinEnds ? want.r * 0.6 : want.r
       a = want.a
       wet.append(InkPoint(x: fx, y: fy, r: r, a: a))
       return
@@ -330,7 +330,7 @@ final class PenCapture {
     }
     // A pen that starts thin should also release thin: taper the last stretch down to a soft point
     // instead of ending on a blunt, boxy cap. Scaled to the line's width so thick and thin both read right.
-    if pen.tapers, count > 3 {
+    if pen.thinEnds, count > 3 {
       let baseR = pts[max(0, count - 4)].r
       let tipLen = max(2.5, baseR * 3)      // how far back the taper reaches, in canvas points
       var dist: Float = 0
