@@ -195,6 +195,8 @@ export default function Editor() {
   const [viewMenu, setViewMenu] = useState(false);
   const [canvasKey, setCanvasKey] = useState(0);
   const [exportMenu, setExportMenu] = useState(false);
+  const [pageMore, setPageMore] = useState(false);
+  const [studyMenu, setStudyMenu] = useState(false);
   const audio = useNoteAudio(id, toast);
   const [notesMode, setNotesMode] = useState(false);
   const tabs = useTabs();
@@ -992,41 +994,45 @@ export default function Editor() {
       {selStyle ? <StylePopover color={selStyle.color} width={selStyle.width} onClose={() => setSelStyle(null)}
         onChange={(p) => canvas.current?.styleSelection(p.color ?? '', p.width ?? 0, p.line ?? '')}
         onFill={async (c) => { const n = await canvas.current?.fillSelection(c); if (c && !n) toast("That shape isn't closed. Join its ends, then fill it."); }} /> : null}
+      {/* More: a short list. The long tail lives one tap in, under This page, Study tools and View. */}
       <MenuSheet topRight visible={menu} onClose={() => setMenu(false)} items={[
-        { group: 1, label: 'Share settings', sub: meta?.link ? 'Link is on' : undefined, icon: 'person.badge.plus', onPress: () => setShareOpen(true) },
-        { group: 1, label: 'Quick export', sub: 'PDF, All pages', icon: 'square.and.arrow.up', onPress: share },
-        { group: 1, label: 'Export as…', icon: 'square.and.arrow.up.on.square', onPress: () => setExportMenu(true) },
-        { group: 2, label: 'Comments', icon: 'bubble.left', onPress: async () => { setCommentsList((await canvas.current?.commentList()) ?? []); } },
-        { group: 2, label: 'Start study session', icon: 'timer', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
-        { group: 3, label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
-        { group: 3, label: 'View settings', icon: 'chevron.right', onPress: () => setViewMenu(true) },
+        { group: 1, label: 'Share and export', sub: meta?.link ? 'Link is on' : 'PDF, picture, Quill file', icon: 'square.and.arrow.up', onPress: () => setExportMenu(true) },
+        { group: 2, label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
+        { group: 2, label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
+        { group: 3, label: 'This page', sub: 'Paper, flag, stamps, read aloud', icon: 'doc', onPress: () => setPageMore(true) },
+        { group: 3, label: 'Study tools', sub: 'Study session, comments, review, calculator', icon: 'book', onPress: () => setStudyMenu(true) },
+        { group: 3, label: 'View', sub: 'Present, focus, reading guide, timer', icon: 'eye', onPress: () => setViewMenu(true) },
+        { group: 4, label: meta?.title ?? 'Note', sub: 'Tap to rename', icon: 'pencil', onPress: () => setRenaming(true) },
         { group: 4, label: 'Note details', sub: 'Subject, tags, colour, pin', icon: 'info.circle', onPress: () => setDetails(true) },
-        { group: 4, label: meta?.title ?? 'Note', sub: 'Tap to rename', icon: 'chevron.right', onPress: () => setRenaming(true) },
-        { group: 5, label: 'Version history', icon: 'clock.arrow.circlepath', onPress: () => setVersions(true) },
-        ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
-          { group: 6, label: 'Clean up this page', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
-          { group: 6, label: 'Make it black and white', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
-          ...((doc.pages[page.page].bg as { orig?: string }).orig ? [{ group: 6, label: 'Back to the original photo', icon: 'arrow.uturn.backward', onPress: () => restorePhoto(page.page) }] : []),
-        ] : []),
+        { group: 4, label: 'Version history', icon: 'clock.arrow.circlepath', onPress: () => setVersions(true) },
         ...(meta?.hw ? [
-          { group: 7, label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
-          { group: 7, label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
+          { group: 5, label: 'Hand in to Classroom', icon: 'paperplane', onPress: handIn },
+          { group: 5, label: 'Open the assignment', icon: 'graduationcap', onPress: () => openAssignment(meta.hw!) },
         ] : []),
-        { group: 8, label: 'Scratchpad', sub: 'Jot without touching the page', icon: 'note.text', checked: scratch, onPress: () => setScratch((v) => !v) },
-        { group: 8, label: flagged ? 'Remove flag from this page' : 'Flag this page', icon: flagged ? 'flag.slash' : 'flag', onPress: toggleFlag },
-        ...(flaggedPages.length ? [{ group: 8, label: 'Flagged pages', sub: String(flaggedPages.length), icon: 'flag.fill', onPress: () => setFlagsOpen(true) }] : []),
-        { group: 8, label: 'Find action items', sub: 'On this page', icon: 'checklist', onPress: findActions },
-        { group: 8, label: meta?.review ? 'Stop review reminders' : 'Review this note later', sub: meta?.review ? `Next: ${new Date(meta.review.next).toLocaleDateString()}` : REVIEW_DAYS.join(', ') + ' days', icon: 'bell', onPress: toggleReview },
-        { group: 8, label: 'Focus timer', sub: 'Counts down while you work', icon: 'hourglass', checked: timerOpen, onPress: () => setTimerOpen((v) => !v) },
-        { group: 8, label: 'Page tools', sub: 'Stamps, read aloud, translate, outline', icon: 'wand.and.stars', onPress: () => setPageTools('menu') },
-        { group: 8, label: 'Note stats', icon: 'chart.bar', onPress: () => setStatsOpen(true) },
-        { group: 8, label: 'Find in this note', icon: 'magnifyingglass', checked: find, onPress: () => { const was = find; closePanels(); setFind(!was); } },
-        { group: 8, label: second ? 'Second note' : 'Open another note beside', icon: 'rectangle.split.2x1', checked: !!second, onPress: () => { if (second) setSecond(null); else setPicking(true); } },
-        { group: 8, label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
-        { group: 8, label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
-        { group: 9, label: 'Settings', icon: 'gearshape', onPress: () => router.push('/settings') },
+        { group: 6, label: meta?.drive ? 'Update in Google Drive' : 'Save to Google Drive', icon: 'icloud.and.arrow.up', onPress: () => saveDrive() },
+        { group: 6, label: 'Settings', icon: 'gearshape', onPress: () => router.push('/settings') },
+      ]} />
+      <MenuSheet topRight visible={pageMore} onClose={() => setPageMore(false)} title="This page" items={[
+        { group: 1, label: 'Template settings', icon: 'doc.plaintext', onPress: () => { if (doc?.pages[page.page]?.bg.kind === 'paper') setPaperFor(page.page); else toast('This page is a PDF or photo, so it keeps its own background.'); } },
+        { group: 1, label: flagged ? 'Remove flag from this page' : 'Flag this page', icon: flagged ? 'flag.slash' : 'flag', onPress: toggleFlag },
+        ...(flaggedPages.length ? [{ group: 1, label: 'Flagged pages', sub: String(flaggedPages.length), icon: 'flag.fill', onPress: () => setFlagsOpen(true) }] : []),
+        { group: 2, label: 'Page tools', sub: 'Stamps, read aloud, translate, outline', icon: 'wand.and.stars', onPress: () => setPageTools('menu') },
+        { group: 2, label: 'Find action items', sub: 'On this page', icon: 'checklist', onPress: findActions },
+        ...(doc?.pages[page.page]?.bg.kind === 'image' ? [
+          { group: 3, label: 'Clean up this page', icon: 'wand.and.stars', onPress: () => enhancePage(page.page, 'color') },
+          { group: 3, label: 'Make it black and white', icon: 'doc.text.viewfinder', onPress: () => enhancePage(page.page, 'document') },
+          ...((doc.pages[page.page].bg as { orig?: string }).orig ? [{ group: 3, label: 'Back to the original photo', icon: 'arrow.uturn.backward', onPress: () => restorePhoto(page.page) }] : []),
+        ] : []),
+      ]} />
+      <MenuSheet topRight visible={studyMenu} onClose={() => setStudyMenu(false)} title="Study tools" items={[
+        { group: 1, label: 'Start study session', icon: 'timer', checked: study, onPress: () => { const was = study; closePanels(); setStudy(!was); } },
+        { group: 1, label: meta?.review ? 'Stop review reminders' : 'Review this note later', sub: meta?.review ? `Next: ${new Date(meta.review.next).toLocaleDateString()}` : REVIEW_DAYS.join(', ') + ' days', icon: 'bell', onPress: toggleReview },
+        { group: 2, label: 'Comments', icon: 'bubble.left', onPress: async () => { setCommentsList((await canvas.current?.commentList()) ?? []); } },
+        { group: 2, label: 'Calculator', icon: 'function', checked: calc, onPress: () => { const was = calc; closePanels(); setCalcLoaded(true); setCalc(!was); } },
+        { group: 2, label: 'Note stats', icon: 'chart.bar', onPress: () => setStatsOpen(true) },
       ]} />
       <MenuSheet topRight visible={exportMenu} onClose={() => setExportMenu(false)} items={[
+        { group: 0, label: 'Share a link', sub: meta?.link ? 'Link is on' : 'Anyone with the link can read it', icon: 'person.badge.plus', onPress: () => setShareOpen(true) },
         { group: 1, label: 'PDF', sub: 'All pages', icon: 'doc.richtext', onPress: share },
         { group: 1, label: 'Picture', sub: 'This page', icon: 'photo', onPress: () => shareCurrentPage(page.page) },
         { group: 2, label: 'Quill file', sub: 'Editable on another iPad', icon: 'square.and.arrow.up.on.square', onPress: shareQuill },
@@ -1038,6 +1044,8 @@ export default function Editor() {
         { group: 2, label: 'Reading guide', sub: 'A band to keep your place; drag its handle', icon: 'line.3.horizontal', checked: guide, onPress: () => setGuide((v) => !v) },
         { group: 2, label: ['Warm tint: off', 'Warm tint: light', 'Warm tint: medium', 'Warm tint: strong'][s.warmTint ?? 0], sub: 'Easier on the eyes at night. Tap to change', icon: 'moon', checked: !!s.warmTint, onPress: () => set({ warmTint: ((s.warmTint ?? 0) + 1) % 4 }) },
         { group: 1, label: 'Fit page to width', icon: 'arrow.left.and.right', onPress: () => canvas.current?.fitWidth() },
+        { group: 3, label: 'Scratchpad', sub: 'Jot without touching the page', icon: 'note.text', checked: scratch, onPress: () => setScratch((v) => !v) },
+        { group: 3, label: 'Focus timer', sub: 'Counts down while you work', icon: 'hourglass', checked: timerOpen, onPress: () => setTimerOpen((v) => !v) },
       ]} />
       <MenuSheet visible={versions} onClose={() => setVersions(false)} title="Version history" items={(() => {
         const list = versions ? listVersions(id) : [];

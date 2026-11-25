@@ -529,7 +529,6 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
           <ScrollView style={{ flex: 1 }} scrollEnabled={!dragging} contentContainerStyle={{ paddingHorizontal: 12, gap: 2, paddingBottom: 20 }}>
             {sideRow('Home', filter.kind === 'home', () => setFilter({ kind: 'home' }), { icon: 'house' })}
             {sideRow('Notes', filter.kind === 'all', () => setFilter({ kind: 'all' }), { icon: 'square.and.pencil', count: live.length, drop: NONE })}
-            {sideRow('Templates', false, () => setSheet('paper'), { icon: 'doc.plaintext' })}
             {sideRow('Favorites', filter.kind === 'fav', () => setFilter({ kind: 'fav' }), { icon: 'star', count: live.filter((n) => n.fav).length })}
             {live.some((n) => n.pin) ? sideRow('Pinned', filter.kind === 'smart' && filter.id === 'pinned', () => setFilter({ kind: 'smart', id: 'pinned' }), { icon: 'pin', count: live.filter((n) => n.pin).length }) : null}
             {live.some((n) => n.flags?.length) ? sideRow('Flagged pages', filter.kind === 'smart' && filter.id === 'flagged', () => setFilter({ kind: 'smart', id: 'flagged' }), { icon: 'flag', count: live.filter((n) => n.flags?.length).length }) : null}
@@ -723,12 +722,8 @@ ${(n.tags ?? []).map((x) => '#' + x).join(' ')}`.toLowerCase()])), [lib.lib.note
       ) : null}
 
       <MenuSheet topRight visible={sheet === 'home'} onClose={() => setSheet(null)} items={[
-        { group: 1, label: "Today's note", icon: 'calendar', onPress: openToday },
         { group: 1, label: 'Select notes', icon: 'checkmark.circle', onPress: () => { if (filter.kind === 'home') setFilter({ kind: 'all' }); setPicked([]); } },
         ...(s.showDraw ? [{ group: 1, label: 'Drawing Board', icon: 'paintbrush.pointed', onPress: () => router.push('/draw' as never) }] : []),
-        { group: 1, label: 'Import a PDF or zip', icon: 'square.and.arrow.down', onPress: importPdf },
-        { group: 1, label: 'Import photos', icon: 'photo', onPress: importPhotos },
-        { group: 1, label: 'Import Flashcards', icon: 'rectangle.on.rectangle', onPress: () => router.push('/flashcards') },
         { group: 2, label: list ? 'Show as grid' : 'Show as list', icon: list ? 'square.grid.2x2' : 'list.bullet', onPress: () => { set({ view: list ? 'grid' : 'list' }); setFilter({ kind: 'all' }); } },
         { group: 2, label: 'Sort notes', icon: 'arrow.up.arrow.down', onPress: () => setSheet('sort') },
         { group: 3, label: 'Settings', icon: 'gearshape', onPress: () => router.push('/settings') },
